@@ -53,6 +53,14 @@ section { margin-top: 30px; }
 .agents { display: flex; flex-direction: column; gap: 3px; }
 .prs { text-align: right; }
 .prs a { color: var(--accent); }
+.session-editor { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.session-editor summary { color: var(--accent); cursor: pointer; font-weight: 700; font-size: .82rem; }
+.session-editor form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.session-editor label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: .78rem; }
+.session-editor input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: var(--bg); color: var(--ink); font: inherit; }
+.session-actions { display: flex; align-items: center; gap: 10px; grid-column: 1 / -1; }
+.session-actions button { padding: 8px 13px; }
+.save-status { color: var(--muted); font-size: .78rem; }
 .stale { color: var(--warn); font-weight: 700; }
 .health { margin-top: 30px; color: var(--muted); }
 .health pre { white-space: pre-wrap; font-size: .75rem; }
@@ -67,4 +75,5 @@ section { margin-top: 30px; }
   .section-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   .stream-foot { align-items: flex-start; flex-direction: column; }
   .prs { text-align: left; }
+  .session-editor form { grid-template-columns: 1fr; }
 }

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -14,7 +14,7 @@ async function readJson(file) {
 
 async function command(command, args, cwd = root) {
   try {
-    const { stdout } = await exec(command, args, { cwd, maxBuffer: 10 * 1024 * 1024 });
+    const { stdout } = await exec(command, args, { cwd, maxBuffer: 10 * 1024 * 1024, timeout: 30_000 });
     return { ok: true, value: stdout.trim() };
   } catch (error) {
     return { ok: false, error: error.stderr?.trim() || error.message };
@@ -128,7 +128,7 @@ async function main() {
   await mkdir(dataDir, { recursive: true });
   await mkdir(snapshotDir, { recursive: true });
   const serialized = `${JSON.stringify(snapshot, null, 2)}\n`;
-  const temp = path.join(dataDir, "current.json.next");
+  const temp = path.join(dataDir, `current.json.${process.pid}-${randomUUID()}.next`);
   await writeFile(temp, serialized);
   await rename(temp, path.join(dataDir, "current.json"));
 

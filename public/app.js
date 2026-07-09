@@ -38,6 +38,7 @@ function renderStream(stream, project) {
       <ul class="chunks" aria-label="Work chunks">${chunks}</ul>
       <div class="stream-foot">
         <div class="agents">
+          <span>Coordinator: ${escapeHtml(project?.coordinator || "unassigned")}</span>
           <span>Fable: ${escapeHtml(stream.fableAgent || "unassigned")}</span>
           <span>Reviewer: ${escapeHtml(stream.reviewerAgent || "shared / unassigned")}</span>
           <span>Codex: ${escapeHtml(stream.codexExecutor || "unassigned")}</span>
@@ -45,6 +46,16 @@ function renderStream(stream, project) {
         </div>
         <div class="prs">${prs}</div>
       </div>
+      <details class="session-editor">
+        <summary>Edit sessions</summary>
+        <form data-workstream-id="${escapeHtml(stream.id)}">
+          <label>Repository coordinator<input name="coordinator" value="${escapeHtml(project?.coordinator || "")}" placeholder="AF name or session ID"></label>
+          <label>Fable workstream agent<input name="fableAgent" value="${escapeHtml(stream.fableAgent || "")}" placeholder="AF name or session ID"></label>
+          <label>Reviewer<input name="reviewerAgent" value="${escapeHtml(stream.reviewerAgent || "")}" placeholder="AF name or session ID"></label>
+          <label>Codex executor<input name="codexExecutor" value="${escapeHtml(stream.codexExecutor || "")}" placeholder="AF name or session ID"></label>
+          <div class="session-actions"><button type="submit">Save sessions</button><span class="save-status" aria-live="polite"></span></div>
+        </form>
+      </details>
     </article>`;
 }
 
@@ -64,6 +75,34 @@ function render(data) {
     <div class="attention-item"><strong>${escapeHtml(stream.title)} · ${escapeHtml(label)}</strong><span>${escapeHtml(text)}</span></div>`).join("");
   freshness.textContent = `Sources refreshed ${relativeTime(data.generatedAt)} · ${new Date(data.generatedAt).toLocaleString()}`;
   health.textContent = JSON.stringify(data.health, null, 2);
+
+  for (const form of streamsRoot.querySelectorAll(".session-editor form")) {
+    form.addEventListener("submit", saveSessions);
+  }
+}
+
+async function saveSessions(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const status = form.querySelector(".save-status");
+  const values = Object.fromEntries(new FormData(form));
+  button.disabled = true;
+  status.textContent = "Saving…";
+  try {
+    const response = await fetch(`/api/workstreams/${encodeURIComponent(form.dataset.workstreamId)}/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(values)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Save failed");
+    await load();
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function load() {

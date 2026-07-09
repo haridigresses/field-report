@@ -28,6 +28,8 @@ npm run refresh
 
 No background timer is used.
 
+Use **Edit sessions** on any workstream card to update the repository coordinator, Fable workstream agent, reviewer, or Codex executor. Saving persists the values to `config/projects.json` and the matching `workstreams/*.json` file, then refreshes collected state.
+
 ## Configure the pilot
 
 1. `config/projects.json` contains the real AON and Arrusted repositories and their repository coordinator AF names.

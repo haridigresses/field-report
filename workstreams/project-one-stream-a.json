@@ -10,8 +10,16 @@
   "updatedAt": "2026-07-09T12:00:00-04:00",
   "updatedBy": "setup",
   "chunks": [
-    { "id": "arc", "title": "Record the current workstream arc and exit criteria", "status": "active" },
-    { "id": "delivery", "title": "Replace with the next coherent implementation chunk", "status": "planned" }
+    {
+      "id": "arc",
+      "title": "Record the current workstream arc and exit criteria",
+      "status": "active"
+    },
+    {
+      "id": "delivery",
+      "title": "Replace with the next coherent implementation chunk",
+      "status": "planned"
+    }
   ],
   "questions": [],
   "prs": []
