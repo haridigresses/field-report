@@ -28,6 +28,10 @@ function renderStream(stream, project) {
   const prs = (stream.prs || []).length
     ? stream.prs.map((pr) => pr.url ? `<a href="${escapeHtml(pr.url)}">#${pr.number}</a>` : `#${pr.number}`).join(", ")
     : "No associated PRs";
+  const assessment = stream.assessment || {};
+  const readiness = assessment.mergeReadiness == null ? "—" : `${assessment.mergeReadiness}%`;
+  const structuralRisk = assessment.structuralRisk == null ? "—" : `${assessment.structuralRisk}%`;
+  const assessmentAge = assessment.assessedAt ? `assessed ${relativeTime(assessment.assessedAt)}` : "not yet assessed";
   return `
     <article class="stream">
       <div class="stream-head">
@@ -35,6 +39,12 @@ function renderStream(stream, project) {
         <span class="status ${escapeHtml(stream.status)}">${escapeHtml(stream.status)}</span>
       </div>
       <p class="summary">${escapeHtml(stream.summary)}</p>
+      <div class="branch-rating" aria-label="Branch assessment">
+        <div><span>Merge readiness</span><strong>${readiness}</strong></div>
+        <div><span>Structural rebuild risk</span><strong>${structuralRisk}</strong></div>
+        <p><span>${escapeHtml(stream.branch || "No branch linked")} · ${escapeHtml(assessmentAge)}</span>${assessment.stale ? `<b>Stale: branch head changed</b>` : ""}</p>
+        ${assessment.rationale ? `<p class="rating-rationale">${escapeHtml(assessment.rationale)}</p>` : ""}
+      </div>
       <ul class="chunks" aria-label="Work chunks">${chunks}</ul>
       <div class="stream-foot">
         <div class="agents">
@@ -54,6 +64,18 @@ function renderStream(stream, project) {
           <label>Reviewer<input name="reviewerAgent" value="${escapeHtml(stream.reviewerAgent || "")}" placeholder="AF name or session ID"></label>
           <label>Codex executor<input name="codexExecutor" value="${escapeHtml(stream.codexExecutor || "")}" placeholder="AF name or session ID"></label>
           <div class="session-actions"><button type="submit">Save sessions</button><span class="save-status" aria-live="polite"></span></div>
+        </form>
+      </details>
+      <details class="assessment-editor">
+        <summary>Edit branch rating</summary>
+        <form data-workstream-id="${escapeHtml(stream.id)}">
+          <label>Branch<input name="branch" value="${escapeHtml(stream.branch || "")}" placeholder="feature/branch-name"></label>
+          <label>Assessed by<input name="assessedBy" value="${escapeHtml(assessment.assessedBy || "")}" placeholder="AF name or reviewer"></label>
+          <label>Merge readiness %<input name="mergeReadiness" type="number" min="0" max="100" value="${assessment.mergeReadiness ?? ""}" placeholder="0–100"></label>
+          <label>Structural rebuild risk %<input name="structuralRisk" type="number" min="0" max="100" value="${assessment.structuralRisk ?? ""}" placeholder="0–100"></label>
+          <label class="wide-field">Assessed commit SHA<input name="assessedHead" value="${escapeHtml(assessment.assessedHead || "")}" placeholder="Full or short commit SHA"></label>
+          <label class="wide-field">Evidence summary<textarea name="rationale" rows="3" placeholder="Why these ratings are justified">${escapeHtml(assessment.rationale || "")}</textarea></label>
+          <div class="session-actions"><button type="submit">Save rating</button><span class="save-status" aria-live="polite"></span></div>
         </form>
       </details>
     </article>`;
@@ -79,6 +101,9 @@ function render(data) {
   for (const form of streamsRoot.querySelectorAll(".session-editor form")) {
     form.addEventListener("submit", saveSessions);
   }
+  for (const form of streamsRoot.querySelectorAll(".assessment-editor form")) {
+    form.addEventListener("submit", saveAssessment);
+  }
 }
 
 async function saveSessions(event) {
@@ -91,6 +116,30 @@ async function saveSessions(event) {
   status.textContent = "Saving…";
   try {
     const response = await fetch(`/api/workstreams/${encodeURIComponent(form.dataset.workstreamId)}/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(values)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Save failed");
+    await load();
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveAssessment(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button[type=submit]");
+  const status = form.querySelector(".save-status");
+  const values = Object.fromEntries(new FormData(form));
+  button.disabled = true;
+  status.textContent = "Saving…";
+  try {
+    const response = await fetch(`/api/workstreams/${encodeURIComponent(form.dataset.workstreamId)}/assessment`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(values)

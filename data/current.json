@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-09T23:23:04.356Z",
+  "generatedAt": "2026-07-09T23:28:01.456Z",
   "projects": [
     {
       "id": "aon",
@@ -43,6 +43,11 @@
       ],
       "questions": [],
       "prs": [],
+      "branch": null,
+      "assessment": {
+        "stale": false,
+        "currentHead": null
+      },
       "afIssues": []
     },
     {
@@ -65,6 +70,10 @@
       ],
       "questions": [],
       "prs": [],
+      "assessment": {
+        "stale": false,
+        "currentHead": null
+      },
       "afIssues": []
     },
     {
@@ -92,6 +101,10 @@
       ],
       "questions": [],
       "prs": [],
+      "assessment": {
+        "stale": false,
+        "currentHead": null
+      },
       "afIssues": []
     },
     {
@@ -114,6 +127,10 @@
       ],
       "questions": [],
       "prs": [],
+      "assessment": {
+        "stale": false,
+        "currentHead": null
+      },
       "afIssues": []
     }
   ],
@@ -121,8 +138,8 @@
     "afIssues": "ok",
     "afInbox": "ok",
     "github": {
-      "aon": "ok",
-      "arrusted": "ok"
+      "aon": "Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout",
+      "arrusted": "Post \"https://api.github.com/graphql\": net/http: TLS handshake timeout"
     }
   }
 }

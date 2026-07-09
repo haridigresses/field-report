@@ -54,7 +54,7 @@ async function collectInbox(agentNames) {
 
 async function collectPullRequests(project) {
   if (!project.githubRepo || project.githubRepo.startsWith("owner/")) return { items: [] };
-  const fields = "number,title,url,state,isDraft,headRefName,updatedAt,mergeStateStatus,statusCheckRollup";
+  const fields = "number,title,url,state,isDraft,headRefName,headRefOid,updatedAt,mergeStateStatus,statusCheckRollup";
   const result = await command("gh", ["pr", "list", "--repo", project.githubRepo, "--state", "all", "--limit", "100", "--json", fields]);
   if (!result.ok) return { items: [], error: result.error };
   try {
@@ -102,8 +102,15 @@ async function main() {
       const number = typeof configured === "number" ? configured : configured.number;
       return { ...configured, ...(livePrs.find((pr) => pr.number === number) || {}), number };
     });
+    const branchPr = livePrs.find((pr) => pr.headRefName === stream.branch);
+    const assessment = stream.assessment || {};
     return {
       ...stream,
+      assessment: {
+        ...assessment,
+        stale: Boolean(assessment.assessedHead && branchPr?.headRefOid && assessment.assessedHead !== branchPr.headRefOid),
+        currentHead: branchPr?.headRefOid || null
+      },
       questions: derivedQuestions(stream, inbox.items),
       prs: configuredPrs,
       afIssues: issues.items.filter((issue) => JSON.stringify(issue).includes(stream.id))
