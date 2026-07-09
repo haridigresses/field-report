@@ -30,7 +30,8 @@ async function serveFile(res, relativePath) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (req.method === "POST" && req.url === "/api/refresh") {
+  const pathname = new URL(req.url, "http://127.0.0.1").pathname;
+  if (req.method === "POST" && pathname === "/api/refresh") {
     try {
       const { stdout } = await exec(process.execPath, [path.join(root, "src/collect.mjs")], { cwd: root, maxBuffer: 10 * 1024 * 1024 });
       return send(res, 200, JSON.stringify({ ok: true, message: stdout.trim() }), "application/json; charset=utf-8");
@@ -39,10 +40,10 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (req.method !== "GET") return send(res, 405, "Method not allowed");
-  if (req.url === "/" || req.url === "/index.html") return serveFile(res, "public/index.html");
-  if (req.url === "/app.js") return serveFile(res, "public/app.js");
-  if (req.url === "/styles.css") return serveFile(res, "public/styles.css");
-  if (req.url === "/data/current.json") return serveFile(res, "data/current.json");
+  if (pathname === "/" || pathname === "/index.html") return serveFile(res, "public/index.html");
+  if (pathname === "/app.js") return serveFile(res, "public/app.js");
+  if (pathname === "/styles.css") return serveFile(res, "public/styles.css");
+  if (pathname === "/data/current.json") return serveFile(res, "data/current.json");
   return send(res, 404, "Not found");
 });
 
