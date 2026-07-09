@@ -39,6 +39,7 @@ function renderStream(stream, project) {
       <div class="stream-foot">
         <div class="agents">
           <span>Fable: ${escapeHtml(stream.fableAgent || "unassigned")}</span>
+          <span>Reviewer: ${escapeHtml(stream.reviewerAgent || "shared / unassigned")}</span>
           <span>Codex: ${escapeHtml(stream.codexExecutor || "unassigned")}</span>
           <span class="${stale ? "stale" : ""}">${stale ? "Stale · " : ""}updated ${relativeTime(stream.updatedAt)}</span>
         </div>

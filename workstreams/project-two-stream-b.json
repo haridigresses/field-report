@@ -1,16 +1,16 @@
 {
-  "id": "project-two-stream-b",
-  "project": "project-two",
-  "title": "Fourth workstream",
-  "status": "complete",
-  "fableAgent": "project-two/stream-b",
-  "codexExecutor": "project-two-stream-b",
-  "summary": "This example shows a completed stream. Its summary should preserve the delivered outcome and any important follow-up, not merely say that the implementation is done.",
+  "id": "arrusted-pilot-slot-2",
+  "project": "arrusted",
+  "title": "Arrusted pilot slot 2",
+  "status": "planned",
+  "fableAgent": null,
+  "reviewerAgent": null,
+  "codexExecutor": null,
+  "summary": "Reserved for a second Arrusted workstream during the pilot. Assign the Fable and Codex sessions when the stream is selected, then replace this text with its two or three line arc.",
   "updatedAt": "2026-07-09T12:00:00-04:00",
   "updatedBy": "setup",
   "chunks": [
-    { "id": "implementation", "title": "Implement the complete feature boundary", "status": "complete" },
-    { "id": "verification", "title": "Verify integration and regression behavior", "status": "complete" }
+    { "id": "select", "title": "Select and describe the second Arrusted pilot stream", "status": "planned" }
   ],
   "questions": [],
   "prs": []

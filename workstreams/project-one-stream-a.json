@@ -1,17 +1,17 @@
 {
-  "id": "project-one-stream-a",
-  "project": "project-one",
-  "title": "First workstream",
+  "id": "aon-current",
+  "project": "aon",
+  "title": "AON current workstream",
   "status": "active",
-  "fableAgent": "project-one/stream-a",
-  "codexExecutor": "project-one-stream-a",
-  "summary": "Replace this with two or three lines describing the intended outcome, where the stream is now, and what must happen next. This narrative is the primary re-entry point after time away.",
+  "fableAgent": "aonb",
+  "reviewerAgent": "reforch",
+  "codexExecutor": null,
+  "summary": "The AON workstream agent is connected, but its concrete arc has not yet been recorded. Add the intended outcome, current position, and next decision before using this card as the pilot source of truth.",
   "updatedAt": "2026-07-09T12:00:00-04:00",
   "updatedBy": "setup",
   "chunks": [
-    { "id": "boundary", "title": "Establish the implementation boundary", "status": "complete" },
-    { "id": "core", "title": "Implement and verify the core change", "status": "active" },
-    { "id": "integration", "title": "Integrate the change into its consuming surface", "status": "planned" }
+    { "id": "arc", "title": "Record the current workstream arc and exit criteria", "status": "active" },
+    { "id": "delivery", "title": "Replace with the next coherent implementation chunk", "status": "planned" }
   ],
   "questions": [],
   "prs": []

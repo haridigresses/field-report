@@ -1,16 +1,16 @@
 {
-  "id": "project-one-stream-b",
-  "project": "project-one",
-  "title": "Second workstream",
+  "id": "aon-pilot-slot-2",
+  "project": "aon",
+  "title": "AON pilot slot 2",
   "status": "planned",
-  "fableAgent": "project-one/stream-b",
-  "codexExecutor": "project-one-stream-b",
-  "summary": "Replace this with a concise account of the workstream arc. Keep the checklist below at commit-sized or independently verifiable chunks, and group related chunks into review-worthy PRs.",
+  "fableAgent": null,
+  "reviewerAgent": "reforch",
+  "codexExecutor": null,
+  "summary": "Reserved for a second AON workstream during the pilot. Assign the Fable and Codex sessions when the stream is selected, then replace this text with its two or three line arc.",
   "updatedAt": "2026-07-09T12:00:00-04:00",
   "updatedBy": "setup",
   "chunks": [
-    { "id": "design", "title": "Settle the behavioral contract", "status": "planned" },
-    { "id": "implementation", "title": "Implement the coherent feature slice", "status": "planned" }
+    { "id": "select", "title": "Select and describe the second AON pilot stream", "status": "planned" }
   ],
   "questions": [],
   "prs": []

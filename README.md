@@ -30,8 +30,8 @@ No background timer is used.
 
 ## Configure the pilot
 
-1. Edit `config/projects.json` with real repository paths, GitHub `owner/repo` identifiers, and repository coordinator AF names.
-2. Rename and edit the four files under `workstreams/`.
+1. `config/projects.json` contains the real AON and Arrusted repositories and their repository coordinator AF names.
+2. Edit the four files under `workstreams/`; two are connected to `aonb` and `adc`, and two remain reserved pilot slots.
 3. Keep each summary to two or three lines: intended outcome, current position, and next action or blocker.
 4. Keep each checklist item commit-sized or independently verifiable. Group related chunks into a review-worthy PR rather than defaulting to micro-PRs.
 5. Add associated PR numbers to `prs`, for example:

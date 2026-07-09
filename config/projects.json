@@ -1,18 +1,18 @@
 {
   "projects": [
     {
-      "id": "project-one",
-      "label": "Project One",
-      "repoPath": "/absolute/path/to/project-one",
-      "githubRepo": "owner/project-one",
-      "coordinator": "project-one/coord"
+      "id": "aon",
+      "label": "AON",
+      "repoPath": "/Users/graphy/aon",
+      "githubRepo": "abstractops/aon",
+      "coordinator": "refrev"
     },
     {
-      "id": "project-two",
-      "label": "Project Two",
-      "repoPath": "/absolute/path/to/project-two",
-      "githubRepo": "owner/project-two",
-      "coordinator": "project-two/coord"
+      "id": "arrusted",
+      "label": "Arrusted",
+      "repoPath": "/Users/graphy/repos/arrusted-development",
+      "githubRepo": "withAutograph/arrusted-development",
+      "coordinator": "adb"
     }
   ]
 }

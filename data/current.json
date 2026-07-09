@@ -1,47 +1,43 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-09T23:12:37.279Z",
+  "generatedAt": "2026-07-09T23:17:58.459Z",
   "projects": [
     {
-      "id": "project-one",
-      "label": "Project One",
-      "repoPath": "/absolute/path/to/project-one",
-      "githubRepo": "owner/project-one",
-      "coordinator": "project-one/coord"
+      "id": "aon",
+      "label": "AON",
+      "repoPath": "/Users/graphy/aon",
+      "githubRepo": "abstractops/aon",
+      "coordinator": "refrev"
     },
     {
-      "id": "project-two",
-      "label": "Project Two",
-      "repoPath": "/absolute/path/to/project-two",
-      "githubRepo": "owner/project-two",
-      "coordinator": "project-two/coord"
+      "id": "arrusted",
+      "label": "Arrusted",
+      "repoPath": "/Users/graphy/repos/arrusted-development",
+      "githubRepo": "withAutograph/arrusted-development",
+      "coordinator": "adb"
     }
   ],
   "workstreams": [
     {
-      "id": "project-one-stream-a",
-      "project": "project-one",
-      "title": "First workstream",
+      "id": "aon-current",
+      "project": "aon",
+      "title": "AON current workstream",
       "status": "active",
-      "fableAgent": "project-one/stream-a",
-      "codexExecutor": "project-one-stream-a",
-      "summary": "Replace this with two or three lines describing the intended outcome, where the stream is now, and what must happen next. This narrative is the primary re-entry point after time away.",
+      "fableAgent": "aonb",
+      "reviewerAgent": "reforch",
+      "codexExecutor": null,
+      "summary": "The AON workstream agent is connected, but its concrete arc has not yet been recorded. Add the intended outcome, current position, and next decision before using this card as the pilot source of truth.",
       "updatedAt": "2026-07-09T12:00:00-04:00",
       "updatedBy": "setup",
       "chunks": [
         {
-          "id": "boundary",
-          "title": "Establish the implementation boundary",
-          "status": "complete"
-        },
-        {
-          "id": "core",
-          "title": "Implement and verify the core change",
+          "id": "arc",
+          "title": "Record the current workstream arc and exit criteria",
           "status": "active"
         },
         {
-          "id": "integration",
-          "title": "Integrate the change into its consuming surface",
+          "id": "delivery",
+          "title": "Replace with the next coherent implementation chunk",
           "status": "planned"
         }
       ],
@@ -50,24 +46,20 @@
       "afIssues": []
     },
     {
-      "id": "project-one-stream-b",
-      "project": "project-one",
-      "title": "Second workstream",
+      "id": "aon-pilot-slot-2",
+      "project": "aon",
+      "title": "AON pilot slot 2",
       "status": "planned",
-      "fableAgent": "project-one/stream-b",
-      "codexExecutor": "project-one-stream-b",
-      "summary": "Replace this with a concise account of the workstream arc. Keep the checklist below at commit-sized or independently verifiable chunks, and group related chunks into review-worthy PRs.",
+      "fableAgent": null,
+      "reviewerAgent": "reforch",
+      "codexExecutor": null,
+      "summary": "Reserved for a second AON workstream during the pilot. Assign the Fable and Codex sessions when the stream is selected, then replace this text with its two or three line arc.",
       "updatedAt": "2026-07-09T12:00:00-04:00",
       "updatedBy": "setup",
       "chunks": [
         {
-          "id": "design",
-          "title": "Settle the behavioral contract",
-          "status": "planned"
-        },
-        {
-          "id": "implementation",
-          "title": "Implement the coherent feature slice",
+          "id": "select",
+          "title": "Select and describe the second AON pilot stream",
           "status": "planned"
         }
       ],
@@ -76,63 +68,48 @@
       "afIssues": []
     },
     {
-      "id": "project-two-stream-a",
-      "project": "project-two",
-      "title": "Third workstream",
-      "status": "blocked",
-      "fableAgent": "project-two/stream-a",
-      "codexExecutor": "project-two-stream-a",
-      "summary": "This example is blocked to demonstrate the attention view. The next action should name the decision or external condition needed to let the executor resume without rereading its transcript.",
+      "id": "arrusted-current",
+      "project": "arrusted",
+      "title": "Arrusted current workstream",
+      "status": "active",
+      "fableAgent": "adc",
+      "reviewerAgent": null,
+      "codexExecutor": null,
+      "summary": "The Arrusted workstream agent is connected, but its concrete arc has not yet been recorded. Add the intended outcome, current position, and next decision before using this card as the pilot source of truth.",
       "updatedAt": "2026-07-09T12:00:00-04:00",
       "updatedBy": "setup",
       "chunks": [
         {
-          "id": "investigation",
-          "title": "Characterize the existing behavior",
-          "status": "complete"
-        },
-        {
-          "id": "decision",
-          "title": "Resolve the product boundary",
-          "status": "blocked"
+          "id": "arc",
+          "title": "Record the current workstream arc and exit criteria",
+          "status": "active"
         },
         {
           "id": "delivery",
-          "title": "Deliver the selected implementation",
+          "title": "Replace with the next coherent implementation chunk",
           "status": "planned"
         }
       ],
-      "questions": [
-        {
-          "id": "Q1",
-          "text": "Replace this example with the decision currently blocking progress.",
-          "status": "open",
-          "askedAt": "2026-07-09T12:00:00-04:00"
-        }
-      ],
+      "questions": [],
       "prs": [],
       "afIssues": []
     },
     {
-      "id": "project-two-stream-b",
-      "project": "project-two",
-      "title": "Fourth workstream",
-      "status": "complete",
-      "fableAgent": "project-two/stream-b",
-      "codexExecutor": "project-two-stream-b",
-      "summary": "This example shows a completed stream. Its summary should preserve the delivered outcome and any important follow-up, not merely say that the implementation is done.",
+      "id": "arrusted-pilot-slot-2",
+      "project": "arrusted",
+      "title": "Arrusted pilot slot 2",
+      "status": "planned",
+      "fableAgent": null,
+      "reviewerAgent": null,
+      "codexExecutor": null,
+      "summary": "Reserved for a second Arrusted workstream during the pilot. Assign the Fable and Codex sessions when the stream is selected, then replace this text with its two or three line arc.",
       "updatedAt": "2026-07-09T12:00:00-04:00",
       "updatedBy": "setup",
       "chunks": [
         {
-          "id": "implementation",
-          "title": "Implement the complete feature boundary",
-          "status": "complete"
-        },
-        {
-          "id": "verification",
-          "title": "Verify integration and regression behavior",
-          "status": "complete"
+          "id": "select",
+          "title": "Select and describe the second Arrusted pilot stream",
+          "status": "planned"
         }
       ],
       "questions": [],
@@ -142,10 +119,10 @@
   ],
   "health": {
     "afIssues": "ok",
-    "afInbox": "project-one/coord: Error: unknown key (or deleted): project-one/coord; project-two/coord: Error: unknown key (or deleted): project-two/coord; project-one/stream-a: Error: unknown key (or deleted): project-one/stream-a; project-one/stream-b: Error: unknown key (or deleted): project-one/stream-b; project-two/stream-a: Error: unknown key (or deleted): project-two/stream-a; project-two/stream-b: Error: unknown key (or deleted): project-two/stream-b",
+    "afInbox": "ok",
     "github": {
-      "project-one": "ok",
-      "project-two": "ok"
+      "aon": "ok",
+      "arrusted": "ok"
     }
   }
 }
