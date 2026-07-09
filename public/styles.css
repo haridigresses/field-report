@@ -1,0 +1,70 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f5f3ed;
+  --surface: #fffdf8;
+  --ink: #1f2725;
+  --muted: #66716d;
+  --line: #d8d7cf;
+  --accent: #126f62;
+  --accent-soft: #dcebe6;
+  --warn: #a43e24;
+  --warn-soft: #f4ddd5;
+  --active: #225aa5;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151918; --surface: #1d2321; --ink: #edf1ee; --muted: #a5afaa; --line: #3a4440; --accent: #67c7b5; --accent-soft: #243f39; --warn: #ff9477; --warn-soft: #492b25; --active: #8cb9ff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 40px 0 64px; }
+h1, h2, h3, p { margin-top: 0; }
+h1 { margin-bottom: 6px; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: -0.045em; }
+h2 { margin-bottom: 0; font-size: 1.15rem; }
+h3 { font-size: 1.12rem; margin-bottom: 8px; }
+.eyebrow { margin-bottom: 8px; color: var(--accent); font-size: .76rem; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; }
+.muted, .meta { color: var(--muted); }
+.topbar, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.topbar { margin-bottom: 38px; }
+button { border: 0; border-radius: 999px; padding: 11px 18px; background: var(--ink); color: var(--bg); font: inherit; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: .55; cursor: wait; }
+section { margin-top: 30px; }
+.section-heading { padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.legend { display: flex; gap: 13px; flex-wrap: wrap; color: var(--muted); font-size: .8rem; }
+.count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.attention-list:empty::after { content: "No open questions or blocked workstreams."; display: block; padding: 16px 0; color: var(--muted); }
+.attention-item { display: grid; grid-template-columns: minmax(170px, .55fr) 1.45fr; gap: 20px; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.attention-item strong { color: var(--warn); }
+.streams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.stream { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+.stream-head { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.project { color: var(--muted); font-size: .76rem; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 5px; }
+.status { border: 1px solid var(--line); border-radius: 999px; padding: 4px 9px; font-size: .72rem; white-space: nowrap; text-transform: capitalize; }
+.status.active { color: var(--active); }
+.status.blocked { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.status.complete { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.summary { line-height: 1.52; margin: 12px 0 16px; }
+.chunks { list-style: none; padding: 0; margin: 0; }
+.chunks li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); }
+.mark { font-weight: 800; color: var(--muted); }
+.complete .mark { color: var(--accent); }
+.active .mark { color: var(--active); }
+.blocked .mark { color: var(--warn); }
+.stream-foot { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: .78rem; }
+.agents { display: flex; flex-direction: column; gap: 3px; }
+.prs { text-align: right; }
+.prs a { color: var(--accent); }
+.stale { color: var(--warn); font-weight: 700; }
+.health { margin-top: 30px; color: var(--muted); }
+.health pre { white-space: pre-wrap; font-size: .75rem; }
+@media (max-width: 760px) {
+  main { width: min(100% - 22px, 680px); padding-top: 24px; }
+  .topbar { align-items: flex-start; }
+  .streams { grid-template-columns: 1fr; }
+  .attention-item { grid-template-columns: 1fr; gap: 5px; }
+}
+@media (max-width: 480px) {
+  .topbar { flex-direction: column; }
+  .section-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .stream-foot { align-items: flex-start; flex-direction: column; }
+  .prs { text-align: left; }
+}

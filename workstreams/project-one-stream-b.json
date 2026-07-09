@@ -1,0 +1,17 @@
+{
+  "id": "project-one-stream-b",
+  "project": "project-one",
+  "title": "Second workstream",
+  "status": "planned",
+  "fableAgent": "project-one/stream-b",
+  "codexExecutor": "project-one-stream-b",
+  "summary": "Replace this with a concise account of the workstream arc. Keep the checklist below at commit-sized or independently verifiable chunks, and group related chunks into review-worthy PRs.",
+  "updatedAt": "2026-07-09T12:00:00-04:00",
+  "updatedBy": "setup",
+  "chunks": [
+    { "id": "design", "title": "Settle the behavioral contract", "status": "planned" },
+    { "id": "implementation", "title": "Implement the coherent feature slice", "status": "planned" }
+  ],
+  "questions": [],
+  "prs": []
+}

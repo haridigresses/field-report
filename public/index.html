@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workstream Control</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Cross-repo control plane</p>
+        <h1>Workstream Control</h1>
+        <p id="freshness" class="muted">Loading current state…</p>
+      </div>
+      <button id="refresh" type="button">Refresh sources</button>
+    </header>
+
+    <section id="attention" aria-labelledby="attention-heading">
+      <div class="section-heading">
+        <h2 id="attention-heading">Needs attention</h2>
+        <span id="attention-count" class="count"></span>
+      </div>
+      <div id="attention-list" class="attention-list"></div>
+    </section>
+
+    <section aria-labelledby="streams-heading">
+      <div class="section-heading">
+        <h2 id="streams-heading">Workstream arcs</h2>
+        <div class="legend" aria-label="Checklist legend">
+          <span>✓ complete</span><span>● active</span><span>□ planned</span><span>! blocked</span>
+        </div>
+      </div>
+      <div id="streams" class="streams"></div>
+    </section>
+
+    <details class="health">
+      <summary>Source health</summary>
+      <pre id="health"></pre>
+    </details>
+  </main>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "id": "project-two-stream-a",
+  "project": "project-two",
+  "title": "Third workstream",
+  "status": "blocked",
+  "fableAgent": "project-two/stream-a",
+  "codexExecutor": "project-two-stream-a",
+  "summary": "This example is blocked to demonstrate the attention view. The next action should name the decision or external condition needed to let the executor resume without rereading its transcript.",
+  "updatedAt": "2026-07-09T12:00:00-04:00",
+  "updatedBy": "setup",
+  "chunks": [
+    { "id": "investigation", "title": "Characterize the existing behavior", "status": "complete" },
+    { "id": "decision", "title": "Resolve the product boundary", "status": "blocked" },
+    { "id": "delivery", "title": "Deliver the selected implementation", "status": "planned" }
+  ],
+  "questions": [
+    {
+      "id": "Q1",
+      "text": "Replace this example with the decision currently blocking progress.",
+      "status": "open",
+      "askedAt": "2026-07-09T12:00:00-04:00"
+    }
+  ],
+  "prs": []
+}

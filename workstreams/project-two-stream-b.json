@@ -1,0 +1,17 @@
+{
+  "id": "project-two-stream-b",
+  "project": "project-two",
+  "title": "Fourth workstream",
+  "status": "complete",
+  "fableAgent": "project-two/stream-b",
+  "codexExecutor": "project-two-stream-b",
+  "summary": "This example shows a completed stream. Its summary should preserve the delivered outcome and any important follow-up, not merely say that the implementation is done.",
+  "updatedAt": "2026-07-09T12:00:00-04:00",
+  "updatedBy": "setup",
+  "chunks": [
+    { "id": "implementation", "title": "Implement the complete feature boundary", "status": "complete" },
+    { "id": "verification", "title": "Verify integration and regression behavior", "status": "complete" }
+  ],
+  "questions": [],
+  "prs": []
+}

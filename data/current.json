@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-09T23:11:21.913Z",
+  "projects": [
+    {
+      "id": "project-one",
+      "label": "Project One",
+      "repoPath": "/absolute/path/to/project-one",
+      "githubRepo": "owner/project-one",
+      "coordinator": "project-one/coord"
+    },
+    {
+      "id": "project-two",
+      "label": "Project Two",
+      "repoPath": "/absolute/path/to/project-two",
+      "githubRepo": "owner/project-two",
+      "coordinator": "project-two/coord"
+    }
+  ],
+  "workstreams": [
+    {
+      "id": "project-one-stream-a",
+      "project": "project-one",
+      "title": "First workstream",
+      "status": "active",
+      "fableAgent": "project-one/stream-a",
+      "codexExecutor": "project-one-stream-a",
+      "summary": "Replace this with two or three lines describing the intended outcome, where the stream is now, and what must happen next. This narrative is the primary re-entry point after time away.",
+      "updatedAt": "2026-07-09T12:00:00-04:00",
+      "updatedBy": "setup",
+      "chunks": [
+        {
+          "id": "boundary",
+          "title": "Establish the implementation boundary",
+          "status": "complete"
+        },
+        {
+          "id": "core",
+          "title": "Implement and verify the core change",
+          "status": "active"
+        },
+        {
+          "id": "integration",
+          "title": "Integrate the change into its consuming surface",
+          "status": "planned"
+        }
+      ],
+      "questions": [],
+      "prs": [],
+      "afIssues": []
+    },
+    {
+      "id": "project-one-stream-b",
+      "project": "project-one",
+      "title": "Second workstream",
+      "status": "planned",
+      "fableAgent": "project-one/stream-b",
+      "codexExecutor": "project-one-stream-b",
+      "summary": "Replace this with a concise account of the workstream arc. Keep the checklist below at commit-sized or independently verifiable chunks, and group related chunks into review-worthy PRs.",
+      "updatedAt": "2026-07-09T12:00:00-04:00",
+      "updatedBy": "setup",
+      "chunks": [
+        {
+          "id": "design",
+          "title": "Settle the behavioral contract",
+          "status": "planned"
+        },
+        {
+          "id": "implementation",
+          "title": "Implement the coherent feature slice",
+          "status": "planned"
+        }
+      ],
+      "questions": [],
+      "prs": [],
+      "afIssues": []
+    },
+    {
+      "id": "project-two-stream-a",
+      "project": "project-two",
+      "title": "Third workstream",
+      "status": "blocked",
+      "fableAgent": "project-two/stream-a",
+      "codexExecutor": "project-two-stream-a",
+      "summary": "This example is blocked to demonstrate the attention view. The next action should name the decision or external condition needed to let the executor resume without rereading its transcript.",
+      "updatedAt": "2026-07-09T12:00:00-04:00",
+      "updatedBy": "setup",
+      "chunks": [
+        {
+          "id": "investigation",
+          "title": "Characterize the existing behavior",
+          "status": "complete"
+        },
+        {
+          "id": "decision",
+          "title": "Resolve the product boundary",
+          "status": "blocked"
+        },
+        {
+          "id": "delivery",
+          "title": "Deliver the selected implementation",
+          "status": "planned"
+        }
+      ],
+      "questions": [
+        {
+          "id": "Q1",
+          "text": "Replace this example with the decision currently blocking progress.",
+          "status": "open",
+          "askedAt": "2026-07-09T12:00:00-04:00"
+        }
+      ],
+      "prs": [],
+      "afIssues": []
+    },
+    {
+      "id": "project-two-stream-b",
+      "project": "project-two",
+      "title": "Fourth workstream",
+      "status": "complete",
+      "fableAgent": "project-two/stream-b",
+      "codexExecutor": "project-two-stream-b",
+      "summary": "This example shows a completed stream. Its summary should preserve the delivered outcome and any important follow-up, not merely say that the implementation is done.",
+      "updatedAt": "2026-07-09T12:00:00-04:00",
+      "updatedBy": "setup",
+      "chunks": [
+        {
+          "id": "implementation",
+          "title": "Implement the complete feature boundary",
+          "status": "complete"
+        },
+        {
+          "id": "verification",
+          "title": "Verify integration and regression behavior",
+          "status": "complete"
+        }
+      ],
+      "questions": [],
+      "prs": [],
+      "afIssues": []
+    }
+  ],
+  "health": {
+    "afIssues": "ok",
+    "afInbox": "project-one/coord: Error: unknown key (or deleted): project-one/coord; project-two/coord: Error: unknown key (or deleted): project-two/coord; project-one/stream-a: Error: unknown key (or deleted): project-one/stream-a; project-one/stream-b: Error: unknown key (or deleted): project-one/stream-b; project-two/stream-a: Error: unknown key (or deleted): project-two/stream-a; project-two/stream-b: Error: unknown key (or deleted): project-two/stream-b",
+    "github": {
+      "project-one": "ok",
+      "project-two": "ok"
+    }
+  }
+}

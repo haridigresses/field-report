@@ -1,0 +1,14 @@
+{
+  "name": "workstream-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.mjs",
+    "refresh": "node src/collect.mjs",
+    "check": "node --check src/server.mjs && node --check src/collect.mjs && node --check public/app.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

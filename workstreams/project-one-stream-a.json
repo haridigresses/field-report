@@ -1,0 +1,18 @@
+{
+  "id": "project-one-stream-a",
+  "project": "project-one",
+  "title": "First workstream",
+  "status": "active",
+  "fableAgent": "project-one/stream-a",
+  "codexExecutor": "project-one-stream-a",
+  "summary": "Replace this with two or three lines describing the intended outcome, where the stream is now, and what must happen next. This narrative is the primary re-entry point after time away.",
+  "updatedAt": "2026-07-09T12:00:00-04:00",
+  "updatedBy": "setup",
+  "chunks": [
+    { "id": "boundary", "title": "Establish the implementation boundary", "status": "complete" },
+    { "id": "core", "title": "Implement and verify the core change", "status": "active" },
+    { "id": "integration", "title": "Integrate the change into its consuming surface", "status": "planned" }
+  ],
+  "questions": [],
+  "prs": []
+}

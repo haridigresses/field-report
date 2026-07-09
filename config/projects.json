@@ -1,0 +1,18 @@
+{
+  "projects": [
+    {
+      "id": "project-one",
+      "label": "Project One",
+      "repoPath": "/absolute/path/to/project-one",
+      "githubRepo": "owner/project-one",
+      "coordinator": "project-one/coord"
+    },
+    {
+      "id": "project-two",
+      "label": "Project Two",
+      "repoPath": "/absolute/path/to/project-two",
+      "githubRepo": "owner/project-two",
+      "coordinator": "project-two/coord"
+    }
+  ]
+}
