@@ -98,11 +98,15 @@ function assessmentPrompt(stream, returnTarget, currentHead) {
   const prs = (stream.prs || []).map((pr) => `#${pr.number} (${pr.state || "unknown"}; head ${pr.headRefOid || "unknown"})`).join(", ") || "none yet";
   return `You are the authoritative orchestrator/reviewer for workstream ${stream.id}. Give an honest, evidence-backed assessment using what you have observed in this workstream, the repository's merge-ready-review rules, the current branch, and linked AF issues. Inspect current evidence if needed; do not merely repeat the dashboard summary.
 
+This request authorizes a read-only review and publication of the assessment. Do not wait for separate user confirmation unless completing the review would require a state-changing action outside that scope.
+
 Outcome: ${stream.title}
-Current situation: ${stream.liveStatus?.text || stream.summary}
+Dashboard orientation (may be stale): ${stream.liveStatus?.text || stream.summary}
 Branch: ${stream.branch || "none"}
 Current head: ${currentHead}
 Linked PRs: ${prs}
+
+First reconcile the dashboard orientation against the current branch head, PR state, AF issue history, prior plan, and prior reviewer decisions. When they disagree, use the current evidence and call out the drift explicitly.
 
 Explicitly test:
 - Is each material mechanism necessary for the stated outcome?
@@ -113,7 +117,9 @@ Explicitly test:
 - Is there any structural rot where a bounded rebuild would be safer or cheaper than continued patching?
 - Is execution contradicting an earlier plan, decision, or constraint?
 
-Send the assessment through AF to ${returnTarget} with this exact subject:
+Publication lane: send the assessment through AF to ${returnTarget}. That inbox is deliberately monitored by the dashboard. If ${returnTarget} is your own AF identity, self-addressing is intentional; publish it there without asking for routing confirmation. Do not reroute it to the executor or workstream agent unless that agent is explicitly named as this publication lane. The structured ASSESSMENT below supersedes a separate compact RATING message.
+
+Use this exact subject:
 [ASSESSMENT ${stream.id}] head=${currentHead} outcome_confidence=<0-100> merge_readiness=<0-100> structural_rebuild_risk=<0-100> necessity=<clear|challenged|unjustified> simpler_path=<none_found|candidate|recommended> scope_drift=<none|low|material> contract_integrity=<sound|at_risk|broken> evidence_quality=<strong|partial|weak> verdict=<GO|CONDITIONAL_GO|NO_GO>
 
 Use this exact body shape, keeping each value to one concise line:

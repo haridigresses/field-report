@@ -39,6 +39,8 @@ Reviewers publish ratings through AF inbox using a leading subject such as `[RAT
 
 For a fuller judgment, select one or more outcomes and use **Request assessment**. The server sends the configured reviewer an evidence-backed rubric covering outcome confidence, merge readiness, structural rebuild risk, necessity, simpler paths, scope drift, contract integrity, evidence quality, plan contradictions, primary risk, and next gate. The request is recorded through AF and appears as pending until a newer assessment arrives.
 
+The request names a separate **publication lane**: the repository coordinator's AF inbox, which the collector monitors. When the reviewer is also the coordinator, sending the response to their own AF name is intentional. Reviewers should not reroute responses to executors merely because those executors own the branch. Dashboard context is explicitly labeled as potentially stale and must be reconciled against current evidence before judgment.
+
 The structured response subject is:
 
 ```text
