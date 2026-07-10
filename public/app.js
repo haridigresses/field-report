@@ -1,11 +1,16 @@
-const streamsRoot = document.querySelector("#streams");
-const attentionRoot = document.querySelector("#attention-list");
-const attentionCount = document.querySelector("#attention-count");
+const portfolioRoot = document.querySelector("#portfolio");
+const briefRoot = document.querySelector("#workstream-brief");
+const repoNav = document.querySelector("#repo-nav");
 const freshness = document.querySelector("#freshness");
 const health = document.querySelector("#health");
 const refreshButton = document.querySelector("#refresh");
+const totalStreams = document.querySelector("#total-streams");
+const portfolioSignal = document.querySelector("#portfolio-signal");
 
-const marks = { complete: "✓", active: "●", planned: "□", blocked: "!" };
+let dashboard = null;
+let activeRepo = "all";
+let activeStream = null;
+
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
 function relativeTime(value) {
@@ -21,116 +26,184 @@ function prHealth(pr) {
   const checks = pr.statusCheckRollup || [];
   const failed = checks.filter((check) => check.conclusion === "FAILURE" || check.state === "FAILURE").length;
   const pending = checks.filter((check) => ["IN_PROGRESS", "QUEUED", "PENDING"].includes(check.status || check.state)).length;
-  if (failed) return { state: "failing", label: `${failed} failing` };
-  if (pending) return { state: "pending", label: `${pending} pending` };
-  if (pr.mergeStateStatus === "CLEAN") return { state: "green", label: "checks green" };
-  if (pr.mergeStateStatus === "BLOCKED") return { state: "blocked", label: "merge blocked" };
-  return { state: "neutral", label: String(pr.mergeStateStatus || pr.state || "unknown").toLowerCase() };
+  if (failed) return { level: "critical", label: `${failed} checks failing` };
+  if (pending) return { level: "watch", label: `${pending} checks pending` };
+  if (pr.mergeStateStatus === "CLEAN") return { level: "steady", label: "green" };
+  if (pr.mergeStateStatus === "BLOCKED") return { level: "critical", label: "merge blocked" };
+  return { level: "neutral", label: String(pr.mergeStateStatus || pr.state || "unknown").toLowerCase() };
 }
 
-function renderPullRequests(prs) {
-  if (!prs.length) return `<p class="empty-line">No associated PR yet</p>`;
-  return `<ul class="pr-list">${prs.map((pr) => {
+function openQuestions(stream) {
+  return (stream.questions || []).filter((question) => question.status === "open");
+}
+
+function phase(stream) {
+  if (stream.status === "complete") return "Complete";
+  if (stream.status === "blocked") return "Recovery";
+  if ((stream.prs || []).some((pr) => pr.state === "OPEN")) return "Review";
+  const active = (stream.chunks || []).find((chunk) => chunk.status === "active");
+  if (active?.id === "publish") return "Publication";
+  return "Build";
+}
+
+function confidence(stream) {
+  const rating = stream.assessment?.mergeReadiness;
+  return rating == null ? { value: "Pending", level: "neutral" } : { value: `${rating}%`, level: rating < 60 ? "critical" : rating < 80 ? "watch" : "steady" };
+}
+
+function risk(stream) {
+  if (stream.assessment?.stale) return { label: "Assessment stale", level: "critical" };
+  if (stream.status === "blocked") return { label: "Delivery blocked", level: "critical" };
+  const structural = stream.assessment?.structuralRisk;
+  if (structural != null && structural >= 30) return { label: "Structural", level: "critical" };
+  if (openQuestions(stream).length) return { label: "Decision", level: "watch" };
+  if (!(stream.prs || []).length) return { label: "Pre-publication", level: "watch" };
+  return { label: "Low", level: "steady" };
+}
+
+function delivery(stream) {
+  const prs = stream.prs || [];
+  if (!prs.length) {
+    const completed = (stream.chunks || []).filter((chunk) => chunk.status === "complete").length;
+    return `<span class="delivery-main">Pre-PR</span><span class="delivery-sub">${completed}/${(stream.chunks || []).length} milestones complete</span>`;
+  }
+  return prs.map((pr) => {
     const health = prHealth(pr);
-    const chunks = (pr.chunks || []).length ? ` · ${(pr.chunks || []).length} chunks` : "";
-    return `<li><a href="${escapeHtml(pr.url || "#")}">#${pr.number} ${escapeHtml(pr.title || "")}</a><span class="pr-health ${health.state}">${health.label}${chunks}</span></li>`;
-  }).join("")}</ul>`;
+    return `<span class="delivery-main">PR ${pr.number}</span><span class="delivery-sub signal-${health.level}">${escapeHtml(health.label)}</span>`;
+  }).join("");
+}
+
+function nextMilestone(stream) {
+  return (stream.chunks || []).find((chunk) => ["blocked", "active", "planned"].includes(chunk.status))?.title || "Outcome delivered";
+}
+
+function projectFor(stream) {
+  return dashboard.projects.find((project) => project.id === stream.project);
+}
+
+function renderRepoNav() {
+  const buttons = [{ id: "all", label: "All workstreams" }, ...dashboard.projects.map((project) => ({ id: project.id, label: project.label }))];
+  repoNav.innerHTML = buttons.map((item) => `<button class="repo-filter ${activeRepo === item.id ? "selected" : ""}" data-repo="${escapeHtml(item.id)}" type="button">${escapeHtml(item.label)}</button>`).join("");
+  repoNav.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
+    activeRepo = button.dataset.repo;
+    activeStream = null;
+    renderDashboard();
+  }));
+}
+
+function renderPortfolio() {
+  const streams = dashboard.workstreams.filter((stream) => activeRepo === "all" || stream.project === activeRepo);
+  const sorted = [...streams].sort((a, b) => {
+    const weight = (stream) => stream.status === "blocked" ? 0 : openQuestions(stream).length ? 1 : stream.assessment?.stale ? 2 : 3;
+    return weight(a) - weight(b);
+  });
+  totalStreams.textContent = `${streams.length} outcomes`;
+  const blocked = streams.filter((stream) => stream.status === "blocked").length;
+  const uncertain = streams.filter((stream) => openQuestions(stream).length).length;
+  const pending = streams.filter((stream) => stream.assessment?.mergeReadiness == null).length;
+  portfolioSignal.textContent = `${blocked} blocked · ${uncertain} uncertain · ${pending} awaiting confidence`;
+
+  portfolioRoot.innerHTML = `<div class="portfolio-header" aria-hidden="true">
+    <span>Outcome</span><span>Phase</span><span>Blocked</span><span>Uncertain</span><span>Delivery</span><span>Confidence</span><span>Risk</span>
+  </div>${sorted.map((stream) => {
+    const blocked = stream.status === "blocked";
+    const uncertainty = openQuestions(stream).length;
+    const confidenceState = confidence(stream);
+    const riskState = risk(stream);
+    const selected = activeStream === stream.id;
+    return `<button class="portfolio-row ${selected ? "selected" : ""}" type="button" data-stream="${escapeHtml(stream.id)}" aria-pressed="${selected}">
+      <span class="outcome"><b>${escapeHtml(stream.title)}</b><small>${escapeHtml(nextMilestone(stream))}</small></span>
+      <span data-label="Phase">${phase(stream)}</span>
+      <span data-label="Blocked" class="${blocked ? "signal-critical" : "signal-steady"}">${blocked ? "Yes" : "No"}</span>
+      <span data-label="Uncertain" class="${uncertainty ? "signal-watch" : "signal-steady"}">${uncertainty ? `Yes · ${uncertainty}` : "No"}</span>
+      <span data-label="Delivery" class="delivery">${delivery(stream)}</span>
+      <span data-label="Confidence" class="signal-${confidenceState.level}">${confidenceState.value}</span>
+      <span data-label="Risk" class="signal-${riskState.level}">${escapeHtml(riskState.label)}</span>
+    </button>`;
+  }).join("")}`;
+  portfolioRoot.querySelectorAll(".portfolio-row").forEach((row) => row.addEventListener("click", (event) => {
+    activeStream = activeStream === row.dataset.stream ? null : row.dataset.stream;
+    renderPortfolio();
+    renderBrief();
+    if (activeStream) briefRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+}
+
+function renderDeliveryChain(stream) {
+  const prs = stream.prs || [];
+  return `<ol class="milestone-list">${(stream.chunks || []).map((chunk) => {
+    const linked = prs.filter((pr) => (pr.chunks || []).includes(chunk.id));
+    const artifacts = linked.length ? linked.map((pr) => `<a href="${escapeHtml(pr.url || "#")}" target="_blank" rel="noreferrer">PR ${pr.number}</a>`).join(", ") : "No PR yet";
+    return `<li class="milestone milestone-${escapeHtml(chunk.status)}"><span class="milestone-mark" aria-hidden="true"></span><div><b>${escapeHtml(chunk.title)}</b><span>${escapeHtml(chunk.status)} · ${artifacts}</span></div></li>`;
+  }).join("")}</ol>`;
 }
 
 function renderAgents(stream) {
   const status = new Map((stream.agents || []).map((agent) => [agent.name, agent]));
-  const item = (label, name) => {
+  return [["Fable", stream.fableAgent], ["Reviewer", stream.reviewerAgent], ["Codex", stream.codexExecutor]].map(([label, name]) => {
     const agent = status.get(name);
-    return `<span><i class="agent-dot ${agent?.running ? "live" : "idle"}" aria-hidden="true"></i>${label}: ${escapeHtml(name || "unassigned")}${agent?.running ? ` · ${escapeHtml(agent.idleFor)} idle` : ""}</span>`;
-  };
-  return [item("Fable", stream.fableAgent), item("Reviewer", stream.reviewerAgent), item("Codex", stream.codexExecutor)].join("");
+    return `<span><i class="agent-dot ${agent?.running ? "live" : ""}"></i>${label}: ${escapeHtml(name || "unassigned")}</span>`;
+  }).join("");
 }
 
-function renderStream(stream) {
-  const ageHours = stream.updatedAt ? (Date.now() - new Date(stream.updatedAt).getTime()) / 36e5 : Infinity;
-  const staleNarrative = ["active", "blocked"].includes(stream.status) && ageHours > 12;
+function renderBrief() {
+  const stream = dashboard.workstreams.find((candidate) => candidate.id === activeStream);
+  if (!stream) {
+    briefRoot.innerHTML = `<p class="brief-placeholder">Select an outcome to inspect its situation, delivery chain, and supporting evidence.</p>`;
+    return;
+  }
+  const project = projectFor(stream);
+  const questions = openQuestions(stream);
   const assessment = stream.assessment || {};
-  const readiness = assessment.mergeReadiness == null ? "—" : `${assessment.mergeReadiness}%`;
-  const structuralRisk = assessment.structuralRisk == null ? "—" : `${assessment.structuralRisk}%`;
-  const assessmentAge = assessment.assessedAt ? `reviewed ${relativeTime(assessment.assessedAt)} by ${assessment.assessedBy || "reviewer"}` : "reviewer rating pending";
-  const chunks = (stream.chunks || []).map((chunk) => `<li class="${escapeHtml(chunk.status)}"><span class="mark" aria-hidden="true">${marks[chunk.status] || "□"}</span><span>${escapeHtml(chunk.title)}</span></li>`).join("");
-  const openQuestions = (stream.questions || []).filter((question) => question.status === "open");
-  const openIssues = (stream.afIssues || []).filter((issue) => issue.status !== "closed");
-
-  return `<article class="stream">
-    <div class="stream-head">
-      <div><p class="branch-name">${escapeHtml(stream.branch || "No branch")}</p><h3>${escapeHtml(stream.title)}</h3></div>
-      <span class="status ${escapeHtml(stream.status)}">${escapeHtml(stream.status)}</span>
-    </div>
-    <p class="summary">${escapeHtml(stream.liveStatus?.text || stream.summary)}</p>
-    <p class="review-state">${escapeHtml(stream.reviewState || "No explicit review gate recorded")}</p>
-    <div class="branch-rating" aria-label="Reviewer-owned branch assessment">
-      <div><span>Merge readiness</span><strong>${readiness}</strong></div>
-      <div><span>Structural rebuild risk</span><strong>${structuralRisk}</strong></div>
-      <p><span>${escapeHtml(assessmentAge)}</span>${assessment.stale ? `<b>Stale: branch head changed</b>` : ""}</p>
-      ${assessment.rationale ? `<p class="rating-rationale">${escapeHtml(assessment.rationale)}</p>` : ""}
-    </div>
-    <ul class="chunks" aria-label="Work chunks">${chunks}</ul>
-    ${openQuestions.length ? `<div class="question-block"><strong>Open decision</strong>${openQuestions.map((question) => `<p>${escapeHtml(question.text)}</p>`).join("")}</div>` : ""}
-    ${renderPullRequests(stream.prs || [])}
-    <div class="stream-foot">
-      <div class="agents">${renderAgents(stream)}</div>
-      <div class="stream-meta">
-        <span class="${staleNarrative ? "stale" : ""}">${staleNarrative ? "Stale narrative · " : ""}updated ${relativeTime(stream.updatedAt)}</span>
-        <span>${openIssues.length} open AF issue${openIssues.length === 1 ? "" : "s"}</span>
-      </div>
-    </div>
-    <details class="session-editor">
-      <summary>Edit agent sessions</summary>
-      <form data-workstream-id="${escapeHtml(stream.id)}">
-        <label>Fable workstream agent<input name="fableAgent" value="${escapeHtml(stream.fableAgent || "")}" placeholder="AF name or session ID"></label>
-        <label>Reviewer<input name="reviewerAgent" value="${escapeHtml(stream.reviewerAgent || "")}" placeholder="AF name or session ID"></label>
-        <label>Codex executor<input name="codexExecutor" value="${escapeHtml(stream.codexExecutor || "")}" placeholder="AF name or session ID"></label>
-        <div class="session-actions"><button type="submit">Save sessions</button><span class="save-status" aria-live="polite"></span></div>
-      </form>
-    </details>
-  </article>`;
-}
-
-function renderProject(project, workstreams) {
-  const metrics = project.metrics || {};
-  const repo = project.repoState || {};
-  const order = { blocked: 0, active: 1, planned: 2, complete: 3 };
-  const sorted = [...workstreams].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
-  return `<section class="repo-track" aria-labelledby="track-${escapeHtml(project.id)}">
-    <header class="repo-head">
-      <div><p class="eyebrow">Repository track</p><h2 id="track-${escapeHtml(project.id)}">${escapeHtml(project.label)}</h2><p class="muted">Coordinator ${escapeHtml(project.coordinator || "unassigned")} · ${escapeHtml(repo.rootBranch || "repo state unavailable")}</p></div>
-      <div class="repo-metrics">
-        <span><b>${metrics.activeWorkstreams ?? 0}</b> active</span>
-        <span><b>${metrics.openPrs ?? 0}</b> PRs</span>
-        <span><b>${metrics.openQuestions ?? 0}</b> questions</span>
-        <span><b>${metrics.runningAgents ?? 0}</b> agents</span>
-      </div>
+  const confidenceState = confidence(stream);
+  const riskState = risk(stream);
+  const issues = (stream.afIssues || []).filter((issue) => issue.status !== "closed");
+  briefRoot.innerHTML = `<article class="brief">
+    <header class="brief-head">
+      <div><p class="kicker">${escapeHtml(project?.label || stream.project)} · ${phase(stream)}</p><h2>${escapeHtml(stream.title)}</h2></div>
+      <button class="close-brief" type="button" aria-label="Close workstream brief">Close</button>
     </header>
-    ${repo.prunableCount ? `<p class="repo-warning">${repo.prunableCount} prunable worktrees · ${repo.worktreeCount} total</p>` : `<p class="repo-context">${repo.worktreeCount ?? "—"} worktrees · ${repo.rootDirtyFiles ?? "—"} dirty files · ${metrics.openIssues ?? 0} open AF issues</p>`}
-    <div class="track-streams">${sorted.map(renderStream).join("")}</div>
-  </section>`;
+    <div class="situation">
+      <p>${escapeHtml(stream.liveStatus?.text || stream.summary)}</p>
+      <dl>
+        <div><dt>Current gate</dt><dd>${escapeHtml(stream.reviewState || "No gate recorded")}</dd></div>
+        <div><dt>Next milestone</dt><dd>${escapeHtml(nextMilestone(stream))}</dd></div>
+        <div><dt>Confidence</dt><dd class="signal-${confidenceState.level}">${confidenceState.value}</dd></div>
+        <div><dt>Material risk</dt><dd class="signal-${riskState.level}">${escapeHtml(riskState.label)}</dd></div>
+      </dl>
+    </div>
+    <div class="brief-grid">
+      <section><div class="subhead"><h3>Delivery chain</h3><span>${(stream.chunks || []).filter((chunk) => chunk.status === "complete").length}/${(stream.chunks || []).length} milestones</span></div>${renderDeliveryChain(stream)}</section>
+      <section><div class="subhead"><h3>Uncertainty & review</h3><span>${questions.length ? `${questions.length} open` : "No open questions"}</span></div>
+        ${questions.length ? `<ul class="question-list">${questions.map((question) => `<li>${escapeHtml(question.text)}</li>`).join("")}</ul>` : `<p class="quiet">No unresolved product or technical question is recorded.</p>`}
+        <div class="review-evidence">
+          <p><b>Structural rebuild risk</b><span>${assessment.structuralRisk == null ? "Pending" : `${assessment.structuralRisk}%`}</span></p>
+          ${assessment.rationale ? `<p class="rationale">${escapeHtml(assessment.rationale)}</p>` : `<p class="quiet">Reviewer assessment pending.</p>`}
+          ${assessment.stale ? `<p class="critical-note">Assessment is stale because the branch head changed.</p>` : ""}
+        </div>
+      </section>
+    </div>
+    <footer class="evidence">
+      <div><b>Evidence</b><span>${escapeHtml(stream.branch || "No branch")} · ${issues.length} open AF issue${issues.length === 1 ? "" : "s"} · updated ${relativeTime(stream.updatedAt)}</span></div>
+      <div class="agents">${renderAgents(stream)}</div>
+      <details class="session-editor"><summary>Agent sessions</summary><form data-workstream-id="${escapeHtml(stream.id)}">
+        <label>Fable<input name="fableAgent" value="${escapeHtml(stream.fableAgent || "")}"></label>
+        <label>Reviewer<input name="reviewerAgent" value="${escapeHtml(stream.reviewerAgent || "")}"></label>
+        <label>Codex<input name="codexExecutor" value="${escapeHtml(stream.codexExecutor || "")}"></label>
+        <button type="submit">Save</button><span class="save-status" aria-live="polite"></span>
+      </form></details>
+    </footer>
+  </article>`;
+  briefRoot.querySelector(".close-brief").addEventListener("click", () => { activeStream = null; renderPortfolio(); renderBrief(); });
+  briefRoot.querySelector("form").addEventListener("submit", saveSessions);
 }
 
-function render(data) {
-  streamsRoot.innerHTML = data.projects.map((project) => renderProject(project, data.workstreams.filter((stream) => stream.project === project.id))).join("");
-
-  const attention = data.workstreams.flatMap((stream) => {
-    const items = (stream.questions || []).filter((question) => question.status === "open").map((question) => ({ stream, label: `Open question ${question.id}`, text: question.text }));
-    if (stream.status === "blocked") items.push({ stream, label: "Blocked", text: stream.reviewState || "Workstream is blocked." });
-    if (stream.assessment?.stale) items.push({ stream, label: "Stale rating", text: "The branch head advanced after the reviewer assessment." });
-    for (const pr of stream.prs || []) {
-      const prState = prHealth(pr);
-      if (prState.state === "failing") items.push({ stream, label: `PR #${pr.number}`, text: prState.label });
-    }
-    return items;
-  });
-  attentionCount.textContent = `${attention.length}`;
-  attentionRoot.innerHTML = attention.map(({ stream, label, text }) => `<div class="attention-item"><strong>${escapeHtml(stream.title)} · ${escapeHtml(label)}</strong><span>${escapeHtml(text)}</span></div>`).join("");
-  freshness.textContent = `Sources refreshed ${relativeTime(data.generatedAt)} · ${new Date(data.generatedAt).toLocaleString()}`;
-  health.textContent = JSON.stringify(data.health, null, 2);
-
-  for (const form of streamsRoot.querySelectorAll(".session-editor form")) form.addEventListener("submit", saveSessions);
+function renderDashboard() {
+  renderRepoNav();
+  renderPortfolio();
+  renderBrief();
+  freshness.textContent = `Snapshot ${new Date(dashboard.generatedAt).toLocaleString()} · ${relativeTime(dashboard.generatedAt)}`;
+  health.textContent = JSON.stringify(dashboard.health, null, 2);
 }
 
 async function saveSessions(event) {
@@ -141,25 +214,18 @@ async function saveSessions(event) {
   button.disabled = true;
   status.textContent = "Saving…";
   try {
-    const response = await fetch(`/api/workstreams/${encodeURIComponent(form.dataset.workstreamId)}/sessions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(Object.fromEntries(new FormData(form)))
-    });
+    const response = await fetch(`/api/workstreams/${encodeURIComponent(form.dataset.workstreamId)}/sessions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(form))) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Save failed");
     await load();
-  } catch (error) {
-    status.textContent = error.message;
-  } finally {
-    button.disabled = false;
-  }
+  } catch (error) { status.textContent = error.message; } finally { button.disabled = false; }
 }
 
 async function load() {
   const response = await fetch(`/data/current.json?t=${Date.now()}`);
   if (!response.ok) throw new Error(`Could not load dashboard state (${response.status})`);
-  render(await response.json());
+  dashboard = await response.json();
+  renderDashboard();
 }
 
 refreshButton.addEventListener("click", async () => {
@@ -169,12 +235,7 @@ refreshButton.addEventListener("click", async () => {
     const response = await fetch("/api/refresh", { method: "POST" });
     if (!response.ok) throw new Error((await response.json()).error || "Refresh failed");
     await load();
-  } catch (error) {
-    freshness.textContent = error.message;
-  } finally {
-    refreshButton.disabled = false;
-    refreshButton.textContent = "Refresh sources";
-  }
+  } catch (error) { freshness.textContent = error.message; } finally { refreshButton.disabled = false; refreshButton.textContent = "Refresh"; }
 });
 
 load().catch((error) => { freshness.textContent = error.message; });

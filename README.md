@@ -1,6 +1,6 @@
 # Workstream Control
 
-A local cross-repository dashboard for Codex executors, Fable/Claude agents, Agent Fixes coordination, and GitHub pull requests.
+A local portfolio field report for Codex executors, Fable/Claude agents, Agent Fixes coordination, and GitHub pull requests.
 
 ## Operating topology
 
@@ -28,7 +28,7 @@ npm run refresh
 
 No background timer is used.
 
-Use **Edit sessions** on any workstream card to update the repository coordinator, Fable workstream agent, reviewer, or Codex executor. Saving persists the values to `config/projects.json` and the matching `workstreams/*.json` file, then refreshes collected state.
+Select an outcome and expand **Agent sessions** to update its Fable workstream agent, reviewer, or Codex executor. Saving persists the values to the matching `workstreams/*.json` file, then refreshes collected state.
 
 Each workstream displays two reviewer-owned, evidence-backed percentages:
 
@@ -37,12 +37,12 @@ Each workstream displays two reviewer-owned, evidence-backed percentages:
 
 Reviewers publish ratings through AF inbox using a leading subject such as `[RATING aon-pr-audit] merge=85 structural=15 head=59c89cd9` and put the evidence summary in the body. The collector accepts only an exact workstream ID. The card always shows both ratings; missing ratings display as unassessed rather than inventing confidence. When a linked GitHub PR advances beyond the assessed SHA, the rating is marked stale.
 
-The dashboard is organized as one visually segregated vertical track per repository. Each track combines curated workstream arcs with exact AF issue prefixes, AF session liveness, repository worktree state, configured GitHub PRs, CI state, open questions, and reviewer-owned ratings.
+The dashboard leads with one comparable row per durable outcome. Repository is an optional filter rather than the primary hierarchy. Each row reports phase, blockage, uncertainty, delivery artifact, confidence, and material risk. Selecting it opens the situation brief, milestone-to-PR delivery chain, reviewer evidence, AF issue count, and agent sessions.
 
 ## Configure the pilot
 
 1. `config/projects.json` contains the real AON and Arrusted repositories and their repository coordinator AF names.
-2. Edit the four files under `workstreams/`; two are connected to `aonb` and `adc`, and two remain reserved pilot slots.
+2. Edit the files under `workstreams/`; each file represents a durable outcome that may span several PRs and agent sessions.
 3. Keep each summary to two or three lines: intended outcome, current position, and next action or blocker.
 4. Keep each checklist item commit-sized or independently verifiable. Group related chunks into a review-worthy PR rather than defaulting to micro-PRs.
 5. Add associated PR numbers to `prs`, for example:
@@ -60,7 +60,7 @@ The collector recognizes messages that contain the workstream ID and use matchin
 [ANSWER aon-write-path Q1] Preserve the old RPC through PR 254.
 ```
 
-Questions may also be recorded directly in the workstream JSON file. An unanswered question appears under **Needs attention**.
+Questions may also be recorded directly in the workstream JSON file. An unanswered question appears as uncertainty in the portfolio and in the selected situation brief.
 
 ## Storage and history
 

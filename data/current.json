@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-10T03:20:41.457Z",
+  "generatedAt": "2026-07-10T03:40:09.904Z",
   "projects": [
     {
       "id": "aon",
@@ -19,7 +19,7 @@
         "openQuestions": 1,
         "openPrs": 16,
         "failingChecks": 5,
-        "pendingChecks": 0,
+        "pendingChecks": 2,
         "runningAgents": 4,
         "openIssues": 12
       }
@@ -41,7 +41,7 @@
         "openQuestions": 1,
         "openPrs": 15,
         "failingChecks": 2,
-        "pendingChecks": 0,
+        "pendingChecks": 19,
         "runningAgents": 3,
         "openIssues": 10
       }
@@ -103,114 +103,107 @@
             "enum-labels"
           ],
           "headRefName": "ada/record-details-hardening",
-          "headRefOid": "331a8040569dad4793179c6abe5d7a50fa4cf061",
+          "headRefOid": "844882c4862d0a54bbbee260a30d4210e271f2da",
           "isDraft": false,
-          "mergeStateStatus": "CLEAN",
+          "mergeStateStatus": "UNSTABLE",
           "state": "OPEN",
           "statusCheckRollup": [
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:49:33Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29038409080/job/86189183513",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581405",
               "name": "Changes",
-              "startedAt": "2026-07-09T17:49:28Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:40:05Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:49:57Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29038409080/job/86189183491",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581378",
               "name": "Analyze (React)",
-              "startedAt": "2026-07-09T17:49:28Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:40:07Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:53:02Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29038409080/job/86189183531",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581371",
               "name": "Quality (Workspace)",
-              "startedAt": "2026-07-09T17:49:27Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:40:06Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:53:40Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29038409080/job/86189183492",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581396",
               "name": "Test (App)",
-              "startedAt": "2026-07-09T17:49:29Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:40:05Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:49:33Z",
-              "conclusion": "SKIPPED",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29038409080/job/86189209554",
-              "name": "Developer (Setup)",
-              "startedAt": "2026-07-09T17:49:33Z",
-              "status": "COMPLETED",
-              "workflowName": "Check"
-            },
-            {
-              "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:49:25Z",
-              "conclusion": "SKIPPED",
-              "detailsUrl": "https://app.macroscope.com",
-              "name": "Macroscope - Correctness Check",
-              "startedAt": "2026-07-09T17:49:23Z",
-              "status": "COMPLETED",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://coderabbit.ai?utm_source=cr_app&utm_medium=github",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T03:40:04Z",
+              "status": "IN_PROGRESS",
               "workflowName": ""
             },
             {
-              "__typename": "StatusContext",
-              "context": "React Doctor",
-              "startedAt": "2026-07-09T17:49:53Z",
-              "state": "SUCCESS",
-              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29038409080"
+              "__typename": "CheckRun",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/354",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T03:40:07Z",
+              "status": "IN_PROGRESS",
+              "workflowName": ""
             },
             {
               "__typename": "StatusContext",
               "context": "Vercel",
-              "startedAt": "2026-07-09T17:51:14Z",
-              "state": "SUCCESS",
-              "targetUrl": "https://vercel.com/autographing/apps/Bx3iQ2tNJVDFEqbMRFk4JSzQUPXi"
+              "startedAt": "2026-07-10T03:39:58Z",
+              "state": "PENDING",
+              "targetUrl": "https://vercel.com/autographing/apps/6AjHGffKubL7QhDYpPVWJ4VM5HMJ"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:51:17Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://vercel.com/github",
-              "name": "Vercel Preview Comments",
-              "startedAt": "2026-07-09T17:51:17Z",
+              "completedAt": "2026-07-10T03:39:59Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://app.macroscope.com",
+              "name": "Macroscope - Correctness Check",
+              "startedAt": "2026-07-10T03:39:57Z",
               "status": "COMPLETED",
               "workflowName": ""
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:53:56Z",
+              "completedAt": "2026-07-10T03:39:59Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/354",
-              "name": "cubic · AI code reviewer",
-              "startedAt": "2026-07-09T17:49:30Z",
+              "detailsUrl": "https://vercel.com/github",
+              "name": "Vercel Preview Comments",
+              "startedAt": "2026-07-10T03:39:59Z",
               "status": "COMPLETED",
               "workflowName": ""
             }
           ],
           "title": "Record-details tool hardening",
-          "updatedAt": "2026-07-09T17:51:16Z",
+          "updatedAt": "2026-07-10T03:40:00Z",
           "url": "https://github.com/withAutograph/arrusted-development/pull/354"
         }
       ],
       "assessment": {
         "stale": false,
-        "currentHead": "331a8040569dad4793179c6abe5d7a50fa4cf061"
+        "currentHead": "844882c4862d0a54bbbee260a30d4210e271f2da"
       },
       "liveStatus": null,
       "afIssues": [
@@ -321,7 +314,7 @@
         {
           "name": "ada",
           "kind": "codex",
-          "idleFor": "2s",
+          "idleFor": "0s",
           "running": true
         }
       ]
@@ -375,121 +368,117 @@
             "merge"
           ],
           "headRefName": "ada/server-authority-gates",
-          "headRefOid": "b67d09454413055c990bc4e8c33fe668223e00d5",
+          "headRefOid": "7af4954e0c9f4ce4f59667b2cbc8c5b5dcf64af0",
           "isDraft": false,
-          "mergeStateStatus": "CLEAN",
+          "mergeStateStatus": "UNSTABLE",
           "state": "OPEN",
           "statusCheckRollup": [
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:37:13Z",
+              "completedAt": "2026-07-10T03:40:08Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29002003451/job/86186633998",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573843",
               "name": "Changes",
-              "startedAt": "2026-07-09T17:37:07Z",
+              "startedAt": "2026-07-10T03:40:02Z",
               "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:37:29Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29002003451/job/86186633944",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573862",
               "name": "Analyze (React)",
-              "startedAt": "2026-07-09T17:37:07Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:40:01Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:39:44Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29002003451/job/86186633896",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573861",
               "name": "Quality (Workspace)",
-              "startedAt": "2026-07-09T17:37:06Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:40:02Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:41:22Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29002003451/job/86186633912",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573850",
               "name": "Test (App)",
-              "startedAt": "2026-07-09T17:37:06Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:40:02Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T17:37:13Z",
+              "completedAt": "2026-07-10T03:40:08Z",
               "conclusion": "SKIPPED",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29002003451/job/86186666956",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281590579",
               "name": "Developer (Setup)",
-              "startedAt": "2026-07-09T17:37:14Z",
+              "startedAt": "2026-07-10T03:40:09Z",
               "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T07:35:25Z",
-              "conclusion": "SKIPPED",
-              "detailsUrl": "https://app.macroscope.com",
-              "name": "Macroscope - Correctness Check",
-              "startedAt": "2026-07-09T07:35:22Z",
-              "status": "COMPLETED",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://coderabbit.ai?utm_source=cr_app&utm_medium=github",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T03:40:00Z",
+              "status": "IN_PROGRESS",
               "workflowName": ""
             },
             {
-              "__typename": "StatusContext",
-              "context": "CodeRabbit",
-              "startedAt": "2026-07-09T07:41:52Z",
-              "state": "SUCCESS",
-              "targetUrl": ""
-            },
-            {
-              "__typename": "StatusContext",
-              "context": "React Doctor",
-              "startedAt": "2026-07-09T17:37:25Z",
-              "state": "SUCCESS",
-              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29002003451"
+              "__typename": "CheckRun",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/341",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T03:40:07Z",
+              "status": "IN_PROGRESS",
+              "workflowName": ""
             },
             {
               "__typename": "StatusContext",
               "context": "Vercel",
-              "startedAt": "2026-07-09T07:36:58Z",
-              "state": "SUCCESS",
-              "targetUrl": "https://vercel.com/autographing/apps/sp7ttuiNMmYvfpqsMdMjBg4sdscs"
+              "startedAt": "2026-07-10T03:39:58Z",
+              "state": "PENDING",
+              "targetUrl": "https://vercel.com/autographing/apps/5jrc6wbrivTDMqottKqdhkkZN4XC"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T07:36:59Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://vercel.com/github",
-              "name": "Vercel Preview Comments",
-              "startedAt": "2026-07-09T07:36:59Z",
+              "completedAt": "2026-07-10T03:39:59Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://app.macroscope.com",
+              "name": "Macroscope - Correctness Check",
+              "startedAt": "2026-07-10T03:39:57Z",
               "status": "COMPLETED",
               "workflowName": ""
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T07:43:00Z",
+              "completedAt": "2026-07-10T03:39:59Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/341",
-              "name": "cubic · AI code reviewer",
-              "startedAt": "2026-07-09T07:35:32Z",
+              "detailsUrl": "https://vercel.com/github",
+              "name": "Vercel Preview Comments",
+              "startedAt": "2026-07-10T03:39:59Z",
               "status": "COMPLETED",
               "workflowName": ""
             }
           ],
           "title": "Server-authority gates: bind HC agent tenant through Better Auth",
-          "updatedAt": "2026-07-09T07:42:58Z",
+          "updatedAt": "2026-07-10T03:39:59Z",
           "url": "https://github.com/withAutograph/arrusted-development/pull/341"
         }
       ],
       "assessment": {
         "stale": false,
-        "currentHead": "b67d09454413055c990bc4e8c33fe668223e00d5"
+        "currentHead": "7af4954e0c9f4ce4f59667b2cbc8c5b5dcf64af0"
       },
       "liveStatus": null,
       "afIssues": [
@@ -568,7 +557,7 @@
         {
           "name": "ada",
           "kind": "codex",
-          "idleFor": "2s",
+          "idleFor": "0s",
           "running": true
         }
       ]
@@ -628,121 +617,111 @@
             "m3-documents"
           ],
           "headRefName": "write-path-pr-audit",
-          "headRefOid": "59c89cd9b19e78bf9baa5e58e13765cbebd03532",
+          "headRefOid": "e1d174163b0cd0bffe5430717f279f4dfe7b6faf",
           "isDraft": false,
           "mergeStateStatus": "BLOCKED",
           "state": "OPEN",
           "statusCheckRollup": [
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:01:46Z",
+              "completedAt": "2026-07-10T03:34:41Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29065841578/job/86277848842",
+              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29067057780/job/86280770600",
               "name": "Database Contract",
-              "startedAt": "2026-07-10T02:59:27Z",
+              "startedAt": "2026-07-10T03:32:15Z",
               "status": "COMPLETED",
               "workflowName": "CI"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:09:27Z",
+              "completedAt": "2026-07-10T03:35:11Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29065841578/job/86277848199",
+              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29067057780/job/86280770588",
               "name": "Registration Characterization",
-              "startedAt": "2026-07-10T03:06:31Z",
+              "startedAt": "2026-07-10T03:32:15Z",
               "status": "COMPLETED",
               "workflowName": "CI"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:03:44Z",
+              "completedAt": "2026-07-10T03:36:33Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29065841578/job/86277864543",
+              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29067057780/job/86280770595",
               "name": "Check (typecheck + lint + test + playbooks audit)",
-              "startedAt": "2026-07-10T02:59:27Z",
+              "startedAt": "2026-07-10T03:32:15Z",
               "status": "COMPLETED",
               "workflowName": "CI"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:04:55Z",
+              "completedAt": "2026-07-10T03:37:43Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29065841578/job/86277861264",
+              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29067057780/job/86281229724",
               "name": "Build",
-              "startedAt": "2026-07-10T03:03:47Z",
+              "startedAt": "2026-07-10T03:36:36Z",
               "status": "COMPLETED",
               "workflowName": "CI"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:05:25Z",
+              "completedAt": "2026-07-10T03:38:07Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29065841578/job/86277849029",
+              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29067057780/job/86281346445",
               "name": "E2E (Smoke)",
-              "startedAt": "2026-07-10T03:04:58Z",
+              "startedAt": "2026-07-10T03:37:46Z",
               "status": "COMPLETED",
               "workflowName": "CI"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:10:29Z",
-              "conclusion": "NEUTRAL",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
               "detailsUrl": "https://coderabbit.ai?utm_source=cr_app&utm_medium=github",
               "name": "CodeRabbit / Review",
-              "startedAt": "2026-07-10T03:02:04Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:32:14Z",
+              "status": "IN_PROGRESS",
               "workflowName": ""
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:02:00Z",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://www.cubic.dev/pr/abstractops/aon/pull/272",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T03:32:25Z",
+              "status": "IN_PROGRESS",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:32:14Z",
               "conclusion": "SKIPPED",
               "detailsUrl": "https://app.macroscope.com",
               "name": "Macroscope - Correctness Check",
-              "startedAt": "2026-07-10T03:01:57Z",
-              "status": "COMPLETED",
-              "workflowName": ""
-            },
-            {
-              "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:04:12Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://greptile.com/",
-              "name": "Greptile Review",
-              "startedAt": "2026-07-10T03:02:00Z",
+              "startedAt": "2026-07-10T03:32:10Z",
               "status": "COMPLETED",
               "workflowName": ""
             },
             {
               "__typename": "StatusContext",
               "context": "Vercel",
-              "startedAt": "2026-07-10T03:00:07Z",
+              "startedAt": "2026-07-10T03:32:57Z",
               "state": "SUCCESS",
-              "targetUrl": "https://vercel.com/abstractops/aon/GD3QAuivCHtLmB2TYakSujDfBTWX"
+              "targetUrl": "https://vercel.com/abstractops/aon/2WgtorNx35DZjyo3o5oVUFFaabFK"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:00:09Z",
+              "completedAt": "2026-07-10T03:32:58Z",
               "conclusion": "SUCCESS",
               "detailsUrl": "https://vercel.com/github",
               "name": "Vercel Preview Comments",
-              "startedAt": "2026-07-10T03:00:09Z",
-              "status": "COMPLETED",
-              "workflowName": ""
-            },
-            {
-              "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:16:10Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://www.cubic.dev/pr/abstractops/aon/pull/272",
-              "name": "cubic · AI code reviewer",
-              "startedAt": "2026-07-10T03:02:01Z",
+              "startedAt": "2026-07-10T03:32:58Z",
               "status": "COMPLETED",
               "workflowName": ""
             }
           ],
           "title": "PR-AUDIT: account audit write cutover",
-          "updatedAt": "2026-07-10T03:16:08Z",
+          "updatedAt": "2026-07-10T03:33:40Z",
           "url": "https://github.com/abstractops/aon/pull/272"
         }
       ],
@@ -753,8 +732,8 @@
         "assessedAt": "2026-07-10T03:14:31.312Z",
         "assessedBy": "refrev",
         "rationale": "GO'd at final gate after 2 NO-GO cycles; CI green incl. verified real pgTAP on DB Contract; two confirmed bot blockers (7-arg straggler in link_workflow_account_artifact_atomic, RA human/null actor) are bounded fixes in an approved follow-up commit; core architecture verified faithful twice. Structural risk low: M2 is itself the deletion/rebuild. (Dashboard rating — routed to you per workstream-control collection protocol; no action needed.)",
-        "stale": false,
-        "currentHead": "59c89cd9b19e78bf9baa5e58e13765cbebd03532"
+        "stale": true,
+        "currentHead": "e1d174163b0cd0bffe5430717f279f4dfe7b6faf"
       },
       "liveStatus": null,
       "afIssues": [
@@ -859,19 +838,19 @@
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "2s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "reforch",
           "kind": "claude",
-          "idleFor": "1s",
+          "idleFor": "0s",
           "running": true
         },
         {
           "name": "aona",
           "kind": "codex",
-          "idleFor": "0s",
+          "idleFor": "3s",
           "running": true
         }
       ]
@@ -1002,13 +981,13 @@
         {
           "name": "aonb",
           "kind": "claude",
-          "idleFor": "3s",
+          "idleFor": "2s",
           "running": true
         },
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "2s",
+          "idleFor": "1s",
           "running": true
         },
         {
@@ -1139,13 +1118,13 @@
         {
           "name": "aonb",
           "kind": "claude",
-          "idleFor": "3s",
+          "idleFor": "2s",
           "running": true
         },
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "2s",
+          "idleFor": "1s",
           "running": true
         }
       ]
@@ -1199,121 +1178,117 @@
             "remrr"
           ],
           "headRefName": "ad-41-csv-kernel-validate",
-          "headRefOid": "60376564bfe627634e7bfa0b4a053d6ce7af7860",
+          "headRefOid": "4ad570c246786af4ecce81be4244dbf9400036e9",
           "isDraft": false,
-          "mergeStateStatus": "CLEAN",
+          "mergeStateStatus": "UNSTABLE",
           "state": "OPEN",
           "statusCheckRollup": [
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T19:02:28Z",
+              "completedAt": "2026-07-10T03:40:03Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29042874188/job/86204123426",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566218",
               "name": "Changes",
-              "startedAt": "2026-07-09T19:02:22Z",
+              "startedAt": "2026-07-10T03:39:58Z",
               "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T19:02:43Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29042874188/job/86204123191",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566210",
               "name": "Analyze (React)",
-              "startedAt": "2026-07-09T19:02:21Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:39:57Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T19:05:32Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29042874188/job/86204123490",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566224",
               "name": "Quality (Workspace)",
-              "startedAt": "2026-07-09T19:02:21Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:39:57Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T19:06:18Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29042874188/job/86204123180",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566230",
               "name": "Test (App)",
-              "startedAt": "2026-07-09T19:02:21Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T03:39:57Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T19:02:28Z",
+              "completedAt": "2026-07-10T03:40:03Z",
               "conclusion": "SKIPPED",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29042874188/job/86204158096",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281580731",
               "name": "Developer (Setup)",
-              "startedAt": "2026-07-09T19:02:29Z",
+              "startedAt": "2026-07-10T03:40:03Z",
               "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T19:02:20Z",
-              "conclusion": "SKIPPED",
-              "detailsUrl": "https://app.macroscope.com",
-              "name": "Macroscope - Correctness Check",
-              "startedAt": "2026-07-09T19:02:17Z",
-              "status": "COMPLETED",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://coderabbit.ai?utm_source=cr_app&utm_medium=github",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T03:39:56Z",
+              "status": "IN_PROGRESS",
               "workflowName": ""
             },
             {
-              "__typename": "StatusContext",
-              "context": "CodeRabbit",
-              "startedAt": "2026-07-09T19:04:58Z",
-              "state": "SUCCESS",
-              "targetUrl": ""
-            },
-            {
-              "__typename": "StatusContext",
-              "context": "React Doctor",
-              "startedAt": "2026-07-09T19:02:40Z",
-              "state": "SUCCESS",
-              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29042874188"
+              "__typename": "CheckRun",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/342",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T03:40:00Z",
+              "status": "IN_PROGRESS",
+              "workflowName": ""
             },
             {
               "__typename": "StatusContext",
               "context": "Vercel",
-              "startedAt": "2026-07-09T19:04:17Z",
-              "state": "SUCCESS",
-              "targetUrl": "https://vercel.com/autographing/apps/59gBrBZJjxmqAh1zC1yiJnsf2Tfz"
+              "startedAt": "2026-07-10T03:39:52Z",
+              "state": "PENDING",
+              "targetUrl": "https://vercel.com/autographing/apps/Ec2jxmSyBZ3Gs6fzarrEpE3rMHE1"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T19:04:18Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://vercel.com/github",
-              "name": "Vercel Preview Comments",
-              "startedAt": "2026-07-09T19:04:18Z",
+              "completedAt": "2026-07-10T03:39:54Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://app.macroscope.com",
+              "name": "Macroscope - Correctness Check",
+              "startedAt": "2026-07-10T03:39:52Z",
               "status": "COMPLETED",
               "workflowName": ""
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-09T19:06:08Z",
+              "completedAt": "2026-07-10T03:39:53Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/342",
-              "name": "cubic · AI code reviewer",
-              "startedAt": "2026-07-09T19:02:34Z",
+              "detailsUrl": "https://vercel.com/github",
+              "name": "Vercel Preview Comments",
+              "startedAt": "2026-07-10T03:39:53Z",
               "status": "COMPLETED",
               "workflowName": ""
             }
           ],
           "title": "ad.41 Phase 1: CSV import kernel-validate authority (harden)",
-          "updatedAt": "2026-07-09T19:05:02Z",
+          "updatedAt": "2026-07-10T03:40:02Z",
           "url": "https://github.com/withAutograph/arrusted-development/pull/342"
         }
       ],
       "assessment": {
         "stale": false,
-        "currentHead": "60376564bfe627634e7bfa0b4a053d6ce7af7860"
+        "currentHead": "4ad570c246786af4ecce81be4244dbf9400036e9"
       },
       "liveStatus": null,
       "afIssues": [
@@ -1418,7 +1393,7 @@
         {
           "name": "adc",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "0s",
           "running": true
         },
         {

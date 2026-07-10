@@ -3,37 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Workstream Control</title>
+  <title>Field Report</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main>
-    <header class="topbar">
+    <header class="masthead">
       <div>
-        <p class="eyebrow">Cross-repo control plane</p>
-        <h1>Workstream Control</h1>
-        <p id="freshness" class="muted">Loading current state…</p>
+        <p class="kicker">Active delivery portfolio</p>
+        <h1>Field Report</h1>
+        <p id="freshness">Loading current snapshot…</p>
       </div>
-      <button id="refresh" type="button">Refresh sources</button>
+      <button id="refresh" type="button">Refresh</button>
     </header>
 
-    <section id="attention" aria-labelledby="attention-heading">
-      <div class="section-heading">
-        <h2 id="attention-heading">Needs attention</h2>
-        <span id="attention-count" class="count"></span>
-      </div>
-      <div id="attention-list" class="attention-list"></div>
+    <nav id="repo-nav" class="repo-nav" aria-label="Repository filter"></nav>
+
+    <section class="portfolio-section" aria-labelledby="portfolio-title">
+      <header class="section-head">
+        <div><h2 id="portfolio-title">Portfolio</h2><p id="portfolio-signal"></p></div>
+        <span id="total-streams"></span>
+      </header>
+      <div id="portfolio" class="portfolio"></div>
     </section>
 
-    <section aria-labelledby="streams-heading">
-      <div class="section-heading">
-        <h2 id="streams-heading">Repository tracks</h2>
-        <div class="legend" aria-label="Checklist legend">
-          <span>✓ complete</span><span>● active</span><span>□ planned</span><span>! blocked</span>
-        </div>
-      </div>
-      <div id="streams" class="streams"></div>
-    </section>
+    <section id="workstream-brief" class="workstream-brief" aria-live="polite"></section>
 
     <details class="health">
       <summary>Source health</summary>
