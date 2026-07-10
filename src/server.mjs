@@ -310,6 +310,68 @@ next_gate: <evidence or action that clears the current gate>
 rationale: <2-4 sentences explaining the judgment, including any simpler alternative or plan contradiction>`;
 }
 
+function delegationPrompt(stream, currentHead) {
+  return `Perform a fresh, read-only merge-ready review of workstream ${stream.id} at head ${currentHead}. Work only from repository evidence, the linked PR, AF history, and the repository merge-ready-review rules. Do not edit files, commit, push, or send messages.
+
+Outcome: ${stream.title}
+Orientation (may be stale): ${stream.liveStatus?.text || stream.summary}
+Branch: ${stream.branch || "none"}
+
+Challenge necessity, materially simpler designs, scope drift, contract coherence, evidence quality, structural rot/rebuild risk, and contradictions with prior plans. Return only a JSON object with: verdict (GO, CONDITIONAL_GO, or NO_GO), mergeReadiness (0-100), structuralRisk (0-100), summary (2-4 sentences), findings (array of concise strings), unresolved (array of concise strings).`;
+}
+
+async function recordReviewPass(id, values) {
+  const head = String(values.head || "").trim();
+  if (!/^[0-9a-f]{7,40}$/i.test(head)) throw new Error("Review pass requires a git head SHA");
+  const verdict = String(values.verdict || "UNKNOWN").toUpperCase();
+  if (!["GO", "CONDITIONAL_GO", "NO_GO", "UNKNOWN"].includes(verdict)) throw new Error("Invalid review verdict");
+  return appendWorkstreamEvent(id, {
+    type: "review_pass",
+    actor: values.reviewer || values.actor || "reviewer",
+    text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`,
+    metadata: {
+      passId: values.passId || randomUUID(), head, verdict,
+      reviewer: values.reviewer || values.actor || "reviewer",
+      model: values.model || "unknown",
+      independent: values.independent !== false,
+      findings: Array.isArray(values.findings) ? values.findings : [],
+      unresolved: Array.isArray(values.unresolved) ? values.unresolved : [],
+      mergeReadiness: Number.isFinite(Number(values.mergeReadiness)) ? Number(values.mergeReadiness) : null,
+      structuralRisk: Number.isFinite(Number(values.structuralRisk)) ? Number(values.structuralRisk) : null
+    }
+  });
+}
+
+async function delegateReview(id) {
+  const current = await currentStream(id);
+  if (!current) throw new Error(`No collected state for ${id}`);
+  const { stream, project } = current;
+  if (!project?.repoPath) throw new Error(`No repository path configured for ${id}`);
+  const head = stream.prs?.find((pr) => pr.state === "OPEN")?.headRefOid || stream.assessment?.currentHead;
+  if (!head) throw new Error(`Could not resolve current head for ${id}`);
+  const prompt = delegationPrompt(stream, head);
+  const { stdout } = await exec("zsh", ["-lic", 'claude-aws -p "$1" --output-format json', "fr-delegate", prompt], { cwd: project.repoPath, timeout: 30 * 60_000, maxBuffer: 10 * 1024 * 1024 });
+  const envelope = JSON.parse(stdout);
+  const raw = typeof envelope.result === "string" ? envelope.result : JSON.stringify(envelope.result || envelope);
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("Claude review did not return structured JSON");
+  const result = JSON.parse(match[0]);
+  const event = await recordReviewPass(id, { ...result, head, reviewer: "claude-aws", model: "anthropic.claude-fable-5", independent: true });
+  return { event, result };
+}
+
+async function workflowContract(role = "shared") {
+  const markdown = await readFile(path.join(root, "docs", "fr-workflow.md"), "utf8");
+  if (role === "all") return markdown;
+  const sections = markdown.split(/^## /m).slice(1).map((part) => {
+    const newline = part.indexOf("\n");
+    return { title: part.slice(0, newline).trim(), body: part.slice(newline + 1).trim() };
+  });
+  const roleTitles = { "repo-coordinator": "Repository coordinator", "workstream-orchestrator": "Workstream orchestrator", executor: "Executor", reviewer: "Reviewer" };
+  const wanted = role === "shared" ? ["Shared contract"] : ["Shared contract", roleTitles[role]].filter(Boolean);
+  return sections.filter((section) => wanted.includes(section.title)).map((section) => `## ${section.title}\n\n${section.body}`).join("\n\n");
+}
+
 async function requestAssessments(ids) {
   if (!Array.isArray(ids) || ids.length < 1 || ids.length > 20) throw new Error("Select between 1 and 20 workstreams");
   const uniqueIds = [...new Set(ids.map((id) => String(id)))];
@@ -338,7 +400,8 @@ async function requestAssessments(ids) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const pathname = new URL(req.url, "http://127.0.0.1").pathname;
+  const requestUrl = new URL(req.url, "http://127.0.0.1");
+  const pathname = requestUrl.pathname;
   if (req.method === "POST" && pathname === "/api/refresh") {
     try {
       const { stdout } = await runCollect();
@@ -347,7 +410,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 500, JSON.stringify({ ok: false, error: error.stderr || error.message }), "application/json; charset=utf-8");
     }
   }
-  if (req.method === "POST" && pathname === "/api/assessments/request") {
+    if (req.method === "POST" && pathname === "/api/assessments/request") {
     try {
       const { workstreamIds } = await readJsonBody(req);
       const operation = mutationPromise.then(async () => {
@@ -362,6 +425,25 @@ const server = http.createServer(async (req, res) => {
       return send(res, 400, JSON.stringify({ ok: false, error: error.stderr || error.message }), "application/json; charset=utf-8");
     }
   }
+    const passRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/passes$/);
+    if (req.method === "POST" && passRoute) {
+      try {
+        const id = decodeURIComponent(passRoute[1]);
+        const values = await readJsonBody(req);
+        const operation = mutationPromise.then(async () => { await findWorkstream(id); const event = await recordReviewPass(id, values); await runCollect(); return event; });
+        mutationPromise = operation.catch(() => {});
+        return send(res, 200, JSON.stringify({ ok: true, event: await operation }), "application/json; charset=utf-8");
+      } catch (error) { return send(res, 400, JSON.stringify({ ok: false, error: error.message }), "application/json; charset=utf-8"); }
+    }
+    const delegationRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/delegate-review$/);
+    if (req.method === "POST" && delegationRoute) {
+      try {
+        const id = decodeURIComponent(delegationRoute[1]);
+        const operation = mutationPromise.then(async () => { const result = await delegateReview(id); await runCollect(); return result; });
+        mutationPromise = operation.catch(() => {});
+        return send(res, 200, JSON.stringify({ ok: true, ...(await operation) }), "application/json; charset=utf-8");
+      } catch (error) { return send(res, 400, JSON.stringify({ ok: false, error: error.stderr || error.message }), "application/json; charset=utf-8"); }
+    }
   if (req.method === "POST" && pathname === "/api/workstreams") {
     try {
       const values = await readJsonBody(req);
@@ -424,6 +506,10 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (req.method !== "GET") return send(res, 405, "Method not allowed");
+  if (pathname === "/api/workflow") {
+    const role = requestUrl.searchParams.get("role") || "shared";
+    return send(res, 200, JSON.stringify({ role, markdown: await workflowContract(role) }), "application/json; charset=utf-8");
+  }
   if (pathname === "/api/workstreams") return send(res, 200, JSON.stringify({ workstreams: await listCanonicalWorkstreams() }), "application/json; charset=utf-8");
   if (workstreamRoute) {
     try { return send(res, 200, JSON.stringify((await findWorkstream(decodeURIComponent(workstreamRoute[1]))).stream), "application/json; charset=utf-8"); }

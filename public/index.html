@@ -50,8 +50,14 @@
     </dialog>
     <dialog id="issues-drawer" class="issues-drawer">
       <header><div><p class="kicker">Agent Fixes</p><h2 id="issues-title">Repository issues</h2></div><button class="issues-close" type="button" aria-label="Close AF issues">Close</button></header>
-      <div class="issues-controls"><label>Status<select id="issues-filter"><option value="active">Active</option><option value="all">All</option><option value="closed">Closed</option></select></label><span id="issues-summary"></span></div>
+      <nav id="issues-repo-tabs" class="issues-repo-tabs" aria-label="Issue repository"></nav>
+      <div class="issues-controls"><label>Parent issue status<select id="issues-filter"><option value="active">Active</option><option value="all">All</option><option value="closed">Closed</option></select></label><span id="issues-summary"></span></div>
       <div id="issues-list" class="issues-list"></div>
+    </dialog>
+    <dialog id="evidence-drawer" class="issues-drawer evidence-drawer">
+      <header><div><p class="kicker">Current workstream</p><h2 id="evidence-title">Supporting evidence</h2></div><button class="evidence-close" type="button" aria-label="Close supporting evidence">Close</button></header>
+      <p id="evidence-summary" class="drawer-summary"></p>
+      <div id="evidence-list" class="evidence-list"></div>
     </dialog>
   </main>
   <script src="/app.js" type="module"></script>

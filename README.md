@@ -10,17 +10,21 @@ Agents and users interact through the `fr` CLI. AF subject syntax remains an int
 node scripts/install.mjs
 ```
 
-This installs `fr` in `~/.local/bin`, the shared `field-report` skill for Codex and Claude, Claude's `/fr` command, and quiet Claude session-start/stop hooks. Hooks automatically arm only when the repository and branch match exactly; otherwise they do nothing.
+This installs `fr` in `~/.local/bin`, the shared Field Report and coordination-role skills for Codex and Claude, Claude's `/fr` command, and quiet Claude session-start/stop hooks. Hooks automatically arm only when the repository and branch match exactly; otherwise they do nothing.
 
 Common operations:
 
 ```bash
 fr create --repo aon --title "Document-zone cutover" --outcome "Move document writes to the canonical audit boundary" --orchestrator refrev
-fr onboard aon-document-zone-cutover
+fr coordinate aon
+fr onboard aon-document-zone-cutover --role workstream-orchestrator
+fr workflow
 fr ask "Does attachment history belong in this slice?"
 fr checkpoint --summary "Implementation complete; exact-SHA review is next" --status active --gate "Exact-SHA review"
 fr reconcile --data '{"summary":"...","chunks":[...]}'
 fr assess
+fr delegate review aon-document-zone-cutover
+fr pass record aon-document-zone-cutover --head 4ad570c2 --verdict CONDITIONAL_GO --reviewer codex-xhigh --model gpt-5.5 --summary "Contracts hold; one evidence gap remains."
 fr link issue ad.41
 fr link commit 4ad570c2 --chunk kernel-timeout
 fr reference --path docs/import-principles.md --kind contract --quote "Ambiguity and contradiction surface as reviewable, actionable issues at compile time."
@@ -34,13 +38,18 @@ AF issues remain the execution ledger; Field Report links issue trees to durable
 
 ## Operating topology
 
-- One manually launched `claude-aws` coordinator per repository.
-- One manually launched `claude-aws` Fable orchestrator/reviewer per workstream.
-- One Codex executor task per workstream.
-- Agent Fixes provides names, inbox coordination, issues, and session visibility.
+- One persistent Codex repository coordinator owns portfolio orientation, workstream creation, sequencing, and cross-workstream conflicts.
+- One persistent Codex workstream orchestrator owns each durable outcome but normally delegates implementation to Codex workers in isolated worktrees.
+- Claude/Fable is an on-demand primary independent reviewer or architecture challenger, invoked through `fr delegate review` and the required `claude-aws` Mantle path.
+- Field Report is the durable control plane; sleeping agent sessions never own the only copy of pending work or review evidence.
+- Agent Fixes provides names, inbox coordination, issues, session visibility, and execution provenance.
 - GitHub remains authoritative for pull-request state.
 
-The dashboard does not launch Claude. Start each Fable agent with `claude-aws`, name/register it in Agent Fixes, and place that AF name in the corresponding workstream JSON file.
+Existing long-lived Fable agents remain supported through the assessment inbox path. The delegated-review path is read-only, returns structured JSON, and records a SHA-bound independent pass directly in the append-only Field Report event ledger.
+
+`docs/fr-workflow.md` is the canonical opt-in orchestration contract. It is not copied into repository `AGENTS.md` files used by other developers. `fr coordinate`, `fr onboard`, and `fr workflow` load the shared contract plus only the armed session's role section.
+
+Review passes record reviewer, model, verdict, exact head SHA, readiness/risk judgments, findings, and unresolved considerations. When the branch advances, prior passes remain in history but are counted as superseded rather than current-head evidence.
 
 ## Start
 
@@ -127,4 +136,4 @@ Useful AF message subjects:
 
 The first pilot intentionally keeps narrative updates explicit. AF and GitHub are collected automatically; the 2–3 line arc and semantically sized checklist remain curated by the workstream orchestrator or Codex executor.
 
-The deep-dive **Recent movement** timeline is derived from structured workstream messages and AF messages linked to the workstream's issue tree. It is append-only in source, capped to the 20 most recent material events in the UI, and intentionally excludes ordinary unlinked inbox chatter.
+The deep-dive delivery/review timeline is derived from structured workstream messages, SHA-bound review passes, and AF messages linked to the workstream's issue tree. It is append-only in source, capped to the 20 most recent material events in the UI, and intentionally excludes ordinary unlinked inbox chatter.

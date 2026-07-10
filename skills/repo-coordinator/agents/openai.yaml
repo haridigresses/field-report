@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repository Coordinator"
+  short_description: "Coordinate durable repository workstreams"
+  default_prompt: "Use $repo-coordinator to coordinate this repository through Field Report."

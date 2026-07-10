@@ -15,13 +15,14 @@ async function readJson(file) {
 async function readLocalEvents(streamId) {
   try {
     const content = await readFile(path.join(root, "events", `${streamId}.jsonl`), "utf8");
-    const labels = { created: "Workstream created", onboard: "Session armed", disarm: "Session disarmed", checkpoint: "Checkpoint", reconcile: "Reconciliation", status: "Situation update", question: "Uncertainty opened", decision: "Decision recorded", milestone: "Milestone update", update: "Workstream update", updated: "Workstream update" };
+    const labels = { created: "Workstream created", onboard: "Session armed", disarm: "Session disarmed", checkpoint: "Checkpoint", reconcile: "Reconciliation", status: "Situation update", question: "Uncertainty opened", decision: "Decision recorded", milestone: "Milestone update", update: "Workstream update", updated: "Workstream update", review_pass: "Review pass", delegation: "Delegated review" };
     return content.split("\n").filter(Boolean).map((line) => JSON.parse(line)).map((event) => ({
       at: event.at,
       actor: event.actor || "fr",
       type: event.type,
       label: labels[event.type] || "Field Report update",
-      text: event.text
+        text: event.text,
+        ...(event.metadata ? { metadata: event.metadata } : {})
     }));
   } catch { return []; }
 }
@@ -383,6 +384,7 @@ async function main() {
       },
       liveStatus: protocolState.liveStatus,
       assessmentRequest: protocolState.assessmentRequest,
+      reviewPasses: (localEventsByStream[stream.id] || []).filter((event) => event.type === "review_pass"),
       timeline: [...derivedTimeline(stream, inbox.items, streamIssues), ...(localEventsByStream[stream.id] || [])]
         .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 20),
       references: await enrichReferences(stream, projects.find((project) => project.id === stream.project)),

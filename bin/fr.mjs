@@ -15,7 +15,9 @@ function usage() {
   return `Field Report CLI (fr)
 
 Usage:
-  fr onboard [workstream-id] [--role orchestrator|reviewer|executor]
+    fr onboard [workstream-id] [--role workstream-orchestrator|reviewer|executor]
+    fr coordinate <repo-id>
+    fr workflow [repo-coordinator|workstream-orchestrator|executor|reviewer|all]
   fr auto-onboard
   fr status
   fr list
@@ -25,7 +27,9 @@ Usage:
   fr decide [workstream-id] <Qn> <decision>
   fr checkpoint [workstream-id] [--summary <text>] [--status <state>] [--gate <text>] [--data <json>]
   fr reconcile [workstream-id] [--data <json>]
-  fr assess [workstream-id]
+    fr assess [workstream-id]
+    fr pass record [workstream-id] --head <sha> --verdict <GO|CONDITIONAL_GO|NO_GO> [--reviewer <name>] [--model <model>] [--summary <text>]
+    fr delegate review [workstream-id]
   fr link issue|commit [workstream-id] <value> [--chunk <milestone-id>]
   fr reference [workstream-id] --path <repo-path> [--label <label>] [--kind plan|contract|decision|review] [--section <anchor>] [--quote <short context>]
   fr disarm
@@ -102,12 +106,25 @@ function describe(stream) {
 
 async function onboard(id, role = "orchestrator") {
   if (!id) throw new Error("Specify a workstream ID, or use fr auto-onboard from a matching branch");
+  role = role === "orchestrator" ? "workstream-orchestrator" : role;
+  if (!["workstream-orchestrator", "executor", "reviewer"].includes(role)) throw new Error("Role must be workstream-orchestrator, executor, or reviewer");
   const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
+  const workflow = await api("GET", `/api/workflow?role=${encodeURIComponent(role)}`);
   const { state, who } = await armed();
   state.sessions[who.key] = { workstreamId: stream.id, role, actor: who.actor, cwd: who.cwd, armedAt: new Date().toISOString() };
   await writeState(state);
   await api("POST", `/api/workstreams/${encodeURIComponent(id)}/events`, { type: "onboard", actor: who.actor, text: `${who.actor} armed as ${role}` });
-  process.stdout.write(`Armed ${stream.id} as ${role}.\n${describe(stream)}\n`);
+  process.stdout.write(`Armed ${stream.id} as ${role}.\n${describe(stream)}\n\n${workflow.markdown}\n`);
+}
+
+async function coordinate(projectId) {
+  if (!projectId) throw new Error("Specify a repository ID");
+  const [data, context, workflow] = await Promise.all([api("GET", "/data/current.json"), armed(), api("GET", "/api/workflow?role=repo-coordinator")]);
+  const project = data.projects.find((candidate) => candidate.id === projectId);
+  if (!project) throw new Error(`Unknown repository: ${projectId}`);
+  context.state.sessions[context.who.key] = { projectId, role: "repo-coordinator", actor: context.who.actor, cwd: context.who.cwd, armedAt: new Date().toISOString() };
+  await writeState(context.state);
+  process.stdout.write(`Coordinating ${project.label} as repo-coordinator.\n${project.metrics?.activeWorkstreams || 0} active workstreams · ${project.metrics?.openPrs || 0} open PRs · ${project.metrics?.openQuestions || 0} open questions.\n\n${workflow.markdown}\n`);
 }
 
 async function autoOnboard() {
@@ -116,7 +133,7 @@ async function autoOnboard() {
   try { branch = (await exec("git", ["branch", "--show-current"], { cwd: who.cwd, timeout: 10_000 })).stdout.trim(); } catch {}
   const projectIds = data.projects.filter((project) => who.cwd.startsWith(project.repoPath)).map((project) => project.id);
   const matches = data.workstreams.filter((stream) => projectIds.includes(stream.project) && branch && stream.branch === branch);
-  if (matches.length === 1) return onboard(matches[0].id, "orchestrator");
+  if (matches.length === 1) return onboard(matches[0].id, "workstream-orchestrator");
   process.stdout.write(matches.length > 1 ? "Multiple Field Report workstreams match this branch; run fr onboard <id>.\n" : "No exact Field Report workstream matches this session; not armed.\n");
 }
 
@@ -166,10 +183,21 @@ async function main() {
     const result = await api("GET", "/api/workstreams");
     return process.stdout.write(`${result.workstreams.map((stream) => `${stream.id}\t${stream.status}\t${stream.title}`).join("\n")}\n`);
   }
-  if (command === "onboard") return onboard(positional[0], flags.role || "orchestrator");
+    if (command === "onboard") return onboard(positional[0], flags.role || "orchestrator");
+    if (command === "coordinate") return coordinate(positional[0]);
+    if (command === "workflow") {
+      const role = positional[0] || context.binding?.role || "shared";
+      const workflow = await api("GET", `/api/workflow?role=${encodeURIComponent(role)}`);
+      return process.stdout.write(`${workflow.markdown}\n`);
+    }
   if (command === "auto-onboard") return autoOnboard();
-  if (command === "status") {
-    if (!context.binding) return process.stdout.write("This session is not armed. Run fr onboard <workstream-id>.\n");
+    if (command === "status") {
+      if (!context.binding) return process.stdout.write("This session is not armed. Run fr onboard <workstream-id>.\n");
+      if (context.binding.projectId) {
+        const [data, workflow] = await Promise.all([api("GET", "/data/current.json"), api("GET", `/api/workflow?role=${encodeURIComponent(context.binding.role)}`)]);
+        const project = data.projects.find((candidate) => candidate.id === context.binding.projectId);
+        return process.stdout.write(`Coordinating ${project?.label || context.binding.projectId} as ${context.binding.role} since ${context.binding.armedAt}.\n\n${workflow.markdown}\n`);
+      }
     const stream = await api("GET", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}`);
     return process.stdout.write(`Armed as ${context.binding.role} since ${context.binding.armedAt}.\n${describe(stream)}\n`);
   }
@@ -208,7 +236,7 @@ async function main() {
     const result = await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, patch);
     return process.stdout.write(`Updated ${result.workstream.id}.\n${describe(result.workstream)}\n`);
   }
-  if (command === "assess") {
+    if (command === "assess") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
     const result = await api("POST", "/api/assessments/request", { workstreamIds: [id] });
     return process.stdout.write(`Requested assessment from ${result.requested[0].recipient} for ${id}.\n`);
@@ -238,12 +266,13 @@ async function main() {
     await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { references: [...(stream.references || []), reference], updatedBy: context.who.actor, eventType: "updated", eventText: `Linked ${reference.kind} reference ${reference.path}` });
     return process.stdout.write(`Linked ${reference.path} to ${id}.\n`);
   }
-  if (command === "disarm") {
-    if (!context.binding) return process.stdout.write("This session is not armed.\n");
-    await api("POST", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}/events`, { type: "disarm", actor: context.who.actor, text: `${context.who.actor} disarmed ${context.binding.workstreamId}` });
-    delete context.state.sessions[context.who.key];
-    await writeState(context.state);
-    return process.stdout.write(`Disarmed ${context.binding.workstreamId}.\n`);
+    if (command === "disarm") {
+      if (!context.binding) return process.stdout.write("This session is not armed.\n");
+      if (context.binding.workstreamId) await api("POST", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}/events`, { type: "disarm", actor: context.who.actor, text: `${context.who.actor} disarmed ${context.binding.workstreamId}` });
+      const target = context.binding.workstreamId || context.binding.projectId;
+      delete context.state.sessions[context.who.key];
+      await writeState(context.state);
+      return process.stdout.write(`Disarmed ${target}.\n`);
   }
   if (command === "watch") {
     const interval = Math.max(60, Number(flags.interval || 300));
@@ -257,6 +286,19 @@ async function main() {
       state.watch = { pid: child.pid, interval, startedAt: new Date().toISOString() };
       await writeState(state);
       return process.stdout.write(`Started Field Report watcher (PID ${child.pid}, every ${interval}s).\n`);
+    }
+    if (command === "pass" && positional[0] === "record") {
+      const targetId = positional[1] || context.binding?.workstreamId;
+      if (!targetId) throw new Error("Specify a workstream ID or arm this session");
+      const result = await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/passes`, { head: flags.head, verdict: flags.verdict, reviewer: flags.reviewer || context.who.actor, model: flags.model, summary: flags.summary, mergeReadiness: flags.merge, structuralRisk: flags.structural });
+      return process.stdout.write(`Recorded review pass ${result.event.metadata.passId} for ${targetId} at ${result.event.metadata.head.slice(0, 8)}.\n`);
+    }
+    if (command === "delegate" && positional[0] === "review") {
+      const targetId = positional[1] || context.binding?.workstreamId;
+      if (!targetId) throw new Error("Specify a workstream ID or arm this session");
+      process.stdout.write(`Delegating read-only review of ${targetId} through claude-aws…\n`);
+      const result = await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/delegate-review`, {});
+      return process.stdout.write(`Recorded ${result.result.verdict} pass at ${result.event.metadata.head.slice(0, 8)}.\n`);
     }
     if (positional[0] === "stop") {
       const state = await readState();
@@ -279,8 +321,8 @@ async function main() {
     if (positional[0] === "session-start") {
       try { return await autoOnboard(); } catch { return; }
     }
-    if (positional[0] === "stop") {
-      try { if (context.binding) await api("POST", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}/events`, { type: "checkpoint", actor: context.who.actor, text: "Agent session stopped; semantic reconciliation may be due" }); } catch {}
+      if (positional[0] === "stop") {
+        try { if (context.binding?.workstreamId) await api("POST", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}/events`, { type: "checkpoint", actor: context.who.actor, text: "Agent session stopped; semantic reconciliation may be due" }); } catch {}
       return;
     }
     throw new Error("Hook must be session-start or stop");

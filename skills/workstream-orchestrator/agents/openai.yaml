@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workstream Orchestrator"
+  short_description: "Delegate and reconcile a durable workstream"
+  default_prompt: "Use $workstream-orchestrator to run this workstream through delegated execution and review."

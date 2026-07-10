@@ -69,6 +69,24 @@ h3 { margin: 0; font-size: .9rem; font-weight: 500; text-transform: uppercase; l
 .situation > p { margin: 0; max-width: 76ch; font-family: Georgia, "Times New Roman", serif; font-size: 1.12rem; line-height: 1.48; }
 .situation dl { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 28px; margin: 0; }
 .situation dl div { min-width: 0; }
+.review-summary { display: grid; grid-template-columns: minmax(220px, .65fr) minmax(0, 1.35fr); gap: 48px; padding: 28px 0; border-top: 1px solid var(--line); }
+.review-head { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 1.05rem; }
+.review-head a { color: inherit; text-underline-offset: 3px; }
+.review-lines { display: grid; }
+.review-lines button { display: flex; justify-content: space-between; gap: 18px; width: 100%; padding: 8px 0; border: 0; border-bottom: 1px solid var(--soft-line); background: transparent; text-align: left; cursor: pointer; }
+.review-lines button:hover span { text-decoration: underline; text-underline-offset: 3px; }
+.review-lines i { color: var(--muted); font-style: normal; }
+.delivery-ledger { padding: 28px 0 34px; border-top: 1px solid var(--line); }
+.timeline-remaining { display: grid; grid-template-columns: 130px minmax(0, 1fr); padding: 18px 0 24px; }
+.timeline-label { color: var(--muted); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; }
+.timeline-remaining ol { margin: 0; padding: 0; list-style: none; }
+.timeline-remaining li { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 12px; padding: 0 0 16px; }
+.timeline-remaining li div { display: grid; gap: 3px; }
+.timeline-remaining b { font-size: .86rem; font-weight: 500; }
+.timeline-remaining small { color: var(--muted); }
+.timeline-divider { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; color: var(--muted); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; }
+.timeline-divider::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+.timeline-complete { padding: 14px 0 22px; color: var(--steady); }
 dt { margin-bottom: 4px; color: var(--muted); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; }
 dd { margin: 0; font-size: .82rem; line-height: 1.35; }
 .brief-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 54px; padding: 30px 0 36px; }
@@ -102,7 +120,11 @@ dd { margin: 0; font-size: .82rem; line-height: 1.35; }
 .movement[open] > summary span::before { content: "−"; }
 .movement > summary small { color: var(--muted); }
 .movement-list { list-style: none; margin: 0; padding: 0 0 0 18px; }
-.movement-list li { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 22px; padding: 10px 0; border-top: 1px solid var(--soft-line); }
+.movement-list li { display: grid; grid-template-columns: 130px 12px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--soft-line); }
+.timeline-node { width: 7px; height: 7px; margin-top: 3px; border: 1px solid var(--muted); border-radius: 50%; }
+.timeline-rating, .timeline-review, .timeline-assessment { border-color: var(--watch); background: var(--watch); }
+.timeline-review_pass { border-color: var(--watch); background: var(--watch); }
+.timeline-execution, .timeline-complete { border-color: var(--steady); background: var(--steady); }
 .movement-list time { color: var(--muted); font-size: .7rem; }
 .movement-list p { margin: 0; font-size: .8rem; line-height: 1.4; }
 .movement-list p:first-child { display: flex; gap: 8px; margin-bottom: 3px; }
@@ -155,8 +177,29 @@ dialog footer { align-items: center; padding-top: 14px; border-top: 1px solid va
 .issues-drawer { width: min(760px, calc(100% - 24px)); height: 100%; max-height: 100%; margin: 0 0 0 auto; border-width: 0 0 0 1px; padding: 24px; overflow-y: auto; }
 .issues-drawer > header { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--ink); }
 .issues-drawer h2 { font-family: Georgia, "Times New Roman", serif; font-size: 2rem; font-weight: 400; }
-.issues-close { border: 1px solid var(--ink); padding: 7px 11px; background: transparent; color: var(--ink); cursor: pointer; }
+.issues-close, .evidence-close { border: 1px solid var(--ink); padding: 7px 11px; background: transparent; color: var(--ink); cursor: pointer; }
+.drawer-summary { padding: 14px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+.evidence-list { padding-bottom: 30px; }
+.drawer-events, .drawer-questions { margin: 0; padding: 0; list-style: none; }
+.drawer-events li, .drawer-questions li { display: grid; grid-template-columns: 130px auto 1fr; gap: 8px 14px; padding: 14px 0; border-bottom: 1px solid var(--soft-line); }
+.drawer-events time, .drawer-events span, .drawer-questions small { color: var(--muted); font-size: .72rem; }
+.drawer-events p, .drawer-questions p { grid-column: 2 / -1; margin: 0; line-height: 1.45; }
 .issues-controls { display: flex; justify-content: space-between; align-items: end; gap: 20px; padding: 16px 0 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .72rem; }
+.issues-repo-tabs { display: flex; gap: 20px; padding-top: 16px; border-bottom: 1px solid var(--line); }
+.issue-namespace { padding-top: 24px; }
+.issue-namespace > header { display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px; border-bottom: 1px solid var(--ink); }
+.issue-namespace > header span { color: var(--muted); font-size: .7rem; }
+.issue-group { border-bottom: 1px solid var(--line); }
+.issue-group > summary { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 20px; padding: 14px 0; cursor: pointer; list-style: none; }
+.issue-group > summary::-webkit-details-marker { display: none; }
+.issue-group > summary > div:first-child { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 9px; align-items: baseline; }
+.issue-group > summary b { font-size: .84rem; font-weight: 500; }
+.lane-label { min-width: 52px; color: var(--muted); font-size: .6rem; letter-spacing: .06em; text-transform: uppercase; }
+.lane-working .lane-label { color: var(--watch); }
+.lane-done .lane-label { color: var(--steady); }
+.issue-progress { display: grid; gap: 5px; color: var(--muted); font-size: .65rem; text-align: right; }
+.issue-progress i { display: block; height: 3px; background: linear-gradient(to right, var(--steady) var(--progress), var(--soft-line) var(--progress)); }
+.issue-group > .issue-row { margin-left: 18px; }
 .issues-controls label { display: grid; gap: 4px; }
 .issues-controls select { border: 1px solid var(--line); padding: 6px 8px; background: transparent; color: var(--ink); }
 .issue-row { padding: 11px 0; border-bottom: 1px solid var(--soft-line); }
@@ -177,6 +220,8 @@ dialog footer { align-items: center; padding-top: 14px; border-top: 1px solid va
   .row-open > span:not(.outcome)::before { content: attr(data-label); display: block; margin-bottom: 3px; color: var(--muted); font-size: .6rem; letter-spacing: .08em; text-transform: uppercase; }
   .delivery { grid-column: span 2; }
   .situation, .brief-grid, .linked-evidence { grid-template-columns: 1fr; gap: 26px; }
+  .review-summary { grid-template-columns: 1fr; gap: 18px; }
+  .timeline-remaining { grid-template-columns: 1fr; }
   .evidence { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 520px) {
@@ -193,8 +238,13 @@ dialog footer { align-items: center; padding-top: 14px; border-top: 1px solid va
   .section-head { align-items: start; }
   .selection-actions { align-items: flex-start; flex-direction: column; gap: 8px; }
   .movement-list li { grid-template-columns: 1fr; gap: 3px; }
+  .timeline-node { display: none; }
+  .drawer-events li, .drawer-questions li { grid-template-columns: 1fr; }
+  .drawer-events p, .drawer-questions p { grid-column: auto; }
   .form-pair { grid-template-columns: 1fr; }
   .issues-drawer { width: 100%; }
+  .issue-group > summary { grid-template-columns: 1fr; }
+  .issue-progress { text-align: left; }
   .issue-primary { grid-template-columns: auto auto; }
   .issue-primary p { grid-column: 1 / -1; }
   .issue-links { padding-left: 0; }

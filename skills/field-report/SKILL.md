@@ -12,10 +12,12 @@ Use `fr` instead of editing Field Report JSON or composing AF protocol messages 
 Run `fr status`. If unarmed:
 
 - Run `fr auto-onboard` when the current branch already belongs to a workstream.
-- Run `fr onboard <id> --role orchestrator|reviewer|executor` when the ID is known.
+- Run `fr coordinate <repo-id>` for a persistent repository coordinator.
+- Run `fr onboard <id> --role workstream-orchestrator|reviewer|executor` when the workstream ID is known.
 - Run `fr create ...` when the user asks to track a new durable outcome.
 
 After arming, speak normally with the user. Do not expose routing syntax unless debugging.
+Treat the role-specific workflow contract printed by `fr` as canonical. Use `fr workflow` to print it again after compaction.
 
 Use `fr watch start` when the user wants autonomous, rate-limited Field Report nudges while the service is running. Use `fr watch stop` to disable them.
 

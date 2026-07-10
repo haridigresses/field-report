@@ -34,9 +34,11 @@ async function installClaudeHooks() {
 }
 
 await link(path.join(root, "bin", "fr.mjs"), path.join(home, ".local", "bin", "fr"));
-await link(path.join(root, "skills", "field-report"), path.join(home, ".codex", "skills", "field-report"));
-await link(path.join(root, "skills", "field-report"), path.join(home, ".claude", "skills", "field-report"));
+for (const skill of ["field-report", "repo-coordinator", "workstream-orchestrator"]) {
+  await link(path.join(root, "skills", skill), path.join(home, ".codex", "skills", skill));
+  await link(path.join(root, "skills", skill), path.join(home, ".claude", "skills", skill));
+}
 await link(path.join(root, "integrations", "claude", "commands", "fr.md"), path.join(home, ".claude", "commands", "fr.md"));
 await installClaudeHooks();
 
-process.stdout.write("Installed fr, the Field Report skill for Codex and Claude, /fr for Claude, and quiet Claude session hooks.\n");
+process.stdout.write("Installed fr, Field Report coordination skills for Codex and Claude, /fr for Claude, and quiet Claude session hooks.\n");
