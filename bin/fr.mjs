@@ -158,17 +158,17 @@ async function nudge(send) {
     if ((stream.questions || []).some((question) => question.status === "open")) reasons.push("an uncertainty remains open");
     const updated = new Date(stream.updatedAt || 0).getTime();
     if (["active", "blocked"].includes(stream.status) && now - updated > 12 * 3600_000) reasons.push("the canonical situation is older than 12 hours");
-    return reasons.length && stream.fableAgent ? [{ stream, reasons }] : [];
+    return reasons.length && (stream.orchestrator || stream.fableAgent) ? [{ stream, reasons }] : [];
   }).filter(({ stream }) => now - new Date(state.nudges[stream.id] || 0).getTime() > 2 * 3600_000);
   if (!candidates.length) { process.stdout.write("No Field Report nudges are due.\n"); return; }
   for (const { stream, reasons } of candidates) {
     const subject = `[FR_NUDGE ${stream.id}] Reconciliation requested`;
     const body = `Field Report detected: ${reasons.join("; ")}. Run fr onboard ${stream.id} if needed, reconcile current evidence, then publish only material changes with fr checkpoint or fr reconcile.`;
     if (send) {
-      await exec("af", ["inbox", "send", stream.fableAgent, subject, "--body", body], { timeout: 30_000 });
+      await exec("af", ["inbox", "send", stream.orchestrator || stream.fableAgent, subject, "--body", body], { timeout: 30_000 });
       state.nudges[stream.id] = new Date().toISOString();
     }
-    process.stdout.write(`${send ? "Sent" : "Due"}: ${stream.id} -> ${stream.fableAgent}: ${reasons.join("; ")}\n`);
+    process.stdout.write(`${send ? "Sent" : "Due"}: ${stream.id} -> ${stream.orchestrator || stream.fableAgent}: ${reasons.join("; ")}\n`);
   }
   if (send) await writeState(state);
 }
@@ -266,13 +266,39 @@ async function main() {
     await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { references: [...(stream.references || []), reference], updatedBy: context.who.actor, eventType: "updated", eventText: `Linked ${reference.kind} reference ${reference.path}` });
     return process.stdout.write(`Linked ${reference.path} to ${id}.\n`);
   }
-    if (command === "disarm") {
-      if (!context.binding) return process.stdout.write("This session is not armed.\n");
-      if (context.binding.workstreamId) await api("POST", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}/events`, { type: "disarm", actor: context.who.actor, text: `${context.who.actor} disarmed ${context.binding.workstreamId}` });
-      const target = context.binding.workstreamId || context.binding.projectId;
-      delete context.state.sessions[context.who.key];
-      await writeState(context.state);
-      return process.stdout.write(`Disarmed ${target}.\n`);
+  if (command === "pass" && positional[0] === "record") {
+    const targetId = positional[1] || context.binding?.workstreamId;
+    if (!targetId) throw new Error("Specify a workstream ID or arm this session");
+    const result = await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/passes`, {
+      head: flags.head,
+      verdict: flags.verdict,
+      reviewer: flags.reviewer || context.who.actor,
+      model: flags.model,
+      summary: flags.summary,
+      mergeReadiness: flags.merge,
+      structuralRisk: flags.structural,
+      outcomeConfidence: flags["outcome-confidence"],
+      necessity: flags.necessity,
+      simplerPath: flags["simpler-path"],
+      scopeDrift: flags["scope-drift"],
+      contractIntegrity: flags["contract-integrity"],
+      evidenceQuality: flags["evidence-quality"]
+    });
+    return process.stdout.write(`Recorded review pass ${result.event.metadata.passId} for ${targetId} at ${result.event.metadata.head.slice(0, 8)}.\n`);
+  }
+  if (command === "delegate" && positional[0] === "review") {
+    const targetId = positional[1] || context.binding?.workstreamId;
+    if (!targetId) throw new Error("Specify a workstream ID or arm this session");
+    const result = await api("POST", "/api/assessments/request", { workstreamIds: [targetId] });
+    return process.stdout.write(`Requested delegated review from ${result.requested[0].recipient} for ${targetId}.\n`);
+  }
+  if (command === "disarm") {
+    if (!context.binding) return process.stdout.write("This session is not armed.\n");
+    if (context.binding.workstreamId) await api("POST", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}/events`, { type: "disarm", actor: context.who.actor, text: `${context.who.actor} disarmed ${context.binding.workstreamId}` });
+    const target = context.binding.workstreamId || context.binding.projectId;
+    delete context.state.sessions[context.who.key];
+    await writeState(context.state);
+    return process.stdout.write(`Disarmed ${target}.\n`);
   }
   if (command === "watch") {
     const interval = Math.max(60, Number(flags.interval || 300));
@@ -286,19 +312,6 @@ async function main() {
       state.watch = { pid: child.pid, interval, startedAt: new Date().toISOString() };
       await writeState(state);
       return process.stdout.write(`Started Field Report watcher (PID ${child.pid}, every ${interval}s).\n`);
-    }
-    if (command === "pass" && positional[0] === "record") {
-      const targetId = positional[1] || context.binding?.workstreamId;
-      if (!targetId) throw new Error("Specify a workstream ID or arm this session");
-      const result = await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/passes`, { head: flags.head, verdict: flags.verdict, reviewer: flags.reviewer || context.who.actor, model: flags.model, summary: flags.summary, mergeReadiness: flags.merge, structuralRisk: flags.structural });
-      return process.stdout.write(`Recorded review pass ${result.event.metadata.passId} for ${targetId} at ${result.event.metadata.head.slice(0, 8)}.\n`);
-    }
-    if (command === "delegate" && positional[0] === "review") {
-      const targetId = positional[1] || context.binding?.workstreamId;
-      if (!targetId) throw new Error("Specify a workstream ID or arm this session");
-      process.stdout.write(`Delegating read-only review of ${targetId} through claude-aws…\n`);
-      const result = await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/delegate-review`, {});
-      return process.stdout.write(`Recorded ${result.result.verdict} pass at ${result.event.metadata.head.slice(0, 8)}.\n`);
     }
     if (positional[0] === "stop") {
       const state = await readState();

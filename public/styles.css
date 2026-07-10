@@ -11,14 +11,18 @@
   --selection: #e4dfd3;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --paper: #151613; --ink: #eeeee8; --muted: #a7a89f; --line: #474840; --soft-line: #30312c; --critical: #ff8b75; --watch: #e8b867; --steady: #77cda9; --selection: #282a25; }
+  :root { color-scheme: dark; --paper: #151613; --ink: #eeeee8; --muted: #a7a89f; --line: #474840; --soft-line: #30312c; --critical: #ff8b75; --watch: #e8b867; --steady: #77cda9; --selection: #282a25; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--paper); color: var(--ink); font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
-button, input { font: inherit; }
+button, input, select, textarea { font: inherit; touch-action: manipulation; }
 button { color: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.skip-link { position: fixed; z-index: 20; top: 8px; left: 8px; padding: 8px 12px; background: var(--ink); color: var(--paper); transform: translateY(-150%); }
+.skip-link:focus { transform: translateY(0); }
 main { width: min(1380px, calc(100% - 48px)); margin: 0 auto; padding: 30px 0 72px; }
 h1, h2, h3, p { margin-top: 0; }
+h1, h2, h3 { text-wrap: balance; }
 h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2.5rem, 5vw, 5rem); font-weight: 400; letter-spacing: -.055em; }
 h2 { margin-bottom: 3px; font-size: 1.35rem; font-weight: 500; }
 h3 { margin: 0; font-size: .9rem; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
@@ -42,12 +46,14 @@ h3 { margin: 0; font-size: .9rem; font-weight: 500; text-transform: uppercase; l
 .selection-actions button, .request-one { border: 1px solid var(--ink); padding: 7px 11px; background: transparent; cursor: pointer; }
 .selection-actions button:hover:not(:disabled), .request-one:hover:not(:disabled) { background: var(--ink); color: var(--paper); }
 .selection-actions button:disabled, .request-one:disabled { opacity: .45; cursor: default; }
-.portfolio-header { display: grid; grid-template-columns: 28px minmax(260px, 2.3fr) .65fr .55fr .7fr 1fr .7fr .8fr; gap: 18px; align-items: center; }
+.portfolio-header { display: grid; grid-template-columns: 28px minmax(270px, 2fr) .9fr minmax(220px, 1.45fr) 1fr .7fr; gap: 18px; align-items: center; }
 .portfolio-header { padding: 10px 12px 8px; color: var(--muted); font-size: .66rem; letter-spacing: .09em; text-transform: uppercase; }
 .portfolio-row { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 18px; align-items: center; width: 100%; min-height: 72px; padding: 0 12px; border-top: 1px solid var(--soft-line); }
 .portfolio-row:hover, .portfolio-row.selected { background: var(--selection); }
 .stream-select { width: 15px; height: 15px; accent-color: var(--ink); cursor: pointer; }
-.row-open { display: grid; grid-template-columns: minmax(260px, 2.3fr) .65fr .55fr .7fr 1fr .7fr .8fr; gap: 18px; align-items: center; min-width: 0; min-height: 71px; padding: 12px 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.row-open { display: grid; grid-template-columns: minmax(270px, 2fr) .9fr minmax(220px, 1.45fr) 1fr .7fr; gap: 18px; align-items: center; min-width: 0; min-height: 71px; padding: 12px 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.portfolio-row.is-complete { opacity: .58; }
+.current-gate { display: -webkit-box; overflow: hidden; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .row-open:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .row-open > span { min-width: 0; font-size: .82rem; }
 .outcome { display: flex; flex-direction: column; gap: 5px; }
@@ -160,7 +166,7 @@ dd { margin: 0; font-size: .82rem; line-height: 1.35; }
 .session-editor button { justify-self: start; padding: 5px 9px; border: 1px solid var(--ink); background: transparent; color: var(--ink); }
 .health { margin-top: 30px; color: var(--muted); font-size: .72rem; }
 .health pre { white-space: pre-wrap; }
-dialog { width: min(620px, calc(100% - 28px)); border: 1px solid var(--ink); padding: 0; background: var(--paper); color: var(--ink); }
+dialog { width: min(620px, calc(100% - 28px)); border: 1px solid var(--ink); padding: 0; background: var(--paper); color: var(--ink); overscroll-behavior: contain; }
 dialog::backdrop { background: color-mix(in srgb, var(--ink) 45%, transparent); }
 dialog form { display: grid; gap: 18px; padding: 24px; }
 dialog header, dialog footer { display: flex; justify-content: space-between; align-items: start; gap: 20px; }

@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#portfolio-title">Skip to portfolio</a>
   <main>
     <header class="masthead">
       <div>
@@ -38,13 +39,13 @@
       <pre id="health"></pre>
     </details>
     <dialog id="new-workstream-dialog">
-      <form id="new-workstream-form">
+      <form id="new-workstream-form" autocomplete="off">
         <header><div><p class="kicker">Field Report</p><h2>New outcome</h2></div><button class="dialog-close" type="button" aria-label="Close new outcome form">Close</button></header>
         <label>Repository<select name="project" required></select></label>
-        <label>Outcome title<input name="title" required maxlength="160" placeholder="Document-zone cutover"></label>
-        <label>Intended outcome<textarea name="outcome" required maxlength="1200" rows="4" placeholder="What should be true when this workstream is done?"></textarea></label>
-        <div class="form-pair"><label>Orchestrator<input name="orchestrator" placeholder="AF agent name"></label><label>Reviewer<input name="reviewer" placeholder="AF agent name"></label></div>
-        <label>Starting branch <span>(optional)</span><input name="branch" placeholder="agent/document-cutover"></label>
+        <label>Outcome title<input name="title" required maxlength="160" placeholder="Document-zone cutover…"></label>
+        <label>Intended outcome<textarea name="outcome" required maxlength="1200" rows="4" placeholder="What should be true when this workstream is done?…"></textarea></label>
+        <label>Orchestrator<input name="orchestrator" placeholder="Persistent AF session name"></label>
+        <label>Starting branch <span>(optional)</span><input name="branch" spellcheck="false" placeholder="agent/document-cutover…"></label>
         <footer><span class="form-status" aria-live="polite"></span><button type="submit">Create outcome</button></footer>
       </form>
     </dialog>

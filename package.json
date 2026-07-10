@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "node src/server.mjs",
     "refresh": "node src/collect.mjs",
-    "check": "node --check src/server.mjs && node --check src/collect.mjs && node --check public/app.js && node --check bin/fr.mjs"
+    "test": "node --test",
+    "check": "node --check src/server.mjs && node --check src/collect.mjs && node --check public/app.js && node --check bin/fr.mjs && npm test"
   },
   "engines": {
     "node": ">=20"

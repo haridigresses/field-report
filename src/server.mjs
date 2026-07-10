@@ -173,7 +173,7 @@ function applyCanonicalPatch(stream, patch) {
       ...(question.answer ? { answer: String(question.answer) } : {})
     }));
   }
-  for (const field of ["fableAgent", "reviewerAgent", "codexExecutor"]) if (patch[field] !== undefined) next[field] = sessionValue(patch[field]);
+  if (patch.orchestrator !== undefined) next.orchestrator = sessionValue(patch.orchestrator);
   next.updatedAt = new Date().toISOString();
   next.updatedBy = patch.updatedBy ? sessionValue(patch.updatedBy) : "fr";
   return next;
@@ -199,9 +199,7 @@ async function createWorkstream(values) {
     prs: [],
     issuePrefixes: [],
     references: Array.isArray(values.references) ? normalizeReferences(values.references) : [],
-    fableAgent: sessionValue(values.fableAgent || values.orchestrator || project.coordinator),
-    reviewerAgent: sessionValue(values.reviewerAgent || values.reviewer || project.coordinator),
-    codexExecutor: sessionValue(values.codexExecutor),
+    orchestrator: sessionValue(values.orchestrator || project.coordinator),
     assessment: null,
     updatedAt: now,
     updatedBy: values.updatedBy ? sessionValue(values.updatedBy) : "fr"
@@ -263,11 +261,9 @@ async function recordDecision(id, values) {
 
 async function updateSessions(workstreamId, values) {
   const { streamFile, stream } = await findWorkstream(workstreamId);
-
-  stream.fableAgent = sessionValue(values.fableAgent);
-  stream.reviewerAgent = sessionValue(values.reviewerAgent);
-  stream.codexExecutor = sessionValue(values.codexExecutor);
-  await writeJsonAtomic(streamFile, stream);
+  const next = applyCanonicalPatch(stream, { orchestrator: values.orchestrator, updatedBy: values.actor || "dashboard" });
+  await writeJsonAtomic(streamFile, next);
+  await appendWorkstreamEvent(workstreamId, { type: "checkpoint", actor: next.updatedBy, text: `Orchestrator set to ${next.orchestrator || "unassigned"}` });
 }
 
 async function currentStream(workstreamId) {
@@ -276,7 +272,7 @@ async function currentStream(workstreamId) {
   return stream ? { stream, project: data.projects.find((project) => project.id === stream.project) } : null;
 }
 
-function assessmentPrompt(stream, returnTarget, currentHead) {
+function assessmentPrompt(stream, currentHead) {
   const prs = (stream.prs || []).map((pr) => `#${pr.number} (${pr.state || "unknown"}; head ${pr.headRefOid || "unknown"})`).join(", ") || "none yet";
   return `You are the authoritative orchestrator/reviewer for workstream ${stream.id}. Give an honest, evidence-backed assessment using what you have observed in this workstream, the repository's merge-ready-review rules, the current branch, and linked AF issues. Inspect current evidence if needed; do not merely repeat the dashboard summary.
 
@@ -299,65 +295,42 @@ Explicitly test:
 - Is there any structural rot where a bounded rebuild would be safer or cheaper than continued patching?
 - Is execution contradicting an earlier plan, decision, or constraint?
 
-Publication lane: send the assessment through AF to ${returnTarget}. That inbox is deliberately monitored by the dashboard. If ${returnTarget} is your own AF identity, self-addressing is intentional; publish it there without asking for routing confirmation. Do not reroute it to the executor or workstream agent unless that agent is explicitly named as this publication lane. The structured ASSESSMENT below supersedes a separate compact RATING message.
+  Publish the judgment directly to Field Report; AF is only the delivery channel for this request. Run this command with the exact 40-character reviewed SHA and concise values:
 
-Use this exact subject:
-[ASSESSMENT ${stream.id}] head=${currentHead} outcome_confidence=<0-100> merge_readiness=<0-100> structural_rebuild_risk=<0-100> necessity=<clear|challenged|unjustified> simpler_path=<none_found|candidate|recommended> scope_drift=<none|low|material> contract_integrity=<sound|at_risk|broken> evidence_quality=<strong|partial|weak> verdict=<GO|CONDITIONAL_GO|NO_GO>
+  fr pass record ${stream.id} --head ${currentHead} --verdict <GO|CONDITIONAL_GO|NO_GO> --merge <0-100> --structural <0-100> --outcome-confidence <0-100> --necessity <clear|challenged|unjustified> --simpler-path <none_found|candidate|recommended> --scope-drift <none|low|material> --contract-integrity <sound|at_risk|broken> --evidence-quality <strong|partial|weak> --summary "<2-4 sentence rationale including the primary risk and next gate>"
 
-Use this exact body shape, keeping each value to one concise line:
-primary_risk: <single most important unresolved risk>
-next_gate: <evidence or action that clears the current gate>
-rationale: <2-4 sentences explaining the judgment, including any simpler alternative or plan contradiction>`;
-}
-
-function delegationPrompt(stream, currentHead) {
-  return `Perform a fresh, read-only merge-ready review of workstream ${stream.id} at head ${currentHead}. Work only from repository evidence, the linked PR, AF history, and the repository merge-ready-review rules. Do not edit files, commit, push, or send messages.
-
-Outcome: ${stream.title}
-Orientation (may be stale): ${stream.liveStatus?.text || stream.summary}
-Branch: ${stream.branch || "none"}
-
-Challenge necessity, materially simpler designs, scope drift, contract coherence, evidence quality, structural rot/rebuild risk, and contradictions with prior plans. Return only a JSON object with: verdict (GO, CONDITIONAL_GO, or NO_GO), mergeReadiness (0-100), structuralRisk (0-100), summary (2-4 sentences), findings (array of concise strings), unresolved (array of concise strings).`;
+  Do not send a RATING, ASSESSMENT, STATUS, or other dashboard protocol message through AF. If the command cannot be run, reply to the requesting orchestrator with the completed values and the reason publication failed.`;
 }
 
 async function recordReviewPass(id, values) {
   const head = String(values.head || "").trim();
-  if (!/^[0-9a-f]{7,40}$/i.test(head)) throw new Error("Review pass requires a git head SHA");
-  const verdict = String(values.verdict || "UNKNOWN").toUpperCase();
-  if (!["GO", "CONDITIONAL_GO", "NO_GO", "UNKNOWN"].includes(verdict)) throw new Error("Invalid review verdict");
+  if (!/^[0-9a-f]{40}$/i.test(head)) throw new Error("Review pass requires the exact 40-character git head SHA");
+  const verdict = String(values.verdict || "").toUpperCase();
+  if (!["GO", "CONDITIONAL_GO", "NO_GO"].includes(verdict)) throw new Error("Review pass requires GO, CONDITIONAL_GO, or NO_GO");
+  const mergeReadiness = Number(values.mergeReadiness);
+  const structuralRisk = Number(values.structuralRisk);
+  if (![mergeReadiness, structuralRisk].every((value) => Number.isFinite(value) && value >= 0 && value <= 100)) throw new Error("Review pass requires merge readiness and structural risk from 0 to 100");
   return appendWorkstreamEvent(id, {
     type: "review_pass",
     actor: values.reviewer || values.actor || "reviewer",
     text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`,
     metadata: {
-      passId: values.passId || randomUUID(), head, verdict,
+      passId: values.passId || randomUUID(), head, verdict, reviewComplete: true,
       reviewer: values.reviewer || values.actor || "reviewer",
       model: values.model || "unknown",
       independent: values.independent !== false,
       findings: Array.isArray(values.findings) ? values.findings : [],
       unresolved: Array.isArray(values.unresolved) ? values.unresolved : [],
-      mergeReadiness: Number.isFinite(Number(values.mergeReadiness)) ? Number(values.mergeReadiness) : null,
-      structuralRisk: Number.isFinite(Number(values.structuralRisk)) ? Number(values.structuralRisk) : null
+      mergeReadiness,
+      structuralRisk,
+      outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null,
+      necessity: values.necessity || null,
+      simplerPath: values.simplerPath || null,
+      scopeDrift: values.scopeDrift || null,
+      contractIntegrity: values.contractIntegrity || null,
+      evidenceQuality: values.evidenceQuality || null
     }
   });
-}
-
-async function delegateReview(id) {
-  const current = await currentStream(id);
-  if (!current) throw new Error(`No collected state for ${id}`);
-  const { stream, project } = current;
-  if (!project?.repoPath) throw new Error(`No repository path configured for ${id}`);
-  const head = stream.prs?.find((pr) => pr.state === "OPEN")?.headRefOid || stream.assessment?.currentHead;
-  if (!head) throw new Error(`Could not resolve current head for ${id}`);
-  const prompt = delegationPrompt(stream, head);
-  const { stdout } = await exec("zsh", ["-lic", 'claude-aws -p "$1" --output-format json', "fr-delegate", prompt], { cwd: project.repoPath, timeout: 30 * 60_000, maxBuffer: 10 * 1024 * 1024 });
-  const envelope = JSON.parse(stdout);
-  const raw = typeof envelope.result === "string" ? envelope.result : JSON.stringify(envelope.result || envelope);
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("Claude review did not return structured JSON");
-  const result = JSON.parse(match[0]);
-  const event = await recordReviewPass(id, { ...result, head, reviewer: "claude-aws", model: "anthropic.claude-fable-5", independent: true });
-  return { event, result };
 }
 
 async function workflowContract(role = "shared") {
@@ -381,10 +354,9 @@ async function requestAssessments(ids) {
     const current = await currentStream(id);
     if (!current) throw new Error(`No collected state for ${id}`);
     const { stream: live, project } = current;
-    const recipient = stream.reviewerAgent || stream.fableAgent;
-    if (!recipient) throw new Error(`No reviewer or Fable agent configured for ${id}`);
-    const subject = `[ASSESSMENT_REQUEST ${id}] Evidence-backed judgment requested for current workstream`;
-    const returnTarget = project?.coordinator || stream.fableAgent || recipient;
+    const recipient = stream.orchestrator || stream.fableAgent || project?.coordinator;
+    if (!recipient) throw new Error(`No workstream orchestrator configured for ${id}`);
+    const subject = `[FR REVIEW ${id}] Evidence-backed judgment requested`;
     let currentHead = live.assessment?.currentHead || live.prs?.find((pr) => pr.headRefName === live.branch)?.headRefOid || null;
     if (!currentHead && project?.repoPath && live.branch) {
       try {
@@ -392,8 +364,10 @@ async function requestAssessments(ids) {
         currentHead = resolved.stdout.trim();
       } catch { currentHead = "replace-with-current-sha"; }
     }
-    const body = assessmentPrompt(live, returnTarget, currentHead || "replace-with-current-sha");
+    if (!/^[0-9a-f]{40}$/i.test(currentHead || "")) throw new Error(`Could not resolve an exact current head for ${id}`);
+    const body = assessmentPrompt(live, currentHead);
     await exec("af", ["inbox", "send", recipient, subject, "--body", body], { cwd: root, timeout: 30_000, maxBuffer: 1024 * 1024 });
+    await appendWorkstreamEvent(id, { type: "assessment_requested", actor: "fr", text: `Fresh review requested from ${recipient}`, metadata: { recipient, head: currentHead } });
     results.push({ id, recipient });
   }
   return results;
@@ -434,15 +408,6 @@ const server = http.createServer(async (req, res) => {
         mutationPromise = operation.catch(() => {});
         return send(res, 200, JSON.stringify({ ok: true, event: await operation }), "application/json; charset=utf-8");
       } catch (error) { return send(res, 400, JSON.stringify({ ok: false, error: error.message }), "application/json; charset=utf-8"); }
-    }
-    const delegationRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/delegate-review$/);
-    if (req.method === "POST" && delegationRoute) {
-      try {
-        const id = decodeURIComponent(delegationRoute[1]);
-        const operation = mutationPromise.then(async () => { const result = await delegateReview(id); await runCollect(); return result; });
-        mutationPromise = operation.catch(() => {});
-        return send(res, 200, JSON.stringify({ ok: true, ...(await operation) }), "application/json; charset=utf-8");
-      } catch (error) { return send(res, 400, JSON.stringify({ ok: false, error: error.stderr || error.message }), "application/json; charset=utf-8"); }
     }
   if (req.method === "POST" && pathname === "/api/workstreams") {
     try {

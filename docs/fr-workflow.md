@@ -30,6 +30,9 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Verify worker claims before publishing them. Confirm the actual diff, head, push, checks, and review scope.
 - Reconcile all findings and publish one concise workstream status. Escalate only unresolved product direction, material scope expansion, or genuine architectural alternatives.
 - Keep implementation chatter out of Field Report. Publish the current phase, next gate, blocker/question state, delivery evidence, and exact-SHA review ledger.
+- Treat delegated review as incomplete until an explicit `review_complete: true` result is reconciled and recorded with `fr pass record` at the exact 40-character SHA.
+- Before launching Fable, verify that the requested Mantle/Bedrock route is enabled and use an explicit read-only reviewer profile: allow Read, Grep, Glob, and narrowly constrained read-only git commands; deny editing and mutation tools. Do not rely on plan mode's default permissions.
+- For long Fable reviews, persist stream-JSON evidence, treat permission or route failures as terminal orchestration signals, give evidence collection and synthesis separate deadlines, and retry only the failed phase. A vanished final response must not erase already collected findings or count as a completed pass.
 
 ## Executor
 
@@ -42,3 +45,4 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Stay read-only unless explicitly asked to fix findings. Verify the exact reviewed SHA and state it in the verdict.
 - Challenge necessity, simpler designs, scope drift, contract integrity, evidence quality, plan contradictions, and structural rebuild risk.
 - Separate blockers, follow-ups, rejected findings, and unresolved product questions. A verdict is evidence for the orchestrator, not merge authorization.
+- Return a bounded completion envelope with `review_complete`, verdict, findings, confidence, reviewed SHA, and any unresolved questions. Partial evidence is useful but is not a completed review pass.

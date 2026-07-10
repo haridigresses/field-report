@@ -1,3 +1,10 @@
+# macOS metadata.
 .DS_Store
-data/current.json.tmp
-data/current.json.next
+
+# Generated local projection and optional refresh history.
+data/current.json
+snapshots/*.json
+
+# Atomic-write scratch files.
+data/*.next
+snapshots/*.next

@@ -68,14 +68,16 @@ function confidence(stream) {
   return rating == null ? { value: "Pending", level: "neutral" } : { value: `${rating}%`, level: rating < 60 ? "critical" : rating < 80 ? "watch" : "steady" };
 }
 
-function risk(stream) {
-  if (stream.assessment?.stale) return { label: "Assessment stale", level: "critical" };
-  if (stream.status === "blocked") return { label: "Delivery blocked", level: "critical" };
-  const structural = stream.assessment?.structuralRisk;
-  if (structural != null && structural >= 30) return { label: "Structural", level: "critical" };
-  if (openQuestions(stream).length) return { label: "Decision", level: "watch" };
-  if (!(stream.prs || []).length) return { label: "Pre-publication", level: "watch" };
-  return { label: "Low", level: "steady" };
+function attention(stream) {
+  const failingDelivery = (stream.prs || []).some((pr) => prHealth(pr).level === "critical");
+  if (stream.status === "blocked") return { label: "Blocked", level: "critical" };
+  if (failingDelivery) return { label: "Delivery failing", level: "critical" };
+  if (stream.assessment?.stale) return { label: "Review stale", level: "critical" };
+  if (openQuestions(stream).length) return { label: `${openQuestions(stream).length} open question${openQuestions(stream).length === 1 ? "" : "s"}`, level: "watch" };
+  if (stream.assessmentRequest?.pending) return { label: "Review requested", level: "watch" };
+  if (/authori[sz]ation|user decision|hold/i.test(stream.reviewState || "")) return { label: "Decision needed", level: "watch" };
+  if (/exact[- ]head review|review.*pending|pending.*review/i.test(stream.reviewState || "")) return { label: "Review due", level: "watch" };
+  return { label: "Clear", level: "steady" };
 }
 
 function delivery(stream) {
@@ -155,46 +157,38 @@ function renderIssueDrawer() {
     issuesDrawer.close();
     renderPortfolio();
     renderBrief();
-    briefRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+    briefRoot.scrollIntoView({ block: "start" });
   }));
 }
 
 function renderPortfolio() {
   const streams = dashboard.workstreams.filter((stream) => activeRepo === "all" || stream.project === activeRepo);
   const sorted = [...streams].sort((a, b) => {
-    const weight = (stream) => stream.status === "blocked" ? 0 : openQuestions(stream).length ? 1 : stream.assessment?.stale ? 2 : 3;
-    return weight(a) - weight(b);
+    const weight = (stream) => stream.status === "complete" ? 4 : attention(stream).level === "critical" ? 0 : attention(stream).level === "watch" ? 1 : 2;
+    return weight(a) - weight(b) || new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
   });
   totalStreams.textContent = `${streams.length} outcomes`;
-  const blocked = streams.filter((stream) => stream.status === "blocked").length;
-  const uncertain = streams.filter((stream) => openQuestions(stream).length).length;
-  const pending = streams.filter((stream) => stream.assessment?.mergeReadiness == null).length;
-  portfolioSignal.textContent = `${blocked} blocked · ${uncertain} uncertain · ${pending} awaiting confidence`;
+  const needingAttention = streams.filter((stream) => attention(stream).level !== "steady" && stream.status !== "complete").length;
+  const active = streams.filter((stream) => ["active", "blocked"].includes(stream.status)).length;
+  portfolioSignal.textContent = `${needingAttention} need attention · ${active} active · ${streams.filter((stream) => stream.status === "complete").length} complete`;
   const selectionSize = selectedStreams.size;
   selectionCount.textContent = selectionSize ? `${selectionSize} outcome${selectionSize === 1 ? "" : "s"} selected for fresh judgment.` : "Select outcomes to request fresh reviewer judgment.";
   requestAssessmentButton.disabled = selectionSize === 0;
   requestAssessmentButton.textContent = selectionSize ? `Request assessment · ${selectionSize}` : "Request assessment";
 
   portfolioRoot.innerHTML = `<div class="portfolio-header" aria-hidden="true">
-    <span></span><span>Outcome</span><span>Phase</span><span>Blocked</span><span>Uncertain</span><span>Delivery</span><span>Confidence</span><span>Risk</span>
+    <span></span><span>Outcome</span><span>Needs attention</span><span>Current gate</span><span>Delivery</span><span>Updated</span>
   </div>${sorted.map((stream) => {
-    const blocked = stream.status === "blocked";
-    const uncertainty = openQuestions(stream).length;
-    const confidenceState = confidence(stream);
-    const riskState = risk(stream);
+    const attentionState = attention(stream);
     const selected = activeStream === stream.id;
-    const request = stream.assessmentRequest;
-    const judgment = request?.pending ? `Assessment requested ${relativeTime(request.requestedAt)}` : nextMilestone(stream);
-    return `<div class="portfolio-row ${selected ? "selected" : ""}" data-stream="${escapeHtml(stream.id)}">
+    return `<div class="portfolio-row ${selected ? "selected" : ""} ${stream.status === "complete" ? "is-complete" : ""}" data-stream="${escapeHtml(stream.id)}">
       <input class="stream-select" type="checkbox" aria-label="Select ${escapeHtml(stream.title)} for assessment" ${selectedStreams.has(stream.id) ? "checked" : ""}>
       <button class="row-open" type="button" aria-pressed="${selected}">
-        <span class="outcome"><b>${escapeHtml(stream.title)}</b><small class="${request?.pending ? "signal-watch" : ""}">${escapeHtml(judgment)}</small></span>
-        <span data-label="Phase">${phase(stream)}</span>
-        <span data-label="Blocked" class="${blocked ? "signal-critical" : "signal-steady"}">${blocked ? "Yes" : "No"}</span>
-        <span data-label="Uncertain" class="${uncertainty ? "signal-watch" : "signal-steady"}">${uncertainty ? `Yes · ${uncertainty}` : "No"}</span>
+        <span class="outcome"><b>${escapeHtml(stream.title)}</b><small>${escapeHtml(phase(stream))} · ${escapeHtml(nextMilestone(stream))}</small></span>
+        <span data-label="Needs attention" class="signal-${attentionState.level}">${escapeHtml(attentionState.label)}</span>
+        <span data-label="Current gate" class="current-gate">${escapeHtml(stream.reviewState || "No gate recorded")}</span>
         <span data-label="Delivery" class="delivery">${delivery(stream)}</span>
-        <span data-label="Confidence" class="signal-${confidenceState.level}">${confidenceState.value}</span>
-        <span data-label="Risk" class="signal-${riskState.level}">${escapeHtml(riskState.label)}</span>
+        <span data-label="Updated">${relativeTime(stream.updatedAt)}</span>
       </button>
     </div>`;
   }).join("")}`;
@@ -207,7 +201,7 @@ function renderPortfolio() {
       activeStream = activeStream === row.dataset.stream ? null : row.dataset.stream;
       renderPortfolio();
       renderBrief();
-      if (activeStream) briefRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (activeStream) briefRoot.scrollIntoView({ block: "start" });
     });
   });
 }
@@ -220,11 +214,9 @@ function renderLinkedEvidence(stream) {
 }
 
 function renderAgents(stream) {
-  const status = new Map((stream.agents || []).map((agent) => [agent.name, agent]));
-  return [["Fable", stream.fableAgent], ["Reviewer", stream.reviewerAgent], ["Codex", stream.codexExecutor]].map(([label, name]) => {
-    const agent = status.get(name);
-    return `<span><i class="agent-dot ${agent?.running ? "live" : ""}"></i>${label}: ${escapeHtml(name || "unassigned")}</span>`;
-  }).join("");
+  const orchestrator = stream.orchestrator || stream.fableAgent;
+  const agent = (stream.agents || []).find((candidate) => candidate.name === orchestrator);
+  return `<span><i class="agent-dot ${agent?.running ? "live" : ""}"></i>Orchestrator: ${escapeHtml(orchestrator || "unassigned")}</span>`;
 }
 
 function humanize(value) {
@@ -250,18 +242,17 @@ function renderTimeline(stream) {
   const history = events.length ? `<ol class="movement-list">${events.map((event) => `<li>
     <time datetime="${escapeHtml(event.at)}">${new Date(event.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time>
     <span class="timeline-node timeline-${escapeHtml(event.type || "event")}"></span>
-    <div><p><b>${escapeHtml(event.label)}</b><span>${escapeHtml(event.actor || "system")}</span></p><p>${escapeHtml(event.text)}</p></div>
+    <div><p><b>${escapeHtml(event.label)}</b><span>${escapeHtml(/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(event.actor || "") ? "agent session" : (event.actor || "system"))}</span></p><p>${escapeHtml(event.text)}</p></div>
   </li>`).join("")}</ol>` : `<p class="quiet movement-empty">No structured execution events have been recorded yet.</p>`;
   return `${remainingHtml}<div class="timeline-divider"><span>Recorded movement</span></div>${history}`;
 }
 
 function reviewEvents(stream) {
-  const timelineJudgments = (stream.timeline || []).filter((event) => ["rating", "review", "assessment", "assessment_request"].includes(event.type));
-  return [...(stream.reviewPasses || []), ...timelineJudgments];
+  return stream.reviewPasses || [];
 }
 
 function primaryPr(stream) {
-  return (stream.prs || []).find((pr) => pr.state === "OPEN") || (stream.prs || [])[0] || null;
+  return (stream.prs || []).find((pr) => pr.state === "OPEN" && pr.headRefName === stream.branch) || (stream.prs || []).find((pr) => pr.state === "OPEN") || (stream.prs || [])[0] || null;
 }
 
 function renderReviewSummary(stream) {
@@ -272,16 +263,17 @@ function renderReviewSummary(stream) {
   const activeIssueCount = (stream.afIssues || []).filter((issue) => issue.status !== "closed").length;
   const head = pr?.headRefOid || assessment.currentHead || null;
   const passes = reviews.filter((event) => event.type === "review_pass");
-  const currentPasses = passes.filter((event) => head && (head.startsWith(event.metadata?.head || "missing") || String(event.metadata?.head || "").startsWith(head)));
+  const currentPasses = passes.filter((event) => head && String(event.metadata?.head || "").toLowerCase() === String(head).toLowerCase());
   const invalidatedPasses = passes.length - currentPasses.length;
   const unresolvedFindings = currentPasses.flatMap((event) => event.metadata?.unresolved || []).length;
   const stale = Boolean(assessment.stale || (head && assessment.assessedHead && !head.startsWith(assessment.assessedHead) && !assessment.assessedHead.startsWith(head)));
   const verdict = assessment.mergeReadiness == null ? "Reviewer judgment pending" : `${assessment.assessedBy || "Reviewer"}: ${assessment.mergeReadiness}% merge-ready · ${assessment.structuralRisk == null ? "structural risk pending" : `${assessment.structuralRisk}% rebuild risk`}`;
   const lines = [
-    ["reviews", passes.length ? `${currentPasses.length} independent pass${currentPasses.length === 1 ? "" : "es"} on current head${invalidatedPasses ? ` · ${invalidatedPasses} superseded` : ""}` : `${reviews.length} structured reviewer judgment${reviews.length === 1 ? "" : "s"} recorded`],
+    ["reviews", passes.length ? `${currentPasses.length} independent pass${currentPasses.length === 1 ? "" : "es"} on current head${invalidatedPasses ? ` · ${invalidatedPasses} superseded` : ""}` : "No exact-SHA review pass recorded"],
     ["assessment", stale ? "Latest assessment predates the current head" : verdict],
     ["considerations", questions.length || unresolvedFindings ? `${questions.length + unresolvedFindings} unresolved consideration${questions.length + unresolvedFindings === 1 ? "" : "s"}` : "No unresolved considerations"],
     ["issues", `${activeIssueCount} active AF issue${activeIssueCount === 1 ? "" : "s"}`],
+    ["context", `${(stream.references || []).length} governing git reference${(stream.references || []).length === 1 ? "" : "s"}`],
     ["reconciliation", stream.assessmentRequest?.pending ? `Reconciliation pending with ${stream.assessmentRequest.requestedFrom || "reviewer"}` : "No reviewer reconciliation queued"]
   ];
   return `<section class="review-summary"><p class="review-head">${pr ? `<a href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">PR #${pr.number}</a>` : "Pre-PR branch"} · head <code>${escapeHtml(head ? head.slice(0, 8) : "unrecorded")}</code></p><div class="review-lines">${lines.map(([mode, text]) => `<button type="button" data-evidence="${mode}"><span>${escapeHtml(text)}</span><i aria-hidden="true">↗</i></button>`).join("")}</div></section>`;
@@ -298,6 +290,7 @@ function openEvidence(stream, mode) {
     assessment: ["Current judgment", assessment.stale ? "This judgment is stale because the branch head moved." : "Latest reviewer-owned readiness and structural-risk judgment.", `${renderJudgment(assessment)}${assessment.rationale ? `<p class="rationale">${escapeHtml(assessment.rationale)}</p>` : `<p class="quiet">Assessment pending.</p>`}`],
     considerations: ["Open considerations", `${questions.length} unresolved question${questions.length === 1 ? "" : "s"}.`, questions.length ? `<ul class="drawer-questions">${questions.map((question) => `<li><code>${escapeHtml(question.id)}</code><p>${escapeHtml(question.text)}</p><small>Raised ${relativeTime(question.askedAt)}</small></li>`).join("")}</ul>` : `<p class="quiet">Nothing unresolved.</p>`],
     issues: ["Linked AF issues", `${issues.filter((issue) => issue.status !== "closed").length} active of ${issues.length} linked.`, issues.length ? `<div>${issues.map((issue) => `<article class="issue-row"><div class="issue-primary"><span class="issue-status status-${escapeHtml(issue.status)}">${escapeHtml(issue.status)}</span><code>${escapeHtml(issue.id)}</code><p>${escapeHtml(issue.title)}</p></div>${issue.commits?.length ? `<div class="issue-links">${commitLinks(issue.commits, project?.githubRepo)}</div>` : ""}</article>`).join("")}</div>` : `<p class="quiet">No AF issues linked.</p>`],
+    context: ["Governing git context", `${(stream.references || []).length} pointed reference${(stream.references || []).length === 1 ? "" : "s"}. Git remains the source of truth.`, (stream.references || []).length ? `<ul class="reference-list">${stream.references.map((reference) => `<li><p><span>${escapeHtml(reference.kind || "plan")}</span>${reference.url ? `<a href="${escapeHtml(reference.url)}" target="_blank" rel="noreferrer">${escapeHtml(reference.label || reference.path)}</a>` : `<b>${escapeHtml(reference.label || reference.path)}</b>`}</p>${reference.quote ? `<blockquote>${escapeHtml(reference.quote)}</blockquote>` : ""}<small><code>${escapeHtml(reference.path)}</code>${reference.commit ? ` · ${escapeHtml(reference.commit.slice(0, 8))}` : ""}</small></li>`).join("")}</ul>` : `<p class="quiet">No governing reference is linked.</p>`],
     reconciliation: ["Reviewer reconciliation", stream.assessmentRequest?.pending ? `Requested ${relativeTime(stream.assessmentRequest.requestedAt)} from ${stream.assessmentRequest.requestedFrom || "reviewer"}.` : "No reviewer response is currently queued.", stream.assessmentRequest?.pending ? `<p>${escapeHtml(stream.assessmentRequest.prompt || "A fresh evidence-backed judgment has been requested.")}</p>` : `<p class="quiet">The latest structured judgment is reflected in the field report.</p>`]
   }[mode];
   evidenceTitle.textContent = content[0];
@@ -309,37 +302,34 @@ function openEvidence(stream, mode) {
 function renderBrief() {
   const stream = dashboard.workstreams.find((candidate) => candidate.id === activeStream);
   if (!stream) {
-    briefRoot.innerHTML = `<p class="brief-placeholder">Select an outcome to inspect its situation, delivery chain, and supporting evidence.</p>`;
+    briefRoot.innerHTML = `<p class="brief-placeholder">Select an outcome to inspect its situation, next gate, and exact-SHA evidence.</p>`;
     return;
   }
   const project = projectFor(stream);
-  const confidenceState = confidence(stream);
-  const riskState = risk(stream);
+  const attentionState = attention(stream);
   const issues = (stream.afIssues || []).filter((issue) => issue.status !== "closed");
+  const orchestrator = stream.orchestrator || stream.fableAgent;
   briefRoot.innerHTML = `<article class="brief">
     <header class="brief-head">
       <div><p class="kicker">${escapeHtml(project?.label || stream.project)} · ${phase(stream)}</p><h2>${escapeHtml(stream.title)}</h2></div>
       <div class="brief-actions"><button class="request-one" type="button">Request assessment</button><button class="close-brief" type="button" aria-label="Close workstream brief">Close</button></div>
     </header>
     <div class="situation">
-      <p>${escapeHtml(stream.liveStatus?.text || stream.summary)}</p>
+      <p>${escapeHtml(stream.summary)}</p>
       <dl>
         <div><dt>Current gate</dt><dd>${escapeHtml(stream.reviewState || "No gate recorded")}</dd></div>
         <div><dt>Next milestone</dt><dd>${escapeHtml(nextMilestone(stream))}</dd></div>
-        <div><dt>Confidence</dt><dd class="signal-${confidenceState.level}">${confidenceState.value}</dd></div>
-        <div><dt>Material risk</dt><dd class="signal-${riskState.level}">${escapeHtml(riskState.label)}</dd></div>
+        <div><dt>Needs attention</dt><dd class="signal-${attentionState.level}">${escapeHtml(attentionState.label)}</dd></div>
+        <div><dt>Owner</dt><dd>${escapeHtml(orchestrator || "Unassigned")}</dd></div>
       </dl>
     </div>
     ${renderReviewSummary(stream)}
-    <section class="delivery-ledger"><div class="subhead"><h3>Delivery & review timeline</h3><span>${(stream.timeline || []).length} recorded · ${(stream.chunks || []).filter((chunk) => chunk.status !== "complete").length} remaining</span></div>${renderTimeline(stream)}</section>
-    ${renderLinkedEvidence(stream)}
+    <section class="delivery-ledger"><div class="subhead"><h3>Semantic timeline</h3><span>${(stream.timeline || []).length} recorded · ${(stream.chunks || []).filter((chunk) => chunk.status !== "complete").length} remaining</span></div>${renderTimeline(stream)}</section>
     <footer class="evidence">
-      <div><b>Evidence</b><span>${escapeHtml(stream.branch || "No branch")} · ${issues.length} open AF issue${issues.length === 1 ? "" : "s"} · updated ${relativeTime(stream.updatedAt)}</span>${stream.commits?.length ? `<span>${commitLinks(stream.commits, project?.githubRepo)}</span>` : ""}</div>
+      <div><b>Evidence</b><span>${escapeHtml(stream.branch || "No branch")} · ${issues.length} open AF issue${issues.length === 1 ? "" : "s"} · ${(stream.references || []).length} governing reference${(stream.references || []).length === 1 ? "" : "s"} · updated ${relativeTime(stream.updatedAt)}</span>${stream.commits?.length ? `<span>${commitLinks(stream.commits, project?.githubRepo)}</span>` : ""}</div>
       <div class="agents">${renderAgents(stream)}</div>
-      <details class="session-editor"><summary>Agent sessions</summary><form data-workstream-id="${escapeHtml(stream.id)}">
-        <label>Fable<input name="fableAgent" value="${escapeHtml(stream.fableAgent || "")}"></label>
-        <label>Reviewer<input name="reviewerAgent" value="${escapeHtml(stream.reviewerAgent || "")}"></label>
-        <label>Codex<input name="codexExecutor" value="${escapeHtml(stream.codexExecutor || "")}"></label>
+      <details class="session-editor"><summary>Orchestrator binding</summary><form data-workstream-id="${escapeHtml(stream.id)}">
+        <label>AF session<input name="orchestrator" value="${escapeHtml(orchestrator || "")}"></label>
         <button type="submit">Save</button><span class="save-status" aria-live="polite"></span>
       </form></details>
     </footer>

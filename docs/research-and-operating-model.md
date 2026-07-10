@@ -91,39 +91,13 @@ Do not put a live agent grid above the decision queue. A running agent is not pr
 
 ## AF integration
 
-Use AF as the event and coordination substrate, with exact structured subjects:
+Use AF for issues, sessions, lineage, delegation, wakeups, and message transport. Stable workstream IDs and PR numbers belong in AF issue bodies so deterministic correlation remains possible. AF messages do not mutate Field Report outcome status, questions, or reviewer judgment.
 
-```text
-[STATUS <workstream-id>] outcome; current gate; next action
-[QUESTION <workstream-id> Q1] decision needed
-[ANSWER <workstream-id> Q1] ruling
-[RATING <workstream-id>] merge=85 structural=15 head=<sha>
-[REVIEW <workstream-id>] GO | CONDITIONAL GO | NO-GO; evidence
-[PR <workstream-id>] #123 opened or head advanced
-[COMPLETE <workstream-id>] delivered outcome and follow-up
-```
-
-Improvements:
-
-- Link more coordination messages to AF issues. The current 57/668 issue-linked ratio makes issue state much less useful than inbox state.
-- Put stable workstream IDs and PR numbers in issue bodies so correlation is exact.
-- Treat one in-progress issue as the executor's current focus; keep backlog issues open but visually separate.
-- Make reviewer ratings AF-owned and read-only in the dashboard.
-- Add last-seen/liveness from AF sessions, but use it as diagnostic evidence rather than a progress metric.
-- Add a repository-coordinator summary message after every merge-order or scope ruling.
+Completed judgment is published directly to the exact-SHA Field Report ledger with `fr pass record`. One in-progress AF issue remains the executor's current focus; backlog issues stay open but visually separate. Session liveness is diagnostic evidence, not a progress metric.
 
 ## Monitoring
 
-Prefer deterministic collectors for AF, Git, GitHub, CI, and worktree state. Do not spend model calls polling facts that shell/CLI tools can report exactly.
-
-Use a cheap semantic monitor only when the deterministic snapshot materially changes:
-
-1. Hash the normalized snapshot.
-2. If unchanged, do nothing.
-3. If changed, ask one low-latency repository steward to classify the delta: meaningful arc change, attention item, or noise.
-4. Emit a structured AF status only for meaningful changes.
-
-An always-on agent per workstream would add cost and contradictory summaries. One cheap steward per repository, event-triggered or on manual refresh, is enough. Use task heartbeats only while an executor actively needs inbox responsiveness.
+Prefer deterministic collectors for AF issues, Git, GitHub, CI, and worktree state. Do not spend model calls polling facts that shell or CLI tools can report exactly. Semantic state remains explicitly curated by the repository coordinator or workstream orchestrator; task heartbeats are temporary and only needed while an active agent requires responsiveness.
 
 ## Visual forms worth adding
 

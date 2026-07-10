@@ -47,27 +47,6 @@ async function collectIssues() {
   }
 }
 
-async function collectInbox(agentNames) {
-  const messages = [];
-  const errors = [];
-  for (const agent of agentNames) {
-    const result = await command("af", ["inbox", "list", "--for", agent, "--namespace", "--json"]);
-    if (!result.ok) {
-      errors.push(`${agent}: ${result.error}`);
-      continue;
-    }
-    try {
-      const parsed = JSON.parse(result.value || "[]");
-      const items = Array.isArray(parsed) ? parsed : parsed.messages || [];
-      messages.push(...items.map((message) => ({ ...message, inboxOwner: agent })));
-    } catch (error) {
-      errors.push(`${agent}: could not parse inbox JSON (${error.message})`);
-    }
-  }
-  const deduped = [...new Map(messages.map((message) => [`${message.created_at}:${message.from_name}:${message.subject}`, message])).values()];
-  return { items: deduped, error: errors.length ? errors.join("; ") : undefined };
-}
-
 async function collectPullRequests(project, configuredNumbers) {
   if (!project.githubRepo || project.githubRepo.startsWith("owner/")) return { items: [] };
   const fields = "number,title,url,state,isDraft,headRefName,headRefOid,updatedAt,mergeStateStatus,statusCheckRollup";
@@ -147,199 +126,69 @@ function projectIssueInventory(project, projectStreams, allIssues) {
     .slice(0, 300);
 }
 
-async function enrichReferences(stream, project) {
+async function enrichReferences(stream, project, revision) {
   if (!(stream.references || []).length) return [];
-  const head = await command("git", ["rev-parse", "HEAD"], project.repoPath);
+  const resolved = await command("git", ["rev-parse", revision || stream.branch || "HEAD"], project.repoPath);
+  const commit = resolved.ok ? resolved.value : null;
   return Promise.all(stream.references.map(async (reference) => {
-    const exists = await command("git", ["cat-file", "-e", `${head.ok ? head.value : "HEAD"}:${reference.path}`], project.repoPath);
+    const exists = commit ? await command("git", ["cat-file", "-e", `${commit}:${reference.path}`], project.repoPath) : { ok: false };
     return {
       ...reference,
-      commit: head.ok ? head.value : null,
+      commit,
       exists: exists.ok,
-      url: head.ok && project.githubRepo ? `https://github.com/${project.githubRepo}/blob/${head.value}/${reference.path}${reference.section ? `#${reference.section}` : ""}` : null
+      url: commit && project.githubRepo ? `https://github.com/${project.githubRepo}/blob/${commit}/${reference.path}${reference.section ? `#${reference.section}` : ""}` : null
     };
   }));
 }
 
-function messageText(message) {
-  return String(message.subject || message.title || message.body || message.content || "");
+function sameHead(left, right) {
+  return Boolean(left && right && String(left).toLowerCase() === String(right).toLowerCase());
 }
 
-function protocol(message) {
-  const subject = String(message.subject || message.title || "").trim();
-  const match = subject.match(/^\[(QUESTION|ANSWER|STATUS|COMPLETE|REVIEW|PR|RATING|ASSESSMENT|ASSESSMENT_REQUEST)\s+([^\]\s]+)(?:\s+(Q\d+))?\]\s*(.*)$/i);
-  if (!match) return null;
-  return { type: match[1].toUpperCase(), streamId: match[2], questionId: match[3], tail: match[4] || "", body: message.body || message.content || "" };
-}
-
-function keyValues(text) {
-  return Object.fromEntries([...String(text || "").matchAll(/(?:^|\s)([a-z_]+)=([^\s]+)/gi)].map((match) => [match[1].toLowerCase(), match[2]]));
-}
-
-function numberValue(value) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : null;
-}
-
-function lineValue(text, key) {
-  return String(text || "").match(new RegExp(`^${key}:\\s*(.+)$`, "im"))?.[1]?.trim() || null;
-}
-
-function structuredAssessment(message, streamId) {
-  const parsed = protocol(message);
-  if (parsed?.type !== "ASSESSMENT" || parsed.streamId !== streamId) return null;
-  const values = keyValues(`${parsed.tail}\n${parsed.body}`);
-  return {
-    outcomeConfidence: numberValue(values.outcome_confidence),
-    mergeReadiness: numberValue(values.merge_readiness),
-    structuralRisk: numberValue(values.structural_rebuild_risk),
-    assessedHead: /^[0-9a-f]{7,40}$/i.test(values.head || "") ? values.head : null,
-    necessity: values.necessity || null,
-    simplerPath: values.simpler_path || null,
-    scopeDrift: values.scope_drift || null,
-    contractIntegrity: values.contract_integrity || null,
-    evidenceQuality: values.evidence_quality || null,
-    verdict: values.verdict || null,
-    primaryRisk: lineValue(parsed.body, "primary_risk"),
-    nextGate: lineValue(parsed.body, "next_gate") || (values.next_gate ? values.next_gate.replaceAll("_", " ") : null),
-    rationale: lineValue(parsed.body, "rationale") || parsed.tail.replace(/(?:^|\s)[a-z_]+=[^\s]+/gi, " ").trim(),
-    assessedAt: new Date(messageMillis(message)).toISOString(),
-    assessedBy: message.from_name || message.fromName
-  };
-}
-
-function ratings(message) {
-  const subject = String(message.subject || message.title || "");
-  const found = [];
-  const pattern = /\[RATING\s+([^\]\s]+)\]\s+merge=(\d{1,3})\s+structural=(\d{1,3})\s+head=([^\s—]+)\s*(?:—|-)?\s*([\s\S]*?)(?=\s*\[RATING\s+|$)/gi;
-  for (const match of subject.matchAll(pattern)) {
-    found.push({
-      streamId: match[1],
-      mergeReadiness: Number(match[2]),
-      structuralRisk: Number(match[3]),
-      assessedHead: /^[0-9a-f]{7,40}$/i.test(match[4]) ? match[4] : null,
-      rationale: match[5].trim()
-    });
-  }
-  return found.filter((rating) => rating.mergeReadiness <= 100 && rating.structuralRisk <= 100);
-}
-
-function messageMillis(message) {
-  const raw = Number(message.created_at || message.createdAt || 0);
-  if (!raw) return 0;
-  return raw > 10 ** 15 ? raw / 1_000_000 : raw > 10 ** 12 ? raw : raw * 1000;
-}
-
-function derivedQuestions(stream, inboxMessages) {
-  const questions = new Map((stream.questions || []).map((question) => [question.id, question]));
-  const relevant = inboxMessages.map((message) => ({ message, parsed: protocol(message) }))
-    .filter(({ parsed }) => parsed?.streamId === stream.id && ["QUESTION", "ANSWER"].includes(parsed.type))
-    .sort((a, b) => messageMillis(a.message) - messageMillis(b.message));
-  for (const { message, parsed } of relevant) {
-    if (!parsed.questionId) continue;
-    if (parsed.type === "QUESTION") {
-      questions.set(parsed.questionId, {
-        id: parsed.questionId,
-        text: parsed.tail || parsed.body || "Question recorded in AF inbox",
-        status: "open",
-        askedAt: new Date(messageMillis(message)).toISOString()
-      });
-    } else {
-      const prior = questions.get(parsed.questionId) || { id: parsed.questionId, text: "Question answered through AF inbox" };
-      questions.set(parsed.questionId, { ...prior, status: "answered", answeredAt: new Date(messageMillis(message)).toISOString() });
-    }
-  }
-  return [...questions.values()];
-}
-
-function derivedProtocolState(stream, inboxMessages) {
-  const relevant = inboxMessages.map((message) => ({ message, parsed: protocol(message) }))
-    .filter(({ parsed }) => parsed?.streamId === stream.id)
-    .sort((a, b) => messageMillis(a.message) - messageMillis(b.message));
-  let assessment = stream.assessment || null;
-  let liveStatus = null;
-  let requestedAt = null;
-  let requestedFrom = null;
-  for (const message of [...inboxMessages].sort((a, b) => messageMillis(a) - messageMillis(b))) {
-    const rating = ratings(message).find((candidate) => candidate.streamId === stream.id);
-    if (rating) assessment = {
-        mergeReadiness: rating.mergeReadiness,
-        structuralRisk: rating.structuralRisk,
-        assessedHead: rating.assessedHead,
-        assessedAt: new Date(messageMillis(message)).toISOString(),
-        assessedBy: message.from_name || message.fromName,
-        rationale: message.body || rating.rationale
-      };
-    const structured = structuredAssessment(message, stream.id);
-    if (structured) assessment = structured;
-  }
-  for (const { message, parsed } of relevant) {
-    if (["STATUS", "COMPLETE", "REVIEW"].includes(parsed.type)) {
-      liveStatus = {
-        type: parsed.type.toLowerCase(),
-        text: parsed.tail || parsed.body,
-        at: new Date(messageMillis(message)).toISOString(),
-        from: message.from_name || message.fromName
-      };
-    }
-    if (parsed.type === "ASSESSMENT_REQUEST") {
-      requestedAt = new Date(messageMillis(message)).toISOString();
-      requestedFrom = message.to_name || message.toName;
-    }
-  }
-  return {
-    assessment,
-    liveStatus,
-    assessmentRequest: requestedAt ? {
-      requestedAt,
-      requestedFrom,
-      pending: !assessment?.assessedAt || new Date(assessment.assessedAt).getTime() < new Date(requestedAt).getTime()
-    } : null
-  };
-}
-
-function eventSummary(parsed) {
+function semanticTimeline(events) {
+  const material = new Set(["created", "checkpoint", "reconcile", "decision", "question", "assessment_requested", "review_pass", "milestone", "commit", "pr", "complete"]);
   const labels = {
-    ASSESSMENT_REQUEST: "Assessment requested",
-    ASSESSMENT: "Reviewer assessment",
-    RATING: "Reviewer rating",
-    REVIEW: "Review decision",
-    QUESTION: "Uncertainty opened",
-    ANSWER: "Uncertainty resolved",
-    STATUS: "Execution update",
-    COMPLETE: "Milestone completed",
-    PR: "Delivery update"
+    created: "Outcome created",
+    checkpoint: "Gate checkpoint",
+    reconcile: "Situation reconciled",
+    decision: "Decision recorded",
+    question: "Uncertainty opened",
+    assessment_requested: "Review requested",
+    review_pass: "Review pass",
+    milestone: "Milestone completed",
+    commit: "Patch committed",
+    pr: "Delivery updated",
+    complete: "Outcome completed"
   };
-  return labels[parsed.type] || parsed.type;
+  return events.filter((event) => material.has(event.type)).map((event) => ({ ...event, label: labels[event.type] || event.type }));
 }
 
-function derivedTimeline(stream, inboxMessages, streamIssues) {
-  const materialTypes = new Set(["ASSESSMENT_REQUEST", "ASSESSMENT", "RATING", "REVIEW", "QUESTION", "ANSWER", "STATUS", "COMPLETE", "PR"]);
-  const issueUuids = new Set(streamIssues.map((issue) => issue.uuid).filter(Boolean));
-  const candidates = [];
-  for (const message of inboxMessages) {
-    const parsed = protocol(message);
-    if (parsed?.streamId === stream.id && materialTypes.has(parsed.type)) candidates.push({ message, parsed });
-    if (ratings(message).some((rating) => rating.streamId === stream.id) && parsed?.streamId !== stream.id) {
-      candidates.push({ message, parsed: { type: "RATING", streamId: stream.id, tail: ratings(message).find((rating) => rating.streamId === stream.id)?.rationale || "Reviewer rating updated" } });
-    }
-    if (!parsed && issueUuids.has(message.related_issue_uuid)) {
-      candidates.push({ message, parsed: { type: "EXECUTION", streamId: stream.id, tail: message.subject || message.body || "Issue-linked execution activity" } });
-    }
-  }
-  return candidates.sort((a, b) => messageMillis(b.message) - messageMillis(a.message))
-    .slice(0, 20)
-    .map(({ message, parsed }) => {
-      const raw = parsed.type === "ASSESSMENT" ? (parsed.body || parsed.tail) : (parsed.tail || parsed.body);
-      const text = String(raw || eventSummary(parsed)).replace(/\s+/g, " ").trim();
-      return {
-        at: new Date(messageMillis(message)).toISOString(),
-        actor: message.from_name || message.fromName || "AF",
-        type: parsed.type.toLowerCase(),
-        label: parsed.type === "EXECUTION" ? "Execution activity" : eventSummary(parsed),
-        text: text.length > 280 ? `${text.slice(0, 277)}…` : text
-      };
-    });
+function assessmentFromPasses(stream, passes, currentHead) {
+  const current = passes.filter((event) => sameHead(event.metadata?.head, currentHead));
+  const latest = current.at(-1) || null;
+  if (!latest) return {
+    ...(stream.assessment || {}),
+    stale: stream.assessment?.assessedHead ? !sameHead(stream.assessment.assessedHead, currentHead) : Boolean(passes.length && currentHead),
+    currentHead: currentHead || null
+  };
+  return {
+    ...(stream.assessment || {}),
+    mergeReadiness: latest.metadata?.mergeReadiness,
+    structuralRisk: latest.metadata?.structuralRisk,
+    assessedHead: latest.metadata?.head,
+    assessedAt: latest.at,
+    assessedBy: latest.metadata?.reviewer || latest.actor,
+    rationale: latest.text,
+    verdict: latest.metadata?.verdict,
+    outcomeConfidence: latest.metadata?.outcomeConfidence,
+    necessity: latest.metadata?.necessity,
+    simplerPath: latest.metadata?.simplerPath,
+    scopeDrift: latest.metadata?.scopeDrift,
+    contractIntegrity: latest.metadata?.contractIntegrity,
+    evidenceQuality: latest.metadata?.evidenceQuality,
+    stale: false,
+    currentHead
+  };
 }
 
 async function main() {
@@ -347,12 +196,11 @@ async function main() {
   const files = (await readdir(path.join(root, "workstreams"))).filter((file) => file.endsWith(".json")).sort();
   const streams = await Promise.all(files.map((file) => readJson(path.join(root, "workstreams", file))));
   const localEventsByStream = Object.fromEntries(await Promise.all(streams.map(async (stream) => [stream.id, await readLocalEvents(stream.id)])));
-  const agents = [...new Set(projects.flatMap((project) => [project.coordinator]).concat(streams.flatMap((stream) => [stream.fableAgent, stream.reviewerAgent, stream.codexExecutor])).filter(Boolean))];
+  const agents = [...new Set(projects.flatMap((project) => [project.coordinator]).concat(streams.map((stream) => stream.orchestrator || stream.fableAgent)).filter(Boolean))];
   const prNumbersByProject = Object.fromEntries(projects.map((project) => [project.id, [...new Set(streams.filter((stream) => stream.project === project.id).flatMap((stream) => (stream.prs || []).map((pr) => typeof pr === "number" ? pr : pr.number)))]]));
 
-  const [issues, inbox, agentStatus, ...remainingResults] = await Promise.all([
+  const [issues, agentStatus, ...remainingResults] = await Promise.all([
     collectIssues(),
-    collectInbox(agents),
     collectAgentStatus(),
     ...projects.map((project) => collectPullRequests(project, prNumbersByProject[project.id])),
     ...projects.map(collectRepoState)
@@ -370,25 +218,33 @@ async function main() {
       return { ...configured, ...(livePrs.find((pr) => pr.number === number) || {}), number };
     });
     const branchPr = livePrs.find((pr) => pr.headRefName === stream.branch);
-    const protocolState = derivedProtocolState(stream, inbox.items);
-    const assessment = protocolState.assessment || {};
     const issuePrefixes = stream.issuePrefixes || [];
     const streamIssues = issues.items.filter((issue) => issuePrefixes.some((prefix) => issue.id === prefix || issue.id?.startsWith(`${prefix}.`)));
-    const agentNames = [stream.fableAgent, stream.reviewerAgent, stream.codexExecutor].filter(Boolean);
+    const orchestrator = stream.orchestrator || stream.fableAgent || null;
+    const agentNames = [orchestrator].filter(Boolean);
+    const localEvents = localEventsByStream[stream.id] || [];
+    const reviewPasses = localEvents.filter((event) => event.type === "review_pass").sort((a, b) => new Date(a.at) - new Date(b.at));
+    let currentHead = branchPr?.headRefOid || null;
+    if (!currentHead && stream.branch) {
+      const project = projects.find((candidate) => candidate.id === stream.project);
+      const resolved = await command("git", ["rev-parse", stream.branch], project?.repoPath);
+      if (resolved.ok && /^[0-9a-f]{40}$/i.test(resolved.value)) currentHead = resolved.value;
+    }
+    const latestRequest = localEvents.filter((event) => event.type === "assessment_requested").sort((a, b) => new Date(a.at) - new Date(b.at)).at(-1) || null;
+    const latestPass = reviewPasses.at(-1) || null;
     return {
       ...stream,
-      assessment: {
-        ...assessment,
-        stale: Boolean(assessment.assessedHead && branchPr?.headRefOid && !branchPr.headRefOid.startsWith(assessment.assessedHead) && !assessment.assessedHead.startsWith(branchPr.headRefOid)),
-        currentHead: branchPr?.headRefOid || null
-      },
-      liveStatus: protocolState.liveStatus,
-      assessmentRequest: protocolState.assessmentRequest,
-      reviewPasses: (localEventsByStream[stream.id] || []).filter((event) => event.type === "review_pass"),
-      timeline: [...derivedTimeline(stream, inbox.items, streamIssues), ...(localEventsByStream[stream.id] || [])]
-        .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 20),
-      references: await enrichReferences(stream, projects.find((project) => project.id === stream.project)),
-      questions: derivedQuestions(stream, inbox.items),
+      orchestrator,
+      assessment: assessmentFromPasses(stream, reviewPasses, currentHead),
+      assessmentRequest: latestRequest ? {
+        requestedAt: latestRequest.at,
+        requestedFrom: latestRequest.metadata?.recipient || latestRequest.actor,
+        pending: !latestPass || new Date(latestPass.at) < new Date(latestRequest.at)
+      } : null,
+      reviewPasses,
+      timeline: semanticTimeline(localEvents).sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 20),
+      references: await enrichReferences(stream, projects.find((project) => project.id === stream.project), currentHead),
+      questions: stream.questions || [],
       prs: configuredPrs,
       afIssues: streamIssues,
       agents: [...new Set(agentNames)].map((name) => agentsByName[name] || { name, running: false })
@@ -423,7 +279,6 @@ async function main() {
     workstreams: enrichedStreams,
     health: {
       afIssues: issues.error || "ok",
-      afInbox: inbox.error || "ok",
       afSessions: agentStatus.error || "ok",
       github: Object.fromEntries(projects.map((project) => [project.id, prsByProject[project.id]?.error || "ok"]))
     }

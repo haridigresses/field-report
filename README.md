@@ -2,7 +2,7 @@
 
 A local portfolio field report for Codex executors, Fable/Claude agents, Agent Fixes coordination, and GitHub pull requests.
 
-Agents and users interact through the `fr` CLI. AF subject syntax remains an internal compatibility layer; normal instructions should be natural language such as “track this in Field Report,” “record this decision,” or “reconcile this workstream.”
+Agents and users interact through the `fr` CLI. Field Report owns curated outcome state and the exact-SHA review ledger; AF transports requests and owns issues, sessions, lineage, and messaging.
 
 ## Install
 
@@ -24,7 +24,7 @@ fr checkpoint --summary "Implementation complete; exact-SHA review is next" --st
 fr reconcile --data '{"summary":"...","chunks":[...]}'
 fr assess
 fr delegate review aon-document-zone-cutover
-fr pass record aon-document-zone-cutover --head 4ad570c2 --verdict CONDITIONAL_GO --reviewer codex-xhigh --model gpt-5.5 --summary "Contracts hold; one evidence gap remains."
+fr pass record aon-document-zone-cutover --head 4ad570c2e81ac141fa18cc0893465264b533f637 --verdict CONDITIONAL_GO --reviewer codex-xhigh --model gpt-5.6 --merge 82 --structural 8 --summary "Contracts hold; one evidence gap remains."
 fr link issue ad.41
 fr link commit 4ad570c2 --chunk kernel-timeout
 fr reference --path docs/import-principles.md --kind contract --quote "Ambiguity and contradiction surface as reviewable, actionable issues at compile time."
@@ -45,7 +45,7 @@ AF issues remain the execution ledger; Field Report links issue trees to durable
 - Agent Fixes provides names, inbox coordination, issues, session visibility, and execution provenance.
 - GitHub remains authoritative for pull-request state.
 
-Existing long-lived Fable agents remain supported through the assessment inbox path. The delegated-review path is read-only, returns structured JSON, and records a SHA-bound independent pass directly in the append-only Field Report event ledger.
+`fr assess` and `fr delegate review` both send a bounded review request to the workstream orchestrator. The orchestrator may delegate to Fable through `claude-aws` or to Codex panels, but only an explicit `fr pass record` at a full 40-character SHA counts as completed review evidence.
 
 `docs/fr-workflow.md` is the canonical opt-in orchestration contract. It is not copied into repository `AGENTS.md` files used by other developers. `fr coordinate`, `fr onboard`, and `fr workflow` load the shared contract plus only the armed session's role section.
 
@@ -67,28 +67,16 @@ npm run refresh
 
 No background timer is used.
 
-Select an outcome and expand **Agent sessions** to update its Fable workstream agent, reviewer, or Codex executor. Saving persists the values to the matching `workstreams/*.json` file, then refreshes collected state.
+Select an outcome and expand **Orchestrator binding** to update its persistent AF session. Executors and reviewers are delegated runs recorded on semantic events rather than permanent workstream roles.
 
 Each workstream displays two reviewer-owned, evidence-backed percentages:
 
 - **Merge readiness:** probability that the branch can merge without material changes beyond normal review and release gates. This is not merge authorization.
 - **Structural rebuild risk:** probability that architectural or contract rot makes a bounded rebuild safer or cheaper than continuing to patch the current branch.
 
-Reviewers publish ratings through AF inbox using a leading subject such as `[RATING aon-pr-audit] merge=85 structural=15 head=59c89cd9` and put the evidence summary in the body. The collector accepts only an exact workstream ID. The card always shows both ratings; missing ratings display as unassessed rather than inventing confidence. When a linked GitHub PR advances beyond the assessed SHA, the rating is marked stale.
+Select one or more outcomes and use **Request assessment** when fresh judgment is needed. The request is delivered through AF to the workstream orchestrator and recorded as a semantic request event. The reviewer publishes directly with `fr pass record`; AF subjects never mutate outcome status, questions, or assessment fields.
 
-For a fuller judgment, select one or more outcomes and use **Request assessment**. The server sends the configured reviewer an evidence-backed rubric covering outcome confidence, merge readiness, structural rebuild risk, necessity, simpler paths, scope drift, contract integrity, evidence quality, plan contradictions, primary risk, and next gate. The request is recorded through AF and appears as pending until a newer assessment arrives.
-
-The request names a separate **publication lane**: the repository coordinator's AF inbox, which the collector monitors. When the reviewer is also the coordinator, sending the response to their own AF name is intentional. Reviewers should not reroute responses to executors merely because those executors own the branch. Dashboard context is explicitly labeled as potentially stale and must be reconciled against current evidence before judgment.
-
-The structured response subject is:
-
-```text
-[ASSESSMENT <workstream-id>] head=<sha> outcome_confidence=<0-100> merge_readiness=<0-100> structural_rebuild_risk=<0-100> necessity=<clear|challenged|unjustified> simpler_path=<none_found|candidate|recommended> scope_drift=<none|low|material> contract_integrity=<sound|at_risk|broken> evidence_quality=<strong|partial|weak> verdict=<GO|CONDITIONAL_GO|NO_GO>
-```
-
-Its body uses `primary_risk:`, `next_gate:`, and `rationale:` lines. Existing compact `[RATING ...]` messages remain supported.
-
-The dashboard leads with one comparable row per durable outcome. Repository is an optional filter rather than the primary hierarchy. Each row reports phase, blockage, uncertainty, delivery artifact, confidence, and material risk. Selecting it opens the situation brief, milestone-to-PR delivery chain, reviewer evidence, AF issue count, and agent sessions.
+The dashboard is attention-first: each row reports whether the outcome needs the user, its current gate, delivery artifact, and freshness. The deep dive keeps the 2–3 line situation, remaining milestones, exact-SHA review ledger, governing git references, linked AF issues, and semantic timeline.
 
 ## Configure the pilot
 
@@ -102,38 +90,23 @@ The dashboard leads with one comparable row per durable outcome. Repository is a
 "prs": [{ "number": 254, "chunks": ["client-migration", "failure-ux"] }]
 ```
 
-## Questions through AF
+## Questions and decisions
 
-The collector recognizes messages that contain the workstream ID and use matching question IDs:
-
-```text
-[QUESTION aon-write-path Q1] Which compatibility boundary applies?
-[ANSWER aon-write-path Q1] Preserve the old RPC through PR 254.
-```
-
-Questions may also be recorded directly in the workstream JSON file. An unanswered question appears as uncertainty in the portfolio and in the selected situation brief.
+Use `fr ask` and `fr decide` for durable uncertainty. AF can notify or wake the orchestrator, but inbox subject lines are not parsed into canonical Field Report state.
 
 ## Storage and history
 
 - `workstreams/*.json` is the curated, one-file-per-workstream arc.
-- `data/current.json` is the latest generated aggregate and is replaced atomically.
-- `snapshots/YYYY-MM-DD.json` is the rolling daily snapshot. Git provides versions over time without creating a new large file for every factual refresh.
+- `data/current.json` is a generated local projection and is replaced atomically.
+- `snapshots/*.json` is optional generated local history.
+- Generated projections are ignored by Git; canonical workstreams and semantic event ledgers provide durable history.
 - `generatedAt` records source refresh time; each workstream's `updatedAt` records its last meaningful narrative update.
-- Active workstreams older than 12 hours receive a stale warning.
 
-## Coordination protocol
+## Authority boundaries
 
-Useful AF message subjects:
+- Field Report: curated outcome, gate, next action, questions, decisions, milestones, and completed exact-SHA review passes.
+- AF: issues, sessions, delegation, lineage, waking, and message transport.
+- Git: implementation plus authoritative plans and contracts at a named revision.
+- GitHub: pull-request head, checks, review state, and merge state.
 
-```text
-[QUESTION <workstream-id> Q1] ...
-[ANSWER <workstream-id> Q1] ...
-[STATUS <workstream-id>] ...
-[PR <workstream-id>] #254 opened
-[REVIEW <workstream-id>] ...
-[COMPLETE <workstream-id>] ...
-```
-
-The first pilot intentionally keeps narrative updates explicit. AF and GitHub are collected automatically; the 2–3 line arc and semantically sized checklist remain curated by the workstream orchestrator or Codex executor.
-
-The deep-dive delivery/review timeline is derived from structured workstream messages, SHA-bound review passes, and AF messages linked to the workstream's issue tree. It is append-only in source, capped to the 20 most recent material events in the UI, and intentionally excludes ordinary unlinked inbox chatter.
+The deep-dive timeline is derived only from semantic Field Report events and is capped to the 20 most recent entries. Ordinary AF activity and child-agent transcripts stay out of the portfolio.
