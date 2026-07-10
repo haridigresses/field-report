@@ -2,23 +2,87 @@
   "id": "arrusted-server-authority",
   "project": "arrusted",
   "title": "Server-authority gates",
-  "status": "blocked",
+  "status": "active",
   "branch": "ada/server-authority-gates",
   "fableAgent": "adb",
   "reviewerAgent": "adb",
   "codexExecutor": "ada",
-  "summary": "PR #341 is CI-green and GitHub reports a clean merge state, but the exact-head Cubic review found a P2 evidence-retention hole when result.steps is empty. The branch remains held until adb either applies or delegates a narrow amendment and revalidates the review gate.",
-  "reviewState": "CI green; held on current-head P2 review finding",
-  "updatedAt": "2026-07-09T19:29:16-04:00",
-  "updatedBy": "adb",
-  "issuePrefixes": ["ad.37"],
+  "summary": "PR #341 exact head 7af4954e is merge-ready. The fallback tool-evidence hole is fixed, all current checks pass, all material reviewer findings are addressed or stale against current code, and no unresolved content blocker remains. Awaiting explicit PR-number merge authorization.",
+  "reviewState": "merge-ready at 7af4954e; rating 5/5; all checks green; awaiting merge authorization",
+  "updatedAt": "2026-07-10T08:02:25.135Z",
+  "updatedBy": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+  "issuePrefixes": [
+    "ad.37"
+  ],
   "chunks": [
-    { "id": "auth-boundary", "title": "Bind HC agent tenancy through server-side authority", "status": "complete" },
-    { "id": "redaction", "title": "Enforce evidence redaction and retention gates", "status": "complete" },
-    { "id": "tool-evidence", "title": "Preserve top-level tool evidence when no step records exist", "status": "blocked" },
-    { "id": "merge", "title": "Revalidate the amended SHA and clear the merge hold", "status": "planned" }
+    {
+      "id": "auth-boundary",
+      "title": "Bind HC agent tenancy through server-side authority",
+      "status": "complete",
+      "issueIds": [
+        "ad.37.1",
+        "ad.37.3"
+      ],
+      "commits": [
+        "9edff273",
+        "795a994f"
+      ]
+    },
+    {
+      "id": "redaction",
+      "title": "Enforce evidence redaction and retention gates",
+      "status": "complete",
+      "issueIds": [
+        "ad.37.2"
+      ],
+      "commits": [
+        "8586c0fe"
+      ]
+    },
+    {
+      "id": "tool-evidence",
+      "title": "Preserve top-level tool evidence when no step records exist",
+      "status": "complete",
+      "issueIds": [
+        "ad.37.2"
+      ]
+    },
+    {
+      "id": "merge",
+      "title": "Revalidate the amended SHA and clear the merge hold",
+      "status": "complete"
+    }
   ],
   "questions": [],
-  "prs": [{ "number": 341, "chunks": ["auth-boundary", "redaction", "tool-evidence", "merge"] }],
-  "assessment": null
+  "prs": [
+    {
+      "number": 341,
+      "chunks": [
+        "auth-boundary",
+        "redaction",
+        "tool-evidence",
+        "merge"
+      ]
+    }
+  ],
+  "assessment": null,
+  "references": [
+    {
+      "path": "docs/agent-foundation.md",
+      "label": "Agent authority and deploy gates",
+      "kind": "contract",
+      "quote": "The Rust/Postgres kernel is the single write authority AND the single correctness validator."
+    },
+    {
+      "path": "docs/merge-ready-review.md",
+      "label": "Merge-ready review contract",
+      "kind": "review",
+      "quote": "Separate merge blockers from cleanup."
+    }
+  ],
+  "commits": [
+    "9edff273",
+    "8586c0fe",
+    "795a994f"
+  ]
 }

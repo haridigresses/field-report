@@ -21,11 +21,16 @@ fr ask "Does attachment history belong in this slice?"
 fr checkpoint --summary "Implementation complete; exact-SHA review is next" --status active --gate "Exact-SHA review"
 fr reconcile --data '{"summary":"...","chunks":[...]}'
 fr assess
+fr link issue ad.41
+fr link commit 4ad570c2 --chunk kernel-timeout
+fr reference --path docs/import-principles.md --kind contract --quote "Ambiguity and contradiction surface as reviewable, actionable issues at compile time."
 fr watch start
 fr watch stop
 ```
 
 Field Report writes canonical updates immediately and refreshes external GitHub/AF facts in a debounced background pass.
+
+AF issues remain the execution ledger; Field Report links issue trees to durable outcomes and milestones. Commit SHAs are delivery evidence, not narrative status. Git plans and contracts remain authoritative in their repositories: Field Report stores only pointed references (path, revision, optional section, and a short exact excerpt) when they materially constrain a workstream. Avoid attaching general documentation or duplicating entire plans.
 
 ## Operating topology
 

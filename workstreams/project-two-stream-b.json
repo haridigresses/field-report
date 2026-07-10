@@ -7,18 +7,100 @@
   "fableAgent": "adc",
   "reviewerAgent": "adb",
   "codexExecutor": null,
-  "summary": "PR #342 is green in CI but the SHA-pinned dual review found two confirmed contract blockers: null map targets can silently disappear, and repair-loop budget exhaustion can report the wrong terminal state. Adb concurred; the next step is one bounded fix pass followed by a fresh dual review on the new SHA.",
-  "reviewState": "NOT merge-ready: two confirmed blockers",
-  "updatedAt": "2026-07-09T19:30:17-04:00",
-  "updatedBy": "adb",
-  "issuePrefixes": ["ad.41"],
+  "summary": "PR #342 exact head 4ad570c2 fixes the prior null-map and budget-terminal blockers and all current checks pass. Exact-head re-review found one remaining bounded blocker: kernel validation runs outside the wall-time budget and can stall indefinitely or report runtime_failed instead of budget_exhausted.",
+  "reviewState": "conditional-merge-ready at 4ad570c2; rating 4/5; blocked on kernel-validation deadline propagation",
+  "updatedAt": "2026-07-10T08:02:25.439Z",
+  "updatedBy": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+  "issuePrefixes": [
+    "ad.41"
+  ],
   "chunks": [
-    { "id": "kernel-authority", "title": "Delegate value validity to the kernel without silent compiler drops", "status": "complete" },
-    { "id": "null-map", "title": "Emit issues for map decisions with null model or field targets", "status": "blocked" },
-    { "id": "budget-terminal", "title": "Preserve budget_exhausted as the terminal repair-loop state", "status": "blocked" },
-    { "id": "remrr", "title": "Re-run cross-family merge-ready review on the fixed SHA", "status": "planned" }
+    {
+      "id": "kernel-authority",
+      "title": "Delegate value validity to the kernel without silent compiler drops",
+      "status": "complete",
+      "issueIds": [
+        "ad.41.1",
+        "ad.41.2"
+      ],
+      "commits": [
+        "ba2852fc",
+        "985e10ff"
+      ]
+    },
+    {
+      "id": "null-map",
+      "title": "Emit issues for map decisions with null model or field targets",
+      "status": "complete",
+      "issueIds": [
+        "ad.41.1"
+      ],
+      "commits": [
+        "4ad570c2"
+      ]
+    },
+    {
+      "id": "budget-terminal",
+      "title": "Preserve budget_exhausted as the terminal repair-loop state",
+      "status": "complete",
+      "issueIds": [
+        "ad.41.3"
+      ],
+      "commits": [
+        "4ddfc40a",
+        "4ad570c2"
+      ]
+    },
+    {
+      "id": "remrr",
+      "title": "Re-run cross-family merge-ready review on the fixed SHA",
+      "status": "complete"
+    },
+    {
+      "id": "kernel-timeout",
+      "title": "Bound kernel validation by remaining wall-time and preserve budget terminal state",
+      "status": "blocked",
+      "issueIds": [
+        "ad.41.1"
+      ]
+    }
   ],
   "questions": [],
-  "prs": [{ "number": 342, "chunks": ["kernel-authority", "null-map", "budget-terminal", "remrr"] }],
-  "assessment": null
+  "prs": [
+    {
+      "number": 342,
+      "chunks": [
+        "kernel-authority",
+        "null-map",
+        "budget-terminal",
+        "remrr"
+      ]
+    }
+  ],
+  "assessment": null,
+  "references": [
+    {
+      "path": "docs/import-principles.md",
+      "label": "Import architecture principles",
+      "kind": "contract",
+      "quote": "Ambiguity and contradiction surface as reviewable, actionable issues at compile time — never as silent heuristics at compile time."
+    },
+    {
+      "path": "docs/plans/2026-06-10-csv-agent-ag2-parity.md",
+      "label": "CSV agent parity plan",
+      "kind": "plan"
+    },
+    {
+      "path": "docs/merge-ready-review.md",
+      "label": "Merge-ready review contract",
+      "kind": "review",
+      "quote": "DRYness and removal of dead code."
+    }
+  ],
+  "commits": [
+    "ba2852fc",
+    "985e10ff",
+    "4ddfc40a",
+    "4ad570c2"
+  ]
 }

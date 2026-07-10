@@ -5,18 +5,50 @@
   "status": "active",
   "branch": "write-path-pr-audit",
   "fableAgent": "refrev",
-  "reviewerAgent": "reforch",
+  "reviewerAgent": "refrev",
   "codexExecutor": "aona",
   "summary": "PR #272 has passed the M2 final gate and is running CI and bot review. M3 is now being scoped as one bounded document-zone move: add trigger coverage, retire duplicate audit writers, and replace the document RPCs without pulling correspondence into the slice.",
   "reviewState": "M2 GO; M3 awaiting scope approval",
-  "updatedAt": "2026-07-09T23:00:26-04:00",
-  "updatedBy": "aona",
-  "issuePrefixes": ["refrev.11", "aona.10"],
+  "updatedAt": "2026-07-10T08:02:23.795Z",
+  "updatedBy": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+  "issuePrefixes": [
+    "refrev.11",
+    "aona.10"
+  ],
   "chunks": [
-    { "id": "m1-map", "title": "Map write ownership and characterize account-zone invariants", "status": "complete" },
-    { "id": "m2-account", "title": "Cut account writes to typed TS and generic audit trigger", "status": "complete" },
-    { "id": "m3-documents", "title": "Cut document writes, attachments, and duplicate audit writers together", "status": "active" },
-    { "id": "m4-drops", "title": "Drop surviving transitional tables and RPC surfaces", "status": "planned" }
+    {
+      "id": "m1-map",
+      "title": "Map write ownership and characterize account-zone invariants",
+      "status": "complete",
+      "issueIds": [
+        "aona.10"
+      ]
+    },
+    {
+      "id": "m2-account",
+      "title": "Cut account writes to typed TS and generic audit trigger",
+      "status": "complete",
+      "issueIds": [
+        "refrev.11.1"
+      ]
+    },
+    {
+      "id": "m3-documents",
+      "title": "Cut document writes, attachments, and duplicate audit writers together",
+      "status": "active",
+      "issueIds": [
+        "refrev.11.2"
+      ]
+    },
+    {
+      "id": "m4-drops",
+      "title": "Drop surviving transitional tables and RPC surfaces",
+      "status": "planned",
+      "issueIds": [
+        "refrev.11.3",
+        "refrev.11.4"
+      ]
+    }
   ],
   "questions": [
     {
@@ -26,6 +58,31 @@
       "askedAt": "2026-07-09T23:00:26-04:00"
     }
   ],
-  "prs": [{ "number": 272, "chunks": ["m2-account", "m3-documents"] }],
-  "assessment": null
+  "prs": [
+    {
+      "number": 272,
+      "chunks": [
+        "m2-account",
+        "m3-documents"
+      ]
+    }
+  ],
+  "assessment": null,
+  "references": [
+    {
+      "path": "docs/write-path-simplification-plan.md",
+      "label": "Write-path simplification plan",
+      "kind": "plan",
+      "quote": "Each cut RPC’s invariant lands in a constraint, a trigger, TS, or is intentionally-dropped."
+    },
+    {
+      "path": "docs/merge-ready-review.md",
+      "label": "Merge-ready review contract",
+      "kind": "review",
+      "quote": "Necessity and scope: does this work need to exist, really?"
+    }
+  ],
+  "commits": [
+    "59c89cd9"
+  ]
 }

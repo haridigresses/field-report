@@ -48,6 +48,11 @@
         <footer><span class="form-status" aria-live="polite"></span><button type="submit">Create outcome</button></footer>
       </form>
     </dialog>
+    <dialog id="issues-drawer" class="issues-drawer">
+      <header><div><p class="kicker">Agent Fixes</p><h2 id="issues-title">Repository issues</h2></div><button class="issues-close" type="button" aria-label="Close AF issues">Close</button></header>
+      <div class="issues-controls"><label>Status<select id="issues-filter"><option value="active">Active</option><option value="all">All</option><option value="closed">Closed</option></select></label><span id="issues-summary"></span></div>
+      <div id="issues-list" class="issues-list"></div>
+    </dialog>
   </main>
   <script src="/app.js" type="module"></script>
 </body>

@@ -25,10 +25,14 @@ Use `fr watch start` when the user wants autonomous, rate-limited Field Report n
 - Full consistency pass: `fr reconcile --data '<json patch>' --note "..."`
 - Durable question: `fr ask "..."`
 - Decision: `fr decide Q1 "..."`
+- Execution evidence: `fr link issue <issue-id>` and `fr link commit <sha> --chunk <milestone-id>`.
+- Governing git context: `fr reference --path <repo-relative-path> --kind plan|contract|decision|review --quote "<short exact excerpt>"`.
 - Reviewer judgment: `fr assess`
 - End of assignment: reconcile material changes, then `fr disarm`.
 
 Use `fr show --json` before a broad reconciliation. Keep summaries to the outcome, current phase or gate, and next milestone or blocker. Keep milestones commit-sized or independently verifiable, not micro-task-sized.
+
+Link only git documents that constrain scope, architecture, contracts, or review. Store a path, optional section anchor, and short exact excerpt; never copy the plan into Field Report. Git remains the source of truth.
 
 ## Update autonomously
 

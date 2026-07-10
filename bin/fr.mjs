@@ -26,6 +26,8 @@ Usage:
   fr checkpoint [workstream-id] [--summary <text>] [--status <state>] [--gate <text>] [--data <json>]
   fr reconcile [workstream-id] [--data <json>]
   fr assess [workstream-id]
+  fr link issue|commit [workstream-id] <value> [--chunk <milestone-id>]
+  fr reference [workstream-id] --path <repo-path> [--label <label>] [--kind plan|contract|decision|review] [--section <anchor>] [--quote <short context>]
   fr disarm
   fr watch start|stop|status [--interval <seconds>]
   fr watch --once [--send]
@@ -93,7 +95,9 @@ function streamId(positional, binding) {
 function describe(stream) {
   const questions = (stream.questions || []).filter((question) => question.status === "open");
   const active = (stream.chunks || []).find((chunk) => ["blocked", "active", "planned"].includes(chunk.status));
-  return `${stream.id}\n${stream.title}\nStatus: ${stream.status} · Gate: ${stream.reviewState || "not recorded"}\nNext: ${active?.title || "outcome delivered"}\nOpen questions: ${questions.length}\nBranch: ${stream.branch || "not assigned"}`;
+  const references = (stream.references || []).slice(0, 3);
+  const referenceContext = references.length ? `\nReference context:\n${references.map((reference) => `- ${reference.label || reference.path} (${reference.path})${reference.quote ? `: “${reference.quote}”` : ""}`).join("\n")}` : "\nReference context: none";
+  return `${stream.id}\n${stream.title}\nStatus: ${stream.status} · Gate: ${stream.reviewState || "not recorded"}\nNext: ${active?.title || "outcome delivered"}\nOpen questions: ${questions.length}\nBranch: ${stream.branch || "not assigned"}${referenceContext}`;
 }
 
 async function onboard(id, role = "orchestrator") {
@@ -208,6 +212,31 @@ async function main() {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
     const result = await api("POST", "/api/assessments/request", { workstreamIds: [id] });
     return process.stdout.write(`Requested assessment from ${result.requested[0].recipient} for ${id}.\n`);
+  }
+  if (command === "link") {
+    const kind = positional[0];
+    const explicitId = positional[1]?.includes("-") ? positional[1] : null;
+    const targetId = explicitId || context.binding?.workstreamId;
+    const value = positional[explicitId ? 2 : 1];
+    if (!targetId || !value || !["issue", "commit"].includes(kind)) throw new Error("Use fr link issue|commit [workstream-id] <value>");
+    const stream = await api("GET", `/api/workstreams/${encodeURIComponent(targetId)}`);
+    let patch;
+    if (kind === "issue") patch = { issuePrefixes: [...new Set([...(stream.issuePrefixes || []), value])] };
+    else if (flags.chunk) {
+      patch = { chunks: (stream.chunks || []).map((chunk) => chunk.id === flags.chunk ? { ...chunk, commits: [...new Set([...(chunk.commits || []), value])] } : chunk) };
+    } else patch = { commits: [...new Set([...(stream.commits || []), value])] };
+    patch.updatedBy = context.who.actor;
+    patch.eventType = "updated";
+    patch.eventText = `Linked ${kind} ${value}`;
+    await api("PATCH", `/api/workstreams/${encodeURIComponent(targetId)}`, patch);
+    return process.stdout.write(`Linked ${kind} ${value} to ${targetId}.\n`);
+  }
+  if (command === "reference") {
+    if (!id || !flags.path) throw new Error("Specify a workstream and --path");
+    const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
+    const reference = { path: flags.path, label: flags.label || flags.path, kind: flags.kind || "plan", ...(flags.section ? { section: flags.section } : {}), ...(flags.quote ? { quote: flags.quote } : {}) };
+    await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { references: [...(stream.references || []), reference], updatedBy: context.who.actor, eventType: "updated", eventText: `Linked ${reference.kind} reference ${reference.path}` });
+    return process.stdout.write(`Linked ${reference.path} to ${id}.\n`);
   }
   if (command === "disarm") {
     if (!context.binding) return process.stdout.write("This session is not armed.\n");

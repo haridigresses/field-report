@@ -11,6 +11,11 @@ const requestAssessmentButton = document.querySelector("#request-assessment");
 const newWorkstreamButton = document.querySelector("#new-workstream");
 const newWorkstreamDialog = document.querySelector("#new-workstream-dialog");
 const newWorkstreamForm = document.querySelector("#new-workstream-form");
+const issuesDrawer = document.querySelector("#issues-drawer");
+const issuesTitle = document.querySelector("#issues-title");
+const issuesFilter = document.querySelector("#issues-filter");
+const issuesSummary = document.querySelector("#issues-summary");
+const issuesList = document.querySelector("#issues-list");
 
 let dashboard = null;
 let activeRepo = "all";
@@ -89,12 +94,43 @@ function projectFor(stream) {
 
 function renderRepoNav() {
   const buttons = [{ id: "all", label: "All workstreams" }, ...dashboard.projects.map((project) => ({ id: project.id, label: project.label }))];
-  repoNav.innerHTML = buttons.map((item) => `<button class="repo-filter ${activeRepo === item.id ? "selected" : ""}" data-repo="${escapeHtml(item.id)}" type="button">${escapeHtml(item.label)}</button>`).join("");
-  repoNav.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => {
+  const project = dashboard.projects.find((candidate) => candidate.id === activeRepo);
+  const activeIssues = (project?.afIssues || []).filter((issue) => issue.status !== "closed").length;
+  repoNav.innerHTML = `${buttons.map((item) => `<button class="repo-filter ${activeRepo === item.id ? "selected" : ""}" data-repo="${escapeHtml(item.id)}" type="button">${escapeHtml(item.label)}</button>`).join("")}<span class="repo-spacer"></span><button class="issues-open" type="button" ${project ? "" : "disabled"}>AF issues${project ? ` · ${activeIssues}` : ""}</button>`;
+  repoNav.querySelectorAll(".repo-filter").forEach((button) => button.addEventListener("click", () => {
     activeRepo = button.dataset.repo;
     activeStream = null;
     selectedStreams.clear();
     renderDashboard();
+  }));
+  repoNav.querySelector(".issues-open").addEventListener("click", () => { renderIssueDrawer(); issuesDrawer.showModal(); });
+}
+
+function commitLinks(commits = [], githubRepo = null) {
+  return commits.map((commit) => {
+    if (typeof commit !== "string") return `<a href="${escapeHtml(commit.url || "#")}" target="_blank" rel="noreferrer"><code>${escapeHtml(commit.sha.slice(0, 8))}</code></a>`;
+    return githubRepo ? `<a href="https://github.com/${escapeHtml(githubRepo)}/commit/${escapeHtml(commit)}" target="_blank" rel="noreferrer"><code>${escapeHtml(commit.slice(0, 8))}</code></a>` : `<code>${escapeHtml(commit.slice(0, 8))}</code>`;
+  }).join(" ");
+}
+
+function renderIssueDrawer() {
+  const project = dashboard.projects.find((candidate) => candidate.id === activeRepo);
+  if (!project) return;
+  const filter = issuesFilter.value;
+  const all = project.afIssues || [];
+  const issues = all.filter((issue) => filter === "all" || filter === "closed" ? filter === "all" || issue.status === "closed" : issue.status !== "closed");
+  issuesTitle.textContent = `${project.label} issues`;
+  issuesSummary.textContent = `${issues.length} of ${all.length}`;
+  issuesList.innerHTML = issues.length ? issues.map((issue) => {
+    const depth = Math.min(3, Math.max(0, String(issue.id).split(".").length - 2));
+    return `<article class="issue-row depth-${depth}"><div class="issue-primary"><span class="issue-status status-${escapeHtml(issue.status)}">${escapeHtml(issue.status)}</span><code>${escapeHtml(issue.id)}</code><p>${escapeHtml(issue.title || "Untitled issue")}</p></div><div class="issue-links">${(issue.workstreamIds || []).map((id) => `<button type="button" data-workstream="${escapeHtml(id)}">${escapeHtml(id)}</button>`).join("")}${commitLinks(issue.commits)}</div></article>`;
+  }).join("") : `<p class="quiet">No issues match this filter.</p>`;
+  issuesList.querySelectorAll("button[data-workstream]").forEach((button) => button.addEventListener("click", () => {
+    activeStream = button.dataset.workstream;
+    issuesDrawer.close();
+    renderPortfolio();
+    renderBrief();
+    briefRoot.scrollIntoView({ behavior: "smooth", block: "start" });
   }));
 }
 
@@ -156,8 +192,16 @@ function renderDeliveryChain(stream) {
   return `<ol class="milestone-list">${(stream.chunks || []).map((chunk) => {
     const linked = prs.filter((pr) => (pr.chunks || []).includes(chunk.id));
     const artifacts = linked.length ? linked.map((pr) => `<a href="${escapeHtml(pr.url || "#")}" target="_blank" rel="noreferrer">PR ${pr.number}</a>`).join(", ") : "No PR yet";
-    return `<li class="milestone milestone-${escapeHtml(chunk.status)}"><span class="milestone-mark" aria-hidden="true"></span><div><b>${escapeHtml(chunk.title)}</b><span>${escapeHtml(chunk.status)} · ${artifacts}</span></div></li>`;
+    const issueIds = (chunk.issueIds || []).map((id) => `<code>${escapeHtml(id)}</code>`).join(" ");
+    return `<li class="milestone milestone-${escapeHtml(chunk.status)}"><span class="milestone-mark" aria-hidden="true"></span><div><b>${escapeHtml(chunk.title)}</b><span>${escapeHtml(chunk.status)} · ${artifacts}${issueIds ? ` · ${issueIds}` : ""}${chunk.commits?.length ? ` · ${commitLinks(chunk.commits, projectFor(stream)?.githubRepo)}` : ""}</span></div></li>`;
   }).join("")}</ol>`;
+}
+
+function renderLinkedEvidence(stream) {
+  const project = projectFor(stream);
+  const issues = (project?.afIssues || []).filter((issue) => (issue.workstreamIds || []).includes(stream.id));
+  const references = stream.references || [];
+  return `<section class="linked-evidence"><div><div class="subhead"><h3>AF issue tree</h3><span>${issues.filter((issue) => issue.status !== "closed").length} active · ${issues.length} linked</span></div>${issues.length ? `<ul class="linked-issues">${issues.slice(0, 24).map((issue) => `<li><span class="issue-status status-${escapeHtml(issue.status)}">${escapeHtml(issue.status)}</span><code>${escapeHtml(issue.id)}</code><span>${escapeHtml(issue.title)}</span>${issue.commits?.length ? `<small>${commitLinks(issue.commits)}</small>` : ""}</li>`).join("")}</ul>` : `<p class="quiet">No AF issues are explicitly linked.</p>`}</div><div><div class="subhead"><h3>Git references</h3><span>${references.length} pointed source${references.length === 1 ? "" : "s"}</span></div>${references.length ? `<ul class="reference-list">${references.map((reference) => `<li><p><span>${escapeHtml(reference.kind || "plan")}</span>${reference.url ? `<a href="${escapeHtml(reference.url)}" target="_blank" rel="noreferrer">${escapeHtml(reference.label || reference.path)}</a>` : `<b>${escapeHtml(reference.label || reference.path)}</b>`}${reference.exists === false ? `<em>missing at current revision</em>` : ""}</p>${reference.quote ? `<blockquote>${escapeHtml(reference.quote)}</blockquote>` : ""}<small><code>${escapeHtml(reference.path)}</code>${reference.commit ? ` · ${escapeHtml(reference.commit.slice(0, 8))}` : ""}</small></li>`).join("")}</ul>` : `<p class="quiet">No git plan or contract is material to this workstream.</p>`}</div></section>`;
 }
 
 function renderAgents(stream) {
@@ -234,9 +278,10 @@ function renderBrief() {
         </div>
       </section>
     </div>
+    ${renderLinkedEvidence(stream)}
     <details class="movement" open><summary><span>Recent movement</span><small>${(stream.timeline || []).length} material event${(stream.timeline || []).length === 1 ? "" : "s"}</small></summary>${renderTimeline(stream)}</details>
     <footer class="evidence">
-      <div><b>Evidence</b><span>${escapeHtml(stream.branch || "No branch")} · ${issues.length} open AF issue${issues.length === 1 ? "" : "s"} · updated ${relativeTime(stream.updatedAt)}</span></div>
+      <div><b>Evidence</b><span>${escapeHtml(stream.branch || "No branch")} · ${issues.length} open AF issue${issues.length === 1 ? "" : "s"} · updated ${relativeTime(stream.updatedAt)}</span>${stream.commits?.length ? `<span>${commitLinks(stream.commits, project?.githubRepo)}</span>` : ""}</div>
       <div class="agents">${renderAgents(stream)}</div>
       <details class="session-editor"><summary>Agent sessions</summary><form data-workstream-id="${escapeHtml(stream.id)}">
         <label>Fable<input name="fableAgent" value="${escapeHtml(stream.fableAgent || "")}"></label>
@@ -314,6 +359,8 @@ requestAssessmentButton.addEventListener("click", () => requestAssessments([...s
 
 newWorkstreamButton.addEventListener("click", () => newWorkstreamDialog.showModal());
 newWorkstreamDialog.querySelector(".dialog-close").addEventListener("click", () => newWorkstreamDialog.close());
+issuesDrawer.querySelector(".issues-close").addEventListener("click", () => issuesDrawer.close());
+issuesFilter.addEventListener("change", renderIssueDrawer);
 newWorkstreamForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;

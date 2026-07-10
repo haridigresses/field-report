@@ -112,6 +112,54 @@ async function collectRepoState(project) {
   };
 }
 
+function issueUpdatedMillis(issue) {
+  const raw = Number(issue.updated_at || issue.updatedAt || 0);
+  return raw > 10 ** 15 ? raw / 1_000_000 : raw > 10 ** 12 ? raw : raw * 1000;
+}
+
+function commitShas(value) {
+  return [...new Set(String(value || "").match(/\b[0-9a-f]{7,40}\b/gi) || [])].slice(0, 12);
+}
+
+function projectIssueInventory(project, projectStreams, allIssues) {
+  const namespaces = new Set(project.issueNamespaces || []);
+  const uuidToId = new Map(allIssues.map((issue) => [issue.uuid, issue.id]));
+  const weights = { in_progress: 0, open: 1, closed: 2 };
+  return allIssues.filter((issue) => namespaces.has(issue.session_name) || namespaces.has(String(issue.id || "").split(".")[0]))
+    .map((issue) => {
+      const linkedStreams = projectStreams.filter((stream) => (stream.issuePrefixes || []).some((prefix) => issue.id === prefix || issue.id?.startsWith(`${prefix}.`)) || (stream.chunks || []).some((chunk) => (chunk.issueIds || []).includes(issue.id)));
+      const shas = commitShas(`${issue.title || ""} ${issue.body || ""} ${issue.resolution || ""}`);
+      return {
+        id: issue.id,
+        uuid: issue.uuid,
+        parentId: issue.parent_uuid ? uuidToId.get(issue.parent_uuid) || null : null,
+        title: issue.title,
+        status: issue.status,
+        priority: issue.priority,
+        sessionName: issue.session_name,
+        updatedAt: issueUpdatedMillis(issue) ? new Date(issueUpdatedMillis(issue)).toISOString() : null,
+        workstreamIds: linkedStreams.map((stream) => stream.id),
+        commits: shas.map((sha) => ({ sha, url: project.githubRepo ? `https://github.com/${project.githubRepo}/commit/${sha}` : null }))
+      };
+    })
+    .sort((a, b) => (weights[a.status] ?? 9) - (weights[b.status] ?? 9) || new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))
+    .slice(0, 300);
+}
+
+async function enrichReferences(stream, project) {
+  if (!(stream.references || []).length) return [];
+  const head = await command("git", ["rev-parse", "HEAD"], project.repoPath);
+  return Promise.all(stream.references.map(async (reference) => {
+    const exists = await command("git", ["cat-file", "-e", `${head.ok ? head.value : "HEAD"}:${reference.path}`], project.repoPath);
+    return {
+      ...reference,
+      commit: head.ok ? head.value : null,
+      exists: exists.ok,
+      url: head.ok && project.githubRepo ? `https://github.com/${project.githubRepo}/blob/${head.value}/${reference.path}${reference.section ? `#${reference.section}` : ""}` : null
+    };
+  }));
+}
+
 function messageText(message) {
   return String(message.subject || message.title || message.body || message.content || "");
 }
@@ -314,7 +362,7 @@ async function main() {
   const prsByProject = Object.fromEntries(projects.map((project, index) => [project.id, pullRequestResults[index]]));
   const repoByProject = Object.fromEntries(projects.map((project, index) => [project.id, repoResults[index]]));
   const agentsByName = Object.fromEntries(agentStatus.items.map((agent) => [agent.name, agent]));
-  const enrichedStreams = streams.map((stream) => {
+  const enrichedStreams = await Promise.all(streams.map(async (stream) => {
     const livePrs = prsByProject[stream.project]?.items || [];
     const configuredPrs = (stream.prs || []).map((configured) => {
       const number = typeof configured === "number" ? configured : configured.number;
@@ -337,12 +385,13 @@ async function main() {
       assessmentRequest: protocolState.assessmentRequest,
       timeline: [...derivedTimeline(stream, inbox.items, streamIssues), ...(localEventsByStream[stream.id] || [])]
         .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 20),
+      references: await enrichReferences(stream, projects.find((project) => project.id === stream.project)),
       questions: derivedQuestions(stream, inbox.items),
       prs: configuredPrs,
       afIssues: streamIssues,
       agents: [...new Set(agentNames)].map((name) => agentsByName[name] || { name, running: false })
     };
-  });
+  }));
 
   const enrichedProjects = projects.map((project) => {
     const projectStreams = enrichedStreams.filter((stream) => stream.project === project.id);
@@ -351,6 +400,7 @@ async function main() {
     return {
       ...project,
       repoState: repoByProject[project.id],
+      afIssues: projectIssueInventory(project, projectStreams, issues.items),
       metrics: {
         activeWorkstreams: projectStreams.filter((stream) => ["active", "blocked"].includes(stream.status)).length,
         openQuestions: projectStreams.flatMap((stream) => stream.questions || []).filter((question) => question.status === "open").length,

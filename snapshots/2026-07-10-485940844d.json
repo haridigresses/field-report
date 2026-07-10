@@ -1,0 +1,3657 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-10T08:00:44.574Z",
+  "projects": [
+    {
+      "id": "aon",
+      "label": "AON",
+      "repoPath": "/Users/graphy/aon",
+      "githubRepo": "abstractops/aon",
+      "coordinator": "refrev",
+      "issueNamespaces": [
+        "refrev",
+        "aona",
+        "aonb",
+        "reforch"
+      ],
+      "repoState": {
+        "worktreeCount": 25,
+        "prunableCount": 11,
+        "rootBranch": "main...origin/main [behind 2]",
+        "rootDirtyFiles": 1
+      },
+      "afIssues": [
+        {
+          "id": "aonb.1.2",
+          "uuid": "341d9630-511d-4161-a406-3a697fc46c7e",
+          "parentId": "aonb.1",
+          "title": "Multi-select + bulk assignment via existing tasks mutations",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "aonb",
+          "updatedAt": "2026-07-09T07:52:23.355Z",
+          "workstreamIds": [
+            "aon-bulk-ops"
+          ],
+          "commits": []
+        },
+        {
+          "id": "refrev.11.1",
+          "uuid": "6e0d7925-264d-4e1c-9dcc-809cd22a3adf",
+          "parentId": "refrev.11",
+          "title": "Account-zone de-RPC (rung 1): 5 account RPCs -> TS + trigger audit; fold account_changes into audit_logs",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-09T06:34:50.371Z",
+          "workstreamIds": [
+            "aon-pr-audit"
+          ],
+          "commits": []
+        },
+        {
+          "id": "aona.10",
+          "uuid": "64e47913-bfc4-4a15-92cf-2bdcac067d18",
+          "parentId": null,
+          "title": "Start PR-AUDIT M1 measurement and invariant map",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "aona",
+          "updatedAt": "2026-07-08T13:41:21.586Z",
+          "workstreamIds": [
+            "aon-pr-audit"
+          ],
+          "commits": []
+        },
+        {
+          "id": "refrev.11",
+          "uuid": "d7430390-30ca-4e00-8bd7-ac94a292e685",
+          "parentId": null,
+          "title": "EPIC: De-RPC the surviving zones (~25 RPCs) — account → documents → comments → generic workflow/template",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-08T13:37:02.682Z",
+          "workstreamIds": [
+            "aon-pr-audit"
+          ],
+          "commits": []
+        },
+        {
+          "id": "reforch.1",
+          "uuid": "bf56b2a8-bf1d-438c-aa39-62006146ebb1",
+          "parentId": null,
+          "title": "Review obligation write-path refactor plan (trace code, litigate decisions)",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "reforch",
+          "updatedAt": "2026-06-30T13:45:10.672Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "aonb.3",
+          "uuid": "54e2da4a-ee1e-4be5-922c-64abedf32562",
+          "parentId": null,
+          "title": "Unify done_at semantics across task writers: skipped = NO timestamp (Hari ruling 2026-07-10)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aonb",
+          "updatedAt": "2026-07-10T07:11:47.541Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "aonb.2.2",
+          "uuid": "9ba94958-b463-45d3-a51c-d2a24d83019e",
+          "parentId": "aonb.2",
+          "title": "refrev.16: client-identity storage state + client-facing specs under client RLS",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aonb",
+          "updatedAt": "2026-07-09T06:56:29.675Z",
+          "workstreamIds": [
+            "aon-testing-corpus"
+          ],
+          "commits": []
+        },
+        {
+          "id": "aonb.2.1",
+          "uuid": "d3885f91-87d2-4198-95c5-51a83d6efe67",
+          "parentId": "aonb.2",
+          "title": "Scenario suites across five workflow types via PR-GEN composition catalog",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aonb",
+          "updatedAt": "2026-07-09T06:56:29.561Z",
+          "workstreamIds": [
+            "aon-testing-corpus"
+          ],
+          "commits": []
+        },
+        {
+          "id": "aonb.1.3",
+          "uuid": "2074a086-a4f0-4cf3-867a-b2db564491fc",
+          "parentId": "aonb.1",
+          "title": "Bulk status changes via existing mutations (isDoneTask semantics)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aonb",
+          "updatedAt": "2026-07-09T06:56:29.467Z",
+          "workstreamIds": [
+            "aon-bulk-ops"
+          ],
+          "commits": []
+        },
+        {
+          "id": "aonb.2",
+          "uuid": "0aca4e2e-8cae-4bc0-a299-15966a6247a6",
+          "parentId": null,
+          "title": "Testing corpus: scenario suites + client-identity E2E (epic)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aonb",
+          "updatedAt": "2026-07-09T06:56:19.939Z",
+          "workstreamIds": [
+            "aon-testing-corpus"
+          ],
+          "commits": []
+        },
+        {
+          "id": "aonb.1",
+          "uuid": "9884f3b6-bd16-4035-848d-7a2552e3c582",
+          "parentId": null,
+          "title": "Internal bulk operations over existing work views (epic)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aonb",
+          "updatedAt": "2026-07-09T06:56:19.833Z",
+          "workstreamIds": [
+            "aon-bulk-ops"
+          ],
+          "commits": []
+        },
+        {
+          "id": "refrev.17",
+          "uuid": "35014863-1d1e-4410-b017-58258b37f878",
+          "parentId": null,
+          "title": "Notice client-access gate slice — lands WITH client-facing notices (ruled 2026-07-08)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-08T15:03:52.979Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "aona.9",
+          "uuid": "d9611213-9a2d-47bc-9f83-d48a4185bb02",
+          "parentId": null,
+          "title": "Tidy dead registration_obligation pairing CHECK branch",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aona",
+          "updatedAt": "2026-07-08T04:18:45.586Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "aona.6",
+          "uuid": "62e4a91e-ae20-4fd2-b53e-3807b9e19d0a",
+          "parentId": null,
+          "title": "Clean up deferred #265 review nits",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aona",
+          "updatedAt": "2026-07-08T04:18:45.570Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "aona.5",
+          "uuid": "d1498f92-1c31-45b8-9294-8df89708a4d7",
+          "parentId": null,
+          "title": "Assert annual-report idempotency key shape",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aona",
+          "updatedAt": "2026-07-08T04:18:45.569Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "aona.7",
+          "uuid": "05a5ae3c-0eeb-4b99-86d6-05af70f4e556",
+          "parentId": null,
+          "title": "Assert composition builder state and entity scope defensively",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aona",
+          "updatedAt": "2026-07-08T04:18:45.569Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "aona.8",
+          "uuid": "bba6f49b-3bde-43fb-a331-2519540192f7",
+          "parentId": null,
+          "title": "Tighten planner obligation schema and notice workflow mock",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aona",
+          "updatedAt": "2026-07-08T04:18:45.569Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "aona.4",
+          "uuid": "bcd4f856-b9db-4fbc-bd22-ea6e03ad3227",
+          "parentId": null,
+          "title": "Use dynamic sort order for composition-builder upserts",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aona",
+          "updatedAt": "2026-07-08T04:18:45.504Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "aona.3",
+          "uuid": "86f5f498-83dd-4418-898f-19ad95c4e081",
+          "parentId": null,
+          "title": "Clean up workflow action layer boundaries",
+          "status": "open",
+          "priority": null,
+          "sessionName": "aona",
+          "updatedAt": "2026-07-08T00:39:52.345Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "refrev.16",
+          "uuid": "7d305fe3-fb61-434e-a944-400a271b5033",
+          "parentId": null,
+          "title": "E2E identity blind spot: CI runs admin-only storage state — client-RLS flows never exercised",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-07T08:48:31.493Z",
+          "workstreamIds": [
+            "aon-testing-corpus"
+          ],
+          "commits": []
+        },
+        {
+          "id": "refrev.13",
+          "uuid": "988e42f4-7753-447c-b1ca-804379f17793",
+          "parentId": null,
+          "title": "Annual reports: due-candidate projection + operator bulk materialize/skip/review",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-07T06:41:41.758Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "refrev.12",
+          "uuid": "42dba7db-fc53-49c7-a1f0-b227eafbeef6",
+          "parentId": null,
+          "title": "EPIC: Correspondence v3 cutover — the architecture's second application",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-07T06:41:41.656Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "refrev.14",
+          "uuid": "1bca33b2-5c25-4b5a-9886-d612b8fc9aa1",
+          "parentId": null,
+          "title": "Email delivery model: one v0 model per email class",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-07T04:55:52.690Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "refrev.11.3",
+          "uuid": "5f18722e-aa80-4931-93f2-97db8cbdb8dd",
+          "parentId": "refrev.11",
+          "title": "Comments-zone de-RPC (rung 3): 3 comment RPCs -> plain TS",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-07T04:55:52.264Z",
+          "workstreamIds": [
+            "aon-pr-audit"
+          ],
+          "commits": []
+        },
+        {
+          "id": "refrev.11.2",
+          "uuid": "9ff19b7e-7058-40c7-b314-3a16f951a4a2",
+          "parentId": "refrev.11",
+          "title": "Documents-zone de-RPC (rung 2): 4 document RPCs -> TS; trigger-cover documents; remove app-path log_audit_event",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-07T04:55:52.155Z",
+          "workstreamIds": [
+            "aon-pr-audit"
+          ],
+          "commits": []
+        },
+        {
+          "id": "refrev.7",
+          "uuid": "1cb8893a-c712-47a2-95c7-8a9392b96cca",
+          "parentId": null,
+          "title": "Systemic grants audit: default EXECUTE grants to anon/authenticated on all public functions",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-06T23:21:54.122Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "20260705170000",
+              "url": "https://github.com/abstractops/aon/commit/20260705170000"
+            }
+          ]
+        },
+        {
+          "id": "refrev.10",
+          "uuid": "269dbbbf-ac15-472c-bca2-858ea574e69d",
+          "parentId": null,
+          "title": "Characterization CI: move snapshot reads to direct pg if readiness flake recurs",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-06T16:20:07.811Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "f1da85ac",
+              "url": "https://github.com/abstractops/aon/commit/f1da85ac"
+            },
+            {
+              "sha": "1783354321714043000",
+              "url": "https://github.com/abstractops/aon/commit/1783354321714043000"
+            }
+          ]
+        },
+        {
+          "id": "refrev.8",
+          "uuid": "8a0e90cb-f56a-46af-ae4b-c5677cfd2ef8",
+          "parentId": null,
+          "title": "Flip to migration discipline at PR5-done or first real client (whichever first)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-05T19:16:19.146Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "refrev.3",
+          "uuid": "f20d258f-fc4c-4ca2-9059-0b13e46cac3c",
+          "parentId": null,
+          "title": "PR #250 bot triage: fix GUC fallback on INSERT/UPDATE + UUID feed rendering; dismiss 5",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-02T05:07:22.459Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "311848b0",
+              "url": "https://github.com/abstractops/aon/commit/311848b0"
+            }
+          ]
+        },
+        {
+          "id": "refrev.2",
+          "uuid": "908fa3a4-157a-453c-a47b-718f0e4fff0b",
+          "parentId": null,
+          "title": "Branch-protect the Database Contract check + unify contract-verification scripts",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-02T05:07:16.401Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "refrev.1",
+          "uuid": "e021dd3d-4954-406b-bcaa-2d48ed9bdf74",
+          "parentId": null,
+          "title": "Consolidate 4 overlapping seed paths into one factory",
+          "status": "open",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-02T05:07:13.564Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "reforch.3",
+          "uuid": "53799c44-7813-4d8e-8415-0ea6096371f3",
+          "parentId": null,
+          "title": "Branch-protect the Database Contract gate + consolidate 3+ contract-verification scripts",
+          "status": "open",
+          "priority": 4,
+          "sessionName": "reforch",
+          "updatedAt": "2026-07-01T21:57:49.069Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "reforch.2",
+          "uuid": "a41e70cd-d251-4902-966c-732157d3c4ea",
+          "parentId": null,
+          "title": "Consolidate 5 overlapping seed paths + add a schema-drift check",
+          "status": "open",
+          "priority": 3,
+          "sessionName": "reforch",
+          "updatedAt": "2026-07-01T21:57:42.264Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "aonb.1.1",
+          "uuid": "e320d070-732f-476b-8bf0-c139c104673e",
+          "parentId": "aonb.1",
+          "title": "Map bulk-action targets: existing mutations + read models (reads/wiring)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "aonb",
+          "updatedAt": "2026-07-09T07:52:23.148Z",
+          "workstreamIds": [
+            "aon-bulk-ops"
+          ],
+          "commits": []
+        },
+        {
+          "id": "refrev.15",
+          "uuid": "668bf9bc-be20-4bfb-9a92-3b6499fb19f6",
+          "parentId": null,
+          "title": "EPIC PR-GEN: workflow scaffolding-in-code + composition catalog (replaces template system; gates testing-readiness)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-08T13:36:33.906Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "1b993fff",
+              "url": "https://github.com/abstractops/aon/commit/1b993fff"
+            },
+            {
+              "sha": "89ecd76d",
+              "url": "https://github.com/abstractops/aon/commit/89ecd76d"
+            },
+            {
+              "sha": "499f4f9c",
+              "url": "https://github.com/abstractops/aon/commit/499f4f9c"
+            },
+            {
+              "sha": "0db1fb6b",
+              "url": "https://github.com/abstractops/aon/commit/0db1fb6b"
+            },
+            {
+              "sha": "d7016b3e",
+              "url": "https://github.com/abstractops/aon/commit/d7016b3e"
+            },
+            {
+              "sha": "3cc2b4ab",
+              "url": "https://github.com/abstractops/aon/commit/3cc2b4ab"
+            }
+          ]
+        },
+        {
+          "id": "aona.1",
+          "uuid": "7d0a43f7-7603-4953-821a-6aaa20bd0ff4",
+          "parentId": null,
+          "title": "Coordinate PR-GEN final review",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "aona",
+          "updatedAt": "2026-07-08T05:19:33.617Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "f60c8635",
+              "url": "https://github.com/abstractops/aon/commit/f60c8635"
+            }
+          ]
+        },
+        {
+          "id": "aona.2",
+          "uuid": "793580f8-4198-4867-93fc-06b697576696",
+          "parentId": null,
+          "title": "Classify workflow status race errors precisely",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "aona",
+          "updatedAt": "2026-07-08T03:00:35.620Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "4787c771",
+              "url": "https://github.com/abstractops/aon/commit/4787c771"
+            }
+          ]
+        },
+        {
+          "id": "refrev.6",
+          "uuid": "caa66aee-2b90-40b1-b169-ecc26b6ffb7e",
+          "parentId": null,
+          "title": "PR2b: status domain + engine deletion — build after PR4 clean, stack, don't open PR",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-08T02:35:37.325Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "2ab35a93",
+              "url": "https://github.com/abstractops/aon/commit/2ab35a93"
+            },
+            {
+              "sha": "58602aff",
+              "url": "https://github.com/abstractops/aon/commit/58602aff"
+            }
+          ]
+        },
+        {
+          "id": "refrev.9",
+          "uuid": "b16bacc8-6e2e-43c0-952c-cb92cd6b3948",
+          "parentId": null,
+          "title": "client_access_mode map: none|input_output|full per workflow type (notice=full in lower tiers)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-07T06:41:27.444Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "refrev.11.4",
+          "uuid": "5af3c3ca-e156-4aca-8d8e-b33771ec1f50",
+          "parentId": "refrev.11",
+          "title": "Generic workflow/template de-RPC (rung 4): ~10 RPCs incl. terminal lifecycle",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-07T06:41:27.352Z",
+          "workstreamIds": [
+            "aon-pr-audit"
+          ],
+          "commits": []
+        },
+        {
+          "id": "refrev.5",
+          "uuid": "3a57d4aa-3fcf-4b73-9e49-657682907f69",
+          "parentId": null,
+          "title": "PR4: materializer cutover — build after 2a clean, stack, don't open PR",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-07T04:43:27.030Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "de668a36",
+              "url": "https://github.com/abstractops/aon/commit/de668a36"
+            }
+          ]
+        },
+        {
+          "id": "refrev.4",
+          "uuid": "0dda155e-6f43-469e-888e-eede07c9116f",
+          "parentId": null,
+          "title": "PR2a: client gating (security-first) — build, MRR, open PR, bot fixes",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "refrev",
+          "updatedAt": "2026-07-07T04:43:27.026Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "1783059321016567000",
+              "url": "https://github.com/abstractops/aon/commit/1783059321016567000"
+            },
+            {
+              "sha": "de668a36",
+              "url": "https://github.com/abstractops/aon/commit/de668a36"
+            }
+          ]
+        }
+      ],
+      "metrics": {
+        "activeWorkstreams": 3,
+        "openQuestions": 1,
+        "openPrs": 18,
+        "failingChecks": 6,
+        "pendingChecks": 4,
+        "runningAgents": 3,
+        "openIssues": 12
+      }
+    },
+    {
+      "id": "arrusted",
+      "label": "Arrusted",
+      "repoPath": "/Users/graphy/repos/arrusted-development",
+      "githubRepo": "withAutograph/arrusted-development",
+      "coordinator": "adb",
+      "issueNamespaces": [
+        "ad",
+        "adb",
+        "adc",
+        "ada",
+        "review"
+      ],
+      "repoState": {
+        "worktreeCount": 30,
+        "prunableCount": 2,
+        "rootBranch": "fix/shell-fs-asset-proxy...origin/fix/shell-fs-asset-proxy",
+        "rootDirtyFiles": 1
+      },
+      "afIssues": [
+        {
+          "id": "ad.41.1",
+          "uuid": "96f8788a-13d3-46d3-8967-ae2b4f63012a",
+          "parentId": "ad.41",
+          "title": "Wire CSV-import kernel-validate bridge — retire the load-bearing generated-id-catalog mirror",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-10T03:51:03.525Z",
+          "workstreamIds": [
+            "arrusted-csv-kernel"
+          ],
+          "commits": [
+            {
+              "sha": "4ad570c2",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/4ad570c2"
+            },
+            {
+              "sha": "60376564",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/60376564"
+            },
+            {
+              "sha": "ba2852fc",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/ba2852fc"
+            }
+          ]
+        },
+        {
+          "id": "ad.41",
+          "uuid": "1073fb87-18e6-4b55-9eb5-ff9e34818ded",
+          "parentId": null,
+          "title": "PR-string: CSV import interactive agent parity (streaming, feedback loop, kernel-validate)",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T19:02:41.833Z",
+          "workstreamIds": [
+            "arrusted-csv-kernel"
+          ],
+          "commits": [
+            {
+              "sha": "60376564",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/60376564"
+            },
+            {
+              "sha": "ba2852fc",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/ba2852fc"
+            },
+            {
+              "sha": "985e10ff",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/985e10ff"
+            },
+            {
+              "sha": "4ddfc40a",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/4ddfc40a"
+            },
+            {
+              "sha": "51475dd9",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/51475dd9"
+            },
+            {
+              "sha": "272a35a2",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/272a35a2"
+            }
+          ]
+        },
+        {
+          "id": "ad.36.4",
+          "uuid": "9f3b7f8a-b580-4798-b83f-eccc11241eed",
+          "parentId": "ad.36",
+          "title": "Record-details sweep nits: enum-option label resolution + lookup_hc_records custom-fields parity",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T17:49:34.349Z",
+          "workstreamIds": [
+            "arrusted-record-details"
+          ],
+          "commits": []
+        },
+        {
+          "id": "ad.41.3",
+          "uuid": "0f6c4a56-906a-4bab-83c1-43da60d248ef",
+          "parentId": "ad.41",
+          "title": "Make source-import handle budget-exhausted agent turns",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T08:29:15.760Z",
+          "workstreamIds": [
+            "arrusted-csv-kernel"
+          ],
+          "commits": [
+            {
+              "sha": "4ddfc40a",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/4ddfc40a"
+            }
+          ]
+        },
+        {
+          "id": "ad.41.2",
+          "uuid": "d3dad5bf-34e2-49e0-854f-de27b0acc32d",
+          "parentId": "ad.41",
+          "title": "source-import validateFieldValueEnvelope: stop mutating input, defer FieldValue validity to the kernel",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T08:07:10.588Z",
+          "workstreamIds": [
+            "arrusted-csv-kernel"
+          ],
+          "commits": [
+            {
+              "sha": "985e10ff",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/985e10ff"
+            }
+          ]
+        },
+        {
+          "id": "ad.36",
+          "uuid": "baccfc79-1582-438b-9e3e-37018062d62d",
+          "parentId": null,
+          "title": "PR: Record-details tool hardening (server-bounded history, by-id fetch, provenance, labels)",
+          "status": "in_progress",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T07:20:46.482Z",
+          "workstreamIds": [
+            "arrusted-record-details"
+          ],
+          "commits": []
+        },
+        {
+          "id": "ad.40.3",
+          "uuid": "9b0f90c0-6fea-4ad5-9436-ed1b15498e60",
+          "parentId": "ad.40",
+          "title": "Org-chart HTML mockups: 2-3 proposal-rendering options",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-10T06:34:59.731Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.42",
+          "uuid": "db20f225-65de-4174-9e1e-86d89cafd187",
+          "parentId": null,
+          "title": "Org-chart proposal surface: ghost nodes + utility-bar change rail, grid-parity editing",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-10T06:34:59.619Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "e9c110a5",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/e9c110a5"
+            },
+            {
+              "sha": "3199f2f0",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/3199f2f0"
+            }
+          ]
+        },
+        {
+          "id": "ad.41.5",
+          "uuid": "80759019-b97b-4c10-b69b-c0f5eb737c7a",
+          "parentId": "ad.41",
+          "title": "CSV import: eager records-snapshot fetch before plan synthesis (perf)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "adc",
+          "updatedAt": "2026-07-09T16:31:15.989Z",
+          "workstreamIds": [
+            "arrusted-csv-kernel"
+          ],
+          "commits": []
+        },
+        {
+          "id": "ad.41.4",
+          "uuid": "e5e91a2f-b471-42fb-bd22-d3c0fe339658",
+          "parentId": "ad.41",
+          "title": "CSV-import session persistence retains raw run request/response payloads",
+          "status": "open",
+          "priority": null,
+          "sessionName": "adb",
+          "updatedAt": "2026-07-09T07:28:16.890Z",
+          "workstreamIds": [
+            "arrusted-csv-kernel"
+          ],
+          "commits": []
+        },
+        {
+          "id": "ad.8.14",
+          "uuid": "c2a0a35c-1342-4213-b51c-983f76baa05b",
+          "parentId": "ad.8",
+          "title": "Skills layer: three-tier placement loaded by runtime",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:20.422Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.40.6",
+          "uuid": "53abd2ae-cf49-44d2-beea-0816e318b6d2",
+          "parentId": "ad.40",
+          "title": "Spec record creation + closure (closure = status change, not deletion)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:20.318Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.40.5",
+          "uuid": "aed95e69-65c3-4432-8d52-63a8b9212cb7",
+          "parentId": "ad.40",
+          "title": "Soften agent-foundation.md §2.10 from correctness-invariant to debug stamp",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.471Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.40.4",
+          "uuid": "390871de-8200-4202-931d-bcfd8f78077e",
+          "parentId": "ad.40",
+          "title": "Add delta-review lens to merge-ready-review.md / known-footguns.md",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.466Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.40.2",
+          "uuid": "5baf43b2-3f15-434e-9328-81cb5986c897",
+          "parentId": "ad.40",
+          "title": "Deep-research report: cutting-edge agent practice vs our stack",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.455Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.40.1",
+          "uuid": "7c7406dc-b49b-4c2b-8b88-58983f78bf24",
+          "parentId": "ad.40",
+          "title": "Golden-flow eval suite: ~15 flows + rubric (judge-is-Hari first pass)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.450Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.39.2",
+          "uuid": "8c960f33-1a11-4639-b65a-2f7dc365575c",
+          "parentId": "ad.39",
+          "title": "Agent chat: built-in 'How does this work?' guide",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.340Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.39.1",
+          "uuid": "06266c5f-0ef1-47ba-9c04-789ff359cb12",
+          "parentId": "ad.39",
+          "title": "[icebox] Agent chat UX cluster: markdown rendering, clarification-in-transcript, spinner, cap disclosure, react-doctor nits",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.334Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.38.6",
+          "uuid": "0235e3c8-3800-40d0-b462-d428516cfa4f",
+          "parentId": "ad.38",
+          "title": "HC agent runtime hardening: terminal ledger status, tool-budget boundary, repair-loop give-up evidence",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.233Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.38.4",
+          "uuid": "6dc26a79-cae7-41d0-ad82-01a68ae71e94",
+          "parentId": "ad.38",
+          "title": "Clean up HC budget-exhaustion low-priority review nits",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.222Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "912ce925",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/912ce925"
+            }
+          ]
+        },
+        {
+          "id": "ad.38.3",
+          "uuid": "68d15f27-fdbc-4cd8-a1e3-45bf198a21da",
+          "parentId": "ad.38",
+          "title": "Tighten budget exhaustion maintainability follow-ups",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.217Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.38.2",
+          "uuid": "5a3be62d-a70b-42a9-8b7a-50da5be800ab",
+          "parentId": "ad.38",
+          "title": "ada.3 frontend half: error differentiation UI + budget-exhaustion Continue affordance",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.212Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.38.1",
+          "uuid": "e13a771e-672b-4654-b045-7ecfd46425fc",
+          "parentId": "ad.38",
+          "title": "Differentiate agent errors and observability",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:15.207Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.36.5",
+          "uuid": "0a9de007-74f3-4760-889c-ace8c4db4caf",
+          "parentId": "ad.36",
+          "title": "Consolidate HC schema introspection tools",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:14.988Z",
+          "workstreamIds": [
+            "arrusted-record-details"
+          ],
+          "commits": []
+        },
+        {
+          "id": "ad.36.3",
+          "uuid": "5349cf5d-2cc8-4245-92fb-1645bd95556f",
+          "parentId": "ad.36",
+          "title": "Add exact source provenance to field history",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:14.976Z",
+          "workstreamIds": [
+            "arrusted-record-details"
+          ],
+          "commits": []
+        },
+        {
+          "id": "ad.40",
+          "uuid": "0f863b4b-7caf-4650-9291-6c46fdd80614",
+          "parentId": null,
+          "title": "PR: Evals, research & design deliverables (adb/evals-research-mockups-docs)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:08.911Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.39",
+          "uuid": "9ea2d773-d5e8-4ec1-84bb-7c2c492210e0",
+          "parentId": null,
+          "title": "PR: Agent chat UX polish + in-chat guide",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:08.811Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.38",
+          "uuid": "7c429bb0-85cd-4286-b55c-5375dedbd3aa",
+          "parentId": null,
+          "title": "PR: Agent runtime budget & error hardening",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:03:08.680Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.5.9",
+          "uuid": "961806bf-3160-4cf3-b2fd-b233ae362082",
+          "parentId": "ad.5",
+          "title": "Wire hc check:schema drift gate into CI/build (vendor parity)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "adb",
+          "updatedAt": "2026-07-09T06:02:40.630Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.24",
+          "uuid": "f7e2ceef-2bb8-4010-af42-c80c839c9d26",
+          "parentId": null,
+          "title": "PR #298 tail: rebase held amend onto post-#309 main, adapt to POST transport",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-08T19:18:31.852Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "1a3c8575",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/1a3c8575"
+            },
+            {
+              "sha": "f9d361fa",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/f9d361fa"
+            }
+          ]
+        },
+        {
+          "id": "ad.8.13",
+          "uuid": "085c404c-9e93-48ab-a012-46f85d22792a",
+          "parentId": "ad.8",
+          "title": "Boundary lint: harden from name-blocklist toward class/scope, OR keep as tripwire (now doc'd)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "agent-sweep",
+          "updatedAt": "2026-06-29T05:39:22.402Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.8.10",
+          "uuid": "f6832532-57c8-49dd-be26-aa19d0d02fff",
+          "parentId": "ad.8",
+          "title": "Approvals: non-blocking \"required fields missing\" hint (deterministic, advisory)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "agent-sweep",
+          "updatedAt": "2026-06-28T23:11:01.268Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.8",
+          "uuid": "4111264a-3d9e-45e4-9307-c2a6d80dd5db",
+          "parentId": null,
+          "title": "Agent foundation + HC query/mutation agent (clean-slate, per docs/agent-foundation.md)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-28T22:58:31.642Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.7",
+          "uuid": "888c83f3-9068-42ea-8f91-20e05e4621eb",
+          "parentId": null,
+          "title": "Agent foundation: deferred capabilities (trigger-gated)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-28T22:56:03.067Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.5.6",
+          "uuid": "1d151d80-c6a1-4e13-adb2-b91c4ba2ba63",
+          "parentId": "ad.5",
+          "title": "Custom fields first-class in app: parse (import) + render (grid & draft-review diff) + mutate (edit-through-write-path) exactly like declared fields",
+          "status": "open",
+          "priority": null,
+          "sessionName": "agent-rebuild",
+          "updatedAt": "2026-06-22T15:37:02.925Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.5.7",
+          "uuid": "d49a149b-63d6-41dd-9d1f-6ba6cdd9337c",
+          "parentId": "ad.5",
+          "title": "Cross-revision custom-field retype guard: when a schema-revision transition/mutation path exists, reject changing an existing field_id's field_type/target across revisions",
+          "status": "open",
+          "priority": null,
+          "sessionName": "agent-rebuild",
+          "updatedAt": "2026-06-21T21:28:59.805Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.3.1",
+          "uuid": "9c5cf508-8cbd-4323-81b8-7f871776ae7f",
+          "parentId": "ad.3",
+          "title": "Effective-date: explicit column + per-import as-of date (default today) — MINIMAL, no inference",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-20T04:38:53.748Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.5.3",
+          "uuid": "b4b5cd83-1ac3-492a-b825-520c13ae360f",
+          "parentId": "ad.5",
+          "title": "App/tenant CUSTOM FIELDS via custom_fields JSON column (not per-tenant schema generation)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "agent-rebuild",
+          "updatedAt": "2026-06-20T04:38:53.582Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.8.7",
+          "uuid": "217946a3-3f83-4c48-84fa-5de99ad2206f",
+          "parentId": "ad.8",
+          "title": "Sandbox tier-1: in-process CSV re-parser/profiler behind a swappable sandbox interface",
+          "status": "open",
+          "priority": null,
+          "sessionName": "agent-rebuild",
+          "updatedAt": "2026-06-18T03:57:26.787Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.4.1",
+          "uuid": "7679cc63-3fed-414d-8790-b8f62dad3cd8",
+          "parentId": "ad.4",
+          "title": "Implement list_lookup_values lookup resolution (currently a stub)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:56:47.736Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.2.3",
+          "uuid": "a55a6b77-f324-4707-94e3-cf07a9180ecd",
+          "parentId": "ad.2",
+          "title": "Identity-resolution enhancements: fuzzy matching (needs Hari decision + import-principles amendment) + standard-model aliases — carved out of Effort A, sequenced after agent-rebuild.2 ladder",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:56:47.247Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.9",
+          "uuid": "3ef091fe-4953-4940-8d74-270231bc5a38",
+          "parentId": null,
+          "title": "Phase 5 — Agent-UX roadmap (icebox)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:55:54.261Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.4",
+          "uuid": "d6890d03-7428-4d81-8563-238c50c03a3d",
+          "parentId": null,
+          "title": "Phase 3 — Finish CSV: formats & parity",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:55:53.934Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.3",
+          "uuid": "287aef9b-2419-45be-9a10-42307ab0debb",
+          "parentId": null,
+          "title": "Phase 3 — Finish CSV: effective-date & changelog",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:55:53.782Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.2",
+          "uuid": "4c3754c3-6ffb-4de5-8e1b-0ec7571f78b5",
+          "parentId": null,
+          "title": "Phase 3 — Finish CSV: reconciliation & identity",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:55:53.646Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.5",
+          "uuid": "55ddaeeb-0e76-49f0-a784-393a9228c046",
+          "parentId": null,
+          "title": "Phase 2 — Schema source-of-truth (Effort B) + app/tenant extension",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:55:53.531Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.6",
+          "uuid": "86dab87e-fce1-45c4-b68f-aec254fbb97f",
+          "parentId": null,
+          "title": "Phase 1 — Monorepo & domain-libs hygiene",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:55:53.386Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.1",
+          "uuid": "4bb4470b-28d2-40fb-8021-f614f5a4e349",
+          "parentId": null,
+          "title": "Phase 1 — Boundary & layer enforcement",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:55:53.271Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.7.4",
+          "uuid": "222a65b1-4100-4682-b000-291fc770f782",
+          "parentId": "ad.7",
+          "title": "[icebox] Slice 8 deferred agent capabilities (trigger-gated)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-17T20:40:56.265Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.9.2",
+          "uuid": "eedc3ace-d5e9-4350-8908-cda3f83887f1",
+          "parentId": "ad.9",
+          "title": "[icebox] Agent UX surfaces — product exploration (trigger-gated)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-17T20:39:55.834Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.4.2",
+          "uuid": "07cb01ee-1f9e-4806-a388-6e0cfc0583ed",
+          "parentId": "ad.4",
+          "title": "Support .xls/.xlsx (Excel) import via a parse engine normalizing to the shared rows shape",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-17T20:31:17.405Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.2.1",
+          "uuid": "73077119-397b-46df-a670-10c69f9b11f1",
+          "parentId": "ad.2",
+          "title": "Archetype-first-class: catalog-DERIVED, single-sourced model archetype CONSUMED by the import engine (converge with import-policy.ts; no hand-lists, no dual authorship)",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-17T20:30:53.841Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.2.2",
+          "uuid": "8c7a88d0-5e6a-44c1-a05d-eda326be5f0e",
+          "parentId": "ad.2",
+          "title": "Identity-resolution priority (UUID>ID>email>name) + agent identity-column selection tools",
+          "status": "open",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-17T20:30:53.841Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "4aa041b",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/4aa041b"
+            }
+          ]
+        },
+        {
+          "id": "ad.5.5",
+          "uuid": "75e675a7-9425-41d7-bf57-aab96611a12e",
+          "parentId": "ad.5",
+          "title": "Decide human business-key field naming convention (keep employee_id/position_id vs uniform non-reserved name e.g. ref/external_id)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T23:28:52.211Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.36.2",
+          "uuid": "c75b0690-43d4-4cfb-b222-a40e7572fad4",
+          "parentId": "ad.36",
+          "title": "Fetch single record by id in get_hc_record_details (avoid full-model records-by-model scan)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T17:49:19.580Z",
+          "workstreamIds": [
+            "arrusted-record-details"
+          ],
+          "commits": [
+            {
+              "sha": "331a8040",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/331a8040"
+            }
+          ]
+        },
+        {
+          "id": "ad.36.1",
+          "uuid": "fd4a3b54-eb41-4471-b237-351536fff2fc",
+          "parentId": "ad.36",
+          "title": "Bound record-details field history server-side",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T17:00:59.593Z",
+          "workstreamIds": [
+            "arrusted-record-details"
+          ],
+          "commits": [
+            {
+              "sha": "5bc11d09",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/5bc11d09"
+            }
+          ]
+        },
+        {
+          "id": "ad.37",
+          "uuid": "214182dc-9f1a-46f4-892c-3fe664df6762",
+          "parentId": null,
+          "title": "PR: Pre-deploy server-authority gates (auth, redaction, validation)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T07:20:30.664Z",
+          "workstreamIds": [
+            "arrusted-server-authority"
+          ],
+          "commits": [
+            {
+              "sha": "795a994f",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/795a994f"
+            },
+            {
+              "sha": "9edff273",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/9edff273"
+            },
+            {
+              "sha": "8586c0fe",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/8586c0fe"
+            }
+          ]
+        },
+        {
+          "id": "ad.37.3",
+          "uuid": "4d0facf1-f978-437f-a3ad-e73f159ab868",
+          "parentId": "ad.37",
+          "title": "§2a deploy gates: server-minted runId, authenticated tenant binding, schemaRevisionId threading, deep request validation",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T07:12:43.288Z",
+          "workstreamIds": [
+            "arrusted-server-authority"
+          ],
+          "commits": [
+            {
+              "sha": "795a994f",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/795a994f"
+            }
+          ]
+        },
+        {
+          "id": "ad.37.2",
+          "uuid": "04727d1c-58f9-4427-9a3b-1f5decb27347",
+          "parentId": "ad.37",
+          "title": "Agent-run ledger evidence redaction/retention deploy gate",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T07:12:28.762Z",
+          "workstreamIds": [
+            "arrusted-server-authority"
+          ],
+          "commits": [
+            {
+              "sha": "8586c0fe",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/8586c0fe"
+            }
+          ]
+        },
+        {
+          "id": "ad.37.1",
+          "uuid": "0469c577-6e89-42fb-8dcc-0cd75bfc133f",
+          "parentId": "ad.37",
+          "title": "Swap HC agent tenant resolver to Better Auth after PR 188 merges",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T07:12:28.644Z",
+          "workstreamIds": [
+            "arrusted-server-authority"
+          ],
+          "commits": [
+            {
+              "sha": "9b803d50",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/9b803d50"
+            },
+            {
+              "sha": "9edff273",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/9edff273"
+            }
+          ]
+        },
+        {
+          "id": "adc.1",
+          "uuid": "bcc69431-6238-451f-9cd5-b28a8b3b1650",
+          "parentId": null,
+          "title": "Fix composed-shell @fs asset proxying (broken logo) + shell favicon",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "adc",
+          "updatedAt": "2026-07-09T06:16:15.224Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.8.5",
+          "uuid": "3adec89d-d6b5-41a2-be7a-dc442cfe49bf",
+          "parentId": "ad.8",
+          "title": "Streaming: streamText + session-stream route (opportunistic)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:02:40.863Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.8.4",
+          "uuid": "4885020e-0c7b-41c5-80b7-daf662dea084",
+          "parentId": "ad.8",
+          "title": "Build: generic agent substrate + HC query/mutation agent (clean-slate)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:02:40.725Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.5.1",
+          "uuid": "0c74cce5-a55f-45bf-ad48-1a9652601497",
+          "parentId": "ad.5",
+          "title": "Effort B: schema source-of-truth unification (domain-libs authoritative; generate schema.rs/kernel from it)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-09T06:02:40.487Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ada.15",
+          "uuid": "158339e0-2815-47d0-9b37-94f32f7d7bde",
+          "parentId": null,
+          "title": "Fix #298 record-details history review findings",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ada",
+          "updatedAt": "2026-07-08T15:27:44.304Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "f9d361fa",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/f9d361fa"
+            }
+          ]
+        },
+        {
+          "id": "ada.10",
+          "uuid": "a3ead370-c749-4618-9c65-9f127d2571ba",
+          "parentId": null,
+          "title": "Filter HC record-detail relation label lookups by record id",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ada",
+          "updatedAt": "2026-07-08T14:16:11.754Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "9abf656a",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/9abf656a"
+            }
+          ]
+        },
+        {
+          "id": "ada.13",
+          "uuid": "1f8cd841-5ebf-40d5-a11a-3a78fbc47b34",
+          "parentId": null,
+          "title": "Fix #309 pre-merge bot findings",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ada",
+          "updatedAt": "2026-07-08T14:11:54.883Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "1a3c8575",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/1a3c8575"
+            }
+          ]
+        },
+        {
+          "id": "ada.7",
+          "uuid": "e958bf12-3ea2-48c6-89ce-08a961c9f2ed",
+          "parentId": null,
+          "title": "Add HC agent record details tool",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ada",
+          "updatedAt": "2026-07-07T11:12:40.367Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "902861ad",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/902861ad"
+            }
+          ]
+        },
+        {
+          "id": "ada.6",
+          "uuid": "95b36bfc-6c86-423d-abbe-1f63634bbce3",
+          "parentId": null,
+          "title": "Make HC agent run route own schema and shrink snapshots",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ada",
+          "updatedAt": "2026-07-07T10:37:56.036Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "f97bb3a408fe2715926ff430869295ae66e72f59",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/f97bb3a408fe2715926ff430869295ae66e72f59"
+            }
+          ]
+        },
+        {
+          "id": "ada.2",
+          "uuid": "19f6f586-2cd0-4b53-ba35-f5637d667277",
+          "parentId": null,
+          "title": "Make budget exhaustion a graceful settled turn",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ada",
+          "updatedAt": "2026-07-07T09:16:11.036Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "c0aa743e",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/c0aa743e"
+            }
+          ]
+        },
+        {
+          "id": "ada.4",
+          "uuid": "10dd393f-2355-4bd1-b821-b0823a87cb54",
+          "parentId": null,
+          "title": "Fix priorless backdated draft diff",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ada",
+          "updatedAt": "2026-07-07T08:27:31.626Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "65b557ca",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/65b557ca"
+            }
+          ]
+        },
+        {
+          "id": "ad.11",
+          "uuid": "bd84e273-dcea-4352-af96-d1dcc9da31cc",
+          "parentId": null,
+          "title": "Seam integration tests for the HC agent stack (page→snapshot, stage→rollback, gate coverage)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-05T19:29:33.171Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "6440f772",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/6440f772"
+            },
+            {
+              "sha": "11e20cb0",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/11e20cb0"
+            }
+          ]
+        },
+        {
+          "id": "ad.10",
+          "uuid": "fb97b184-5659-4563-bfcb-184ab32b12b0",
+          "parentId": null,
+          "title": "Route-parity gate: every agent run route must exist in all 5 surfaces",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-07-05T19:29:33.034Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "11e20cb0",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/11e20cb0"
+            }
+          ]
+        },
+        {
+          "id": "ad.8.9",
+          "uuid": "013291fd-bef0-4cdb-a0d3-820140d93c9e",
+          "parentId": "ad.8",
+          "title": "M2: Guards — boundary-lint + contract tests (no correctness outside the kernel)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "agent-sweep",
+          "updatedAt": "2026-06-29T04:54:00.983Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.8.8",
+          "uuid": "41d68a3c-468f-49c3-b837-8bff72093b30",
+          "parentId": "ad.8",
+          "title": "M1: Revisit kernel ChangeType → advisory (cut required/touches enforcement)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "agent-sweep",
+          "updatedAt": "2026-06-29T04:53:58.434Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.8.6",
+          "uuid": "cf9ea0c4-11a6-467e-b4b3-5afdac5fd07e",
+          "parentId": "ad.8",
+          "title": "[icebox] Deferred hardening ledger — PR A/B/C (trigger-gated)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-28T22:56:05.488Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.7.3",
+          "uuid": "93df996f-1232-4133-9d38-9d6d878db82f",
+          "parentId": "ad.7",
+          "title": "PR5: Foundation finalization — lock provisional agent-foundation APIs",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-28T22:56:04.056Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.5.6.1",
+          "uuid": "4e5df464-e162-4d63-a1fc-1500a82d7891",
+          "parentId": "ad.5.6",
+          "title": "Non-enum custom-field editor: specify surface + per-type cell editors (leaf-first, visual proof); enum editor deferred to 5.6b",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "agent-rebuild",
+          "updatedAt": "2026-06-24T20:05:59.732Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.5.8",
+          "uuid": "1afc68c8-e207-4365-ab5d-58ac0bb7b388",
+          "parentId": "ad.5",
+          "title": "Kernel custom-fields substrate: schema defs + typed write entries + jsonb-array storage + validation + diff + lifecycle + TS clients",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "agent-rebuild",
+          "updatedAt": "2026-06-22T15:36:57.708Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.5.4",
+          "uuid": "0d167056-d34b-4866-b5f5-adf57a28a3ac",
+          "parentId": "ad.5",
+          "title": "Kernel: enforce field-level unique constraints (platform-wide id uniqueness + affirm uuid required+unique)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-22T15:36:37.205Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.6.3",
+          "uuid": "314d29a3-2a37-45b0-95dd-7e3deb68777b",
+          "parentId": "ad.6",
+          "title": "Dissolve frontend-package-tests grab-bag: co-locate unit tests per package, lift cross-layer tests to a top-tier sink",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T16:12:47.823Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "ab10647",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/ab10647"
+            }
+          ]
+        },
+        {
+          "id": "ad.1.2",
+          "uuid": "3f1dc373-1b00-4b86-9e7c-f0d04f8e9326",
+          "parentId": "ad.1",
+          "title": "Scanner hardening: fail-CLOSED on unresolved INTERNAL imports (relative/@-internal-alias -> None = violation), keep fail-open for bare npm specifiers",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T15:27:26.880Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.6.1",
+          "uuid": "248da7c7-e67c-4891-ada1-1a4456caf234",
+          "parentId": "ad.6",
+          "title": "Regroup parked vertical-bucket lookups out of _shared (equity/performance/capacity/other)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T15:27:26.830Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.6.4",
+          "uuid": "f2d465ac-5946-4fa9-9392-192be3192380",
+          "parentId": "ad.6",
+          "title": "field-validation engine cleanups: JSDoc the {value} interpolation convention; drop unreachable ?./?? fallback; fix empty-string range message",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T14:35:18.490Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "f67961a",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/f67961a"
+            }
+          ]
+        },
+        {
+          "id": "ad.6.2",
+          "uuid": "3f116a28-9d1e-43da-bbc9-df1bc6455ac5",
+          "parentId": "ad.6",
+          "title": "Turbo: domain-libs build/test tasks must include packages/** as inputs (cache can go stale on engine changes)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T05:01:24.556Z",
+          "workstreamIds": [],
+          "commits": [
+            {
+              "sha": "a20ac80",
+              "url": "https://github.com/withAutograph/arrusted-development/commit/a20ac80"
+            }
+          ]
+        },
+        {
+          "id": "ad.5.2",
+          "uuid": "ac734cdf-c346-4762-a117-d5645d7d1fd0",
+          "parentId": "ad.5",
+          "title": "import-policy.ts literal drift guard until Effort B SoT (HC model/field id literals vs generated hc-client)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:56:47.609Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.2.4",
+          "uuid": "c6bef24b-8875-4f3f-81f6-60e0446f730e",
+          "parentId": "ad.2",
+          "title": "Cross-run generated-employee-id seed divergence (name-ref vs row-fill mint different ids)",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:56:47.477Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.3.3",
+          "uuid": "ee266099-75bd-4ddf-bae2-fe4bdf77b79f",
+          "parentId": "ad.3",
+          "title": "Decide: changelog preview shape — per-version rows vs latest+count chip",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:56:46.881Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.3.2",
+          "uuid": "9ff155ad-4a26-4db7-a479-85277d2c7dbd",
+          "parentId": "ad.3",
+          "title": "Decide: end_date/termination encoding — field-only vs tombstone",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:56:46.752Z",
+          "workstreamIds": [],
+          "commits": []
+        },
+        {
+          "id": "ad.1.1",
+          "uuid": "1853a5c0-ad44-479d-aa61-0add156bceb2",
+          "parentId": "ad.1",
+          "title": "Boundary layer-model refactor (NEXT BRANCH): re-rank domain-libs above generic libs, close layer_for None blind spots, classify test-harness tier",
+          "status": "closed",
+          "priority": null,
+          "sessionName": "ad",
+          "updatedAt": "2026-06-18T03:52:16.549Z",
+          "workstreamIds": [],
+          "commits": []
+        }
+      ],
+      "metrics": {
+        "activeWorkstreams": 3,
+        "openQuestions": 0,
+        "openPrs": 15,
+        "failingChecks": 3,
+        "pendingChecks": 0,
+        "runningAgents": 3,
+        "openIssues": 10
+      }
+    }
+  ],
+  "workstreams": [
+    {
+      "id": "arrusted-record-details",
+      "project": "arrusted",
+      "title": "Record-details tool hardening",
+      "status": "blocked",
+      "branch": "ada/record-details-hardening",
+      "fableAgent": "adb",
+      "reviewerAgent": "adb",
+      "codexExecutor": "ada",
+      "summary": "PR #354 exact head 76866474 is conditional-merge-ready but not merge-ready. Two substantive blockers remain: truncated history emits a false first structured delta, and the custom-field output schema hand-mirrors the generated Rust wire union. Exact clamp docs are incomplete, and Quality Workspace is red on formatting.",
+      "reviewState": "conditional-merge-ready at 76866474; rating 4/5; blocked on history semantics, generated wire-schema authority, docs precision, and workspace formatting",
+      "updatedAt": "2026-07-10T08:00:17.319Z",
+      "updatedBy": "019f4b02-740b-73f3-8902-4dde775b529e",
+      "issuePrefixes": [
+        "ad.36"
+      ],
+      "chunks": [
+        {
+          "id": "bounded-history",
+          "title": "Bound field history and expose provenance safely",
+          "status": "blocked"
+        },
+        {
+          "id": "by-id",
+          "title": "Fetch individual records without full-model scans",
+          "status": "complete"
+        },
+        {
+          "id": "enum-labels",
+          "title": "Resolve enum labels in current details and history",
+          "status": "complete"
+        },
+        {
+          "id": "review-findings",
+          "title": "Rule on Qodo limit and truncated-baseline findings",
+          "status": "complete"
+        },
+        {
+          "id": "generated-custom-fields",
+          "title": "Derive custom-field output schema from generated contract authority",
+          "status": "blocked"
+        },
+        {
+          "id": "quality-regate",
+          "title": "Format the exact head and rerun workspace quality and exact-head review",
+          "status": "planned"
+        }
+      ],
+      "questions": [
+        {
+          "id": "Q1",
+          "text": "Fold either Qodo finding into PR #354, or park both as separate follow-ups?",
+          "status": "answered",
+          "askedAt": "2026-07-09T18:54:09-04:00",
+          "answeredAt": "2026-07-10T08:00:04.058Z",
+          "answer": "Fold the truncated-history baseline correction and exact limit-clamp documentation into PR #354. Also replace the hand-typed custom-field wire schema with a generated canonical source and clear the formatting failure before re-review."
+        }
+      ],
+      "prs": [
+        {
+          "number": 354,
+          "chunks": [
+            "bounded-history",
+            "by-id",
+            "enum-labels"
+          ],
+          "headRefName": "ada/record-details-hardening",
+          "headRefOid": "76866474edc8f0e745d2bdadec2c99fcdd53e7dc",
+          "isDraft": false,
+          "mergeStateStatus": "UNSTABLE",
+          "state": "OPEN",
+          "statusCheckRollup": [
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T04:35:29Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324/job/86287612309",
+              "name": "Changes",
+              "startedAt": "2026-07-10T04:35:24Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T04:35:45Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324/job/86287612259",
+              "name": "Analyze (React)",
+              "startedAt": "2026-07-10T04:35:24Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T04:36:14Z",
+              "conclusion": "FAILURE",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324/job/86287612243",
+              "name": "Quality (Workspace)",
+              "startedAt": "2026-07-10T04:35:24Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T04:39:43Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324/job/86287612283",
+              "name": "Test (App)",
+              "startedAt": "2026-07-10T04:35:26Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T04:35:29Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324/job/86287625457",
+              "name": "Developer (Setup)",
+              "startedAt": "2026-07-10T04:35:29Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T04:36:38Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://app.macroscope.com",
+              "name": "Macroscope - Correctness Check",
+              "startedAt": "2026-07-10T04:35:21Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T04:37:13Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://app.coderabbit.ai/change-stack/withAutograph/arrusted-development/pull/354",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T04:35:22Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "React Doctor",
+              "startedAt": "2026-07-10T04:35:41Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324"
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "Vercel",
+              "startedAt": "2026-07-10T04:37:18Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://vercel.com/autographing/apps/8r4UfeKYTJ7bqhpRGJ7RofVvP4Le"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T04:37:19Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://vercel.com/github",
+              "name": "Vercel Preview Comments",
+              "startedAt": "2026-07-10T04:37:19Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T04:39:11Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/354",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T04:35:25Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            }
+          ],
+          "title": "Record-details tool hardening",
+          "updatedAt": "2026-07-10T04:37:19Z",
+          "url": "https://github.com/withAutograph/arrusted-development/pull/354"
+        }
+      ],
+      "assessment": {
+        "mergeReadiness": 80,
+        "structuralRisk": 5,
+        "assessedHead": "76866474",
+        "assessedAt": "2026-07-10T04:36:45.013Z",
+        "assessedBy": "adb",
+        "rationale": "Evidence: 5/6 children signed off at line level (bounded history in SQL, by-id confirmed pre-existing, enum labels, custom-fields parity per Hari's no-deferred-scope ruling); remaining: 36.5 tool consolidation + 36.3 provenance design note — the one child with cross-module schema risk, hence not higher. CI green each push; qodo round dispositioned (1 fold, 1 reasoned reject).",
+        "stale": false,
+        "currentHead": "76866474edc8f0e745d2bdadec2c99fcdd53e7dc"
+      },
+      "liveStatus": null,
+      "assessmentRequest": {
+        "requestedAt": "2026-07-10T08:00:43.191Z",
+        "requestedFrom": "adb",
+        "pending": true
+      },
+      "timeline": [
+        {
+          "at": "2026-07-10T08:00:43.191Z",
+          "actor": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+          "type": "assessment_request",
+          "label": "Assessment requested",
+          "text": "Evidence-backed judgment requested for current workstream"
+        },
+        {
+          "at": "2026-07-10T08:00:23.635Z",
+          "actor": "019f4b02-740b-73f3-8902-4dde775b529e",
+          "type": "disarm",
+          "label": "Session disarmed",
+          "text": "019f4b02-740b-73f3-8902-4dde775b529e disarmed arrusted-record-details"
+        },
+        {
+          "at": "2026-07-10T08:00:17.320Z",
+          "actor": "019f4b02-740b-73f3-8902-4dde775b529e",
+          "type": "reconcile",
+          "label": "Reconciliation",
+          "text": "Exact-head reviewer judgment: conditional merge-ready 4/5; Q1 resolved to fold blockers into PR #354; status blocked pending fixes and re-review"
+        },
+        {
+          "at": "2026-07-10T08:00:04.058Z",
+          "actor": "019f4b02-740b-73f3-8902-4dde775b529e",
+          "type": "decision",
+          "label": "Decision recorded",
+          "text": "Fold the truncated-history baseline correction and exact limit-clamp documentation into PR #354. Also replace the hand-typed custom-field wire schema with a generated canonical source and clear the formatting failure before re-review."
+        },
+        {
+          "at": "2026-07-10T07:59:59.973Z",
+          "actor": "019f4b02-740b-73f3-8902-4dde775b529e",
+          "type": "onboard",
+          "label": "Session armed",
+          "text": "019f4b02-740b-73f3-8902-4dde775b529e armed as reviewer"
+        },
+        {
+          "at": "2026-07-10T04:36:45.013Z",
+          "actor": "adb",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "merge=80 structural=5 head=76866474 (pending push)"
+        }
+      ],
+      "references": [],
+      "afIssues": [
+        {
+          "uuid": "baccfc79-1582-438b-9e3e-37018062d62d",
+          "id": "ad.36",
+          "session_name": "ad",
+          "parent_uuid": null,
+          "title": "PR: Record-details tool hardening (server-bounded history, by-id fetch, provenance, labels)",
+          "status": "in_progress",
+          "priority": null,
+          "body": "One PR bundling the #298 follow-up cluster — all touch the same tool + /api/history + kernel field_history seam. Each child ~a commit.",
+          "resolution": null,
+          "created_by": "adb",
+          "created_by_session_id": "52c54c77-7353-4b60-bc5c-2e2d723d3299",
+          "updated_at": 1783581646482,
+          "direct_children": 5,
+          "total_descendants": 5
+        },
+        {
+          "uuid": "fd4a3b54-eb41-4471-b237-351536fff2fc",
+          "id": "ad.36.1",
+          "session_name": "ad",
+          "parent_uuid": "baccfc79-1582-438b-9e3e-37018062d62d",
+          "title": "Bound record-details field history server-side",
+          "status": "closed",
+          "priority": null,
+          "body": "Follow-up from ada.7 PR #298 reviews: get_hc_record_details returns only 20 history entries but /api/history / kernel field_history currently fetches all per-record field history first, one entry per field per version. Add an exact server-side bound or agent-specific bounded history request before exposing deeper/large-history record-detail usage.",
+          "resolution": "Pushed 5bc11d09 to PR #354. FieldHistoryRequest.limit is enforced in Rust/SQL before field expansion, shared/app generated clients are updated, get_hc_record_details sends limit:20, docs/contracts.md records semantics, and focused Rust/TS/generated validations passed. Full mise run check was attempted twice but blocked by mise/rustup component download rename failures before repo checks.",
+          "created_by": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
+          "created_by_session_id": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
+          "updated_at": 1783616459593,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "c75b0690-43d4-4cfb-b222-a40e7572fad4",
+          "id": "ad.36.2",
+          "session_name": "ad",
+          "parent_uuid": "baccfc79-1582-438b-9e3e-37018062d62d",
+          "title": "Fetch single record by id in get_hc_record_details (avoid full-model records-by-model scan)",
+          "status": "closed",
+          "priority": null,
+          "body": "qodo finding on #298: the tool resolves the requested record via POST /api/records-by-model (all visible records for the model) then .find() in memory. Relation-label side was fixed (ada.10); the main-record fetch still moves the whole model. Add a by-id fetch path or reuse record_ids_by_model with a single id. Related: ad.29.",
+          "resolution": "Resolved in 331a8040: get_hc_record_details was already fetching the target record by id through record_ids_by_model; added the requested truncated-history wording/test pin and fixed CodeRabbit's unbounded omitted-limit blocker by defaulting field_history.limit to the server cap.",
+          "created_by": "ada",
+          "created_by_session_id": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
+          "updated_at": 1783619359580,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "5349cf5d-2cc8-4245-92fb-1645bd95556f",
+          "id": "ad.36.3",
+          "session_name": "ad",
+          "parent_uuid": "baccfc79-1582-438b-9e3e-37018062d62d",
+          "title": "Add exact source provenance to field history",
+          "status": "open",
+          "priority": null,
+          "body": "Follow-up from ada.7/review: get_hc_record_details shipped without provenance because /api/activity is tenant-wide and bounded to a recent 100-change-set window with no record_id filter. Joining field history change_set_id against that window would silently produce approximate/null provenance for older records. If record details needs source provenance, widen FieldHistoryEntry/query/typegen/generated clients to carry exact change_set source_kind/source_ref from field_history, then expose it in the tool.",
+          "resolution": null,
+          "created_by": "adb",
+          "created_by_session_id": "52c54c77-7353-4b60-bc5c-2e2d723d3299",
+          "updated_at": 1783576994976,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "9f3b7f8a-b580-4798-b83f-eccc11241eed",
+          "id": "ad.36.4",
+          "session_name": "ad",
+          "parent_uuid": "baccfc79-1582-438b-9e3e-37018062d62d",
+          "title": "Record-details sweep nits: enum-option label resolution + lookup_hc_records custom-fields parity",
+          "status": "in_progress",
+          "priority": null,
+          "body": "Two halves, BOTH in scope per Hari (no deferring scope on existing capability): (a) enum option values render labels not raw ids in record details; (b) lookup_hc_records exposes custom_fields with the same shape/semantics as get_hc_record_details — parity on shipped capability, keep rendering consistent between the two read tools (shared helper if natural). Likely two commits.",
+          "resolution": null,
+          "created_by": "ada",
+          "created_by_session_id": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
+          "updated_at": 1783619374349,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "0a9de007-74f3-4760-889c-ace8c4db4caf",
+          "id": "ad.36.5",
+          "session_name": "ad",
+          "parent_uuid": "baccfc79-1582-438b-9e3e-37018062d62d",
+          "title": "Consolidate HC schema introspection tools",
+          "status": "open",
+          "priority": null,
+          "body": null,
+          "resolution": null,
+          "created_by": "adb",
+          "created_by_session_id": "52c54c77-7353-4b60-bc5c-2e2d723d3299",
+          "updated_at": 1783576994988,
+          "direct_children": 0,
+          "total_descendants": 0
+        }
+      ],
+      "agents": [
+        {
+          "name": "adb",
+          "kind": "claude",
+          "idleFor": "4s",
+          "running": true
+        },
+        {
+          "name": "ada",
+          "kind": "codex",
+          "idleFor": "0s",
+          "running": true
+        }
+      ]
+    },
+    {
+      "id": "arrusted-server-authority",
+      "project": "arrusted",
+      "title": "Server-authority gates",
+      "status": "active",
+      "branch": "ada/server-authority-gates",
+      "fableAgent": "adb",
+      "reviewerAgent": "adb",
+      "codexExecutor": "ada",
+      "summary": "PR #341 exact head 7af4954e is merge-ready. The fallback tool-evidence hole is fixed, all current checks pass, all material reviewer findings are addressed or stale against current code, and no unresolved content blocker remains. Awaiting explicit PR-number merge authorization.",
+      "reviewState": "merge-ready at 7af4954e; rating 5/5; all checks green; awaiting merge authorization",
+      "updatedAt": "2026-07-10T07:59:37.291Z",
+      "updatedBy": "019f4b02-740b-73f3-8902-4dde775b529e",
+      "issuePrefixes": [
+        "ad.37"
+      ],
+      "chunks": [
+        {
+          "id": "auth-boundary",
+          "title": "Bind HC agent tenancy through server-side authority",
+          "status": "complete"
+        },
+        {
+          "id": "redaction",
+          "title": "Enforce evidence redaction and retention gates",
+          "status": "complete"
+        },
+        {
+          "id": "tool-evidence",
+          "title": "Preserve top-level tool evidence when no step records exist",
+          "status": "complete"
+        },
+        {
+          "id": "merge",
+          "title": "Revalidate the amended SHA and clear the merge hold",
+          "status": "complete"
+        }
+      ],
+      "questions": [],
+      "prs": [
+        {
+          "number": 341,
+          "chunks": [
+            "auth-boundary",
+            "redaction",
+            "tool-evidence",
+            "merge"
+          ],
+          "headRefName": "ada/server-authority-gates",
+          "headRefOid": "7af4954e0c9f4ce4f59667b2cbc8c5b5dcf64af0",
+          "isDraft": false,
+          "mergeStateStatus": "CLEAN",
+          "state": "OPEN",
+          "statusCheckRollup": [
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:40:08Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573843",
+              "name": "Changes",
+              "startedAt": "2026-07-10T03:40:02Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:40:25Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573862",
+              "name": "Analyze (React)",
+              "startedAt": "2026-07-10T03:40:01Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:42:25Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573861",
+              "name": "Quality (Workspace)",
+              "startedAt": "2026-07-10T03:40:02Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:44:11Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573850",
+              "name": "Test (App)",
+              "startedAt": "2026-07-10T03:40:02Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:40:08Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281590579",
+              "name": "Developer (Setup)",
+              "startedAt": "2026-07-10T03:40:09Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:39:59Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://app.macroscope.com",
+              "name": "Macroscope - Correctness Check",
+              "startedAt": "2026-07-10T03:39:57Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:42:10Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://app.coderabbit.ai/change-stack/withAutograph/arrusted-development/pull/341",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T03:40:00Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "React Doctor",
+              "startedAt": "2026-07-10T03:40:21Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384"
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "Vercel",
+              "startedAt": "2026-07-10T03:41:57Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://vercel.com/autographing/apps/5jrc6wbrivTDMqottKqdhkkZN4XC"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:41:58Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://vercel.com/github",
+              "name": "Vercel Preview Comments",
+              "startedAt": "2026-07-10T03:41:58Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:43:02Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/341",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T03:40:07Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            }
+          ],
+          "title": "Server-authority gates: bind HC agent tenant through Better Auth",
+          "updatedAt": "2026-07-10T03:42:06Z",
+          "url": "https://github.com/withAutograph/arrusted-development/pull/341"
+        }
+      ],
+      "assessment": {
+        "mergeReadiness": 93,
+        "structuralRisk": 3,
+        "assessedHead": "7af4954e",
+        "assessedAt": "2026-07-10T04:36:45.116Z",
+        "assessedBy": "adb",
+        "rationale": "Evidence: dual-MRR (codex-xhigh + Fable) both traced auth path sound end-to-end; redaction blocker fixed via shared helper + audit-evidence fallback landing; all bot findings adjudicated with dispositions; CI green on prior head, fix delta is 2-file additive. Gate is Hari's external security review — external-reviewer findings are the only material unknown. Structural: strongest branch in the portfolio.",
+        "stale": false,
+        "currentHead": "7af4954e0c9f4ce4f59667b2cbc8c5b5dcf64af0"
+      },
+      "liveStatus": null,
+      "assessmentRequest": {
+        "requestedAt": "2026-07-10T08:00:39.170Z",
+        "requestedFrom": "adb",
+        "pending": true
+      },
+      "timeline": [
+        {
+          "at": "2026-07-10T08:00:39.170Z",
+          "actor": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+          "type": "assessment_request",
+          "label": "Assessment requested",
+          "text": "Evidence-backed judgment requested for current workstream"
+        },
+        {
+          "at": "2026-07-10T07:59:41.622Z",
+          "actor": "019f4b02-740b-73f3-8902-4dde775b529e",
+          "type": "disarm",
+          "label": "Session disarmed",
+          "text": "019f4b02-740b-73f3-8902-4dde775b529e disarmed arrusted-server-authority"
+        },
+        {
+          "at": "2026-07-10T07:59:37.292Z",
+          "actor": "019f4b02-740b-73f3-8902-4dde775b529e",
+          "type": "reconcile",
+          "label": "Reconciliation",
+          "text": "Exact-head reviewer judgment: merge-ready 5/5; content hold cleared; awaiting merge authorization"
+        },
+        {
+          "at": "2026-07-10T07:59:15.921Z",
+          "actor": "019f4b02-740b-73f3-8902-4dde775b529e",
+          "type": "onboard",
+          "label": "Session armed",
+          "text": "019f4b02-740b-73f3-8902-4dde775b529e armed as reviewer"
+        },
+        {
+          "at": "2026-07-10T04:36:45.116Z",
+          "actor": "adb",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "merge=93 structural=3 head=7af4954e (pending push)"
+        },
+        {
+          "at": "2026-07-09T07:20:30.668Z",
+          "actor": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Resolved: PR: Pre-deploy server-authority gates (auth, redaction, validation)"
+        },
+        {
+          "at": "2026-07-09T07:12:28.764Z",
+          "actor": "adb",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Resolved: Agent-run ledger evidence redaction/retention deploy gate"
+        },
+        {
+          "at": "2026-07-09T07:12:28.647Z",
+          "actor": "adb",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Resolved: Swap HC agent tenant resolver to Better Auth after PR 188 merges"
+        }
+      ],
+      "references": [],
+      "afIssues": [
+        {
+          "uuid": "214182dc-9f1a-46f4-892c-3fe664df6762",
+          "id": "ad.37",
+          "session_name": "ad",
+          "parent_uuid": null,
+          "title": "PR: Pre-deploy server-authority gates (auth, redaction, validation)",
+          "status": "closed",
+          "priority": null,
+          "body": "The hard gate before any real deploy: Better Auth tenant binding, evidence redaction/retention, deep request validation. Closes invariant #8. Children ~commits.",
+          "resolution": "PR #341 string complete at head 795a994f. All children ad.37.1-ad.37.3 are closed; pushed commits 9edff273, 8586c0fe, 795a994f. CI/check rollup is green on head 795a994f (Changes, Analyze React, Quality Workspace, Test App, CodeRabbit, React Doctor, Vercel, Cubic; Macroscope skipped). Bot comments from the prior head were addressed in 795a994f. No merge action taken.",
+          "created_by": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
+          "created_by_session_id": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
+          "updated_at": 1783581630664,
+          "direct_children": 3,
+          "total_descendants": 3
+        },
+        {
+          "uuid": "0469c577-6e89-42fb-8dcc-0cd75bfc133f",
+          "id": "ad.37.1",
+          "session_name": "ad",
+          "parent_uuid": "214182dc-9f1a-46f4-892c-3fe664df6762",
+          "title": "Swap HC agent tenant resolver to Better Auth after PR 188 merges",
+          "status": "closed",
+          "priority": null,
+          "body": "TRIGGERED: #188 (Better Auth) merged to main 2026-07-08 (9b803d50). Swap HC agent tenant resolver to Better Auth is now actionable.",
+          "resolution": "Better Auth requireTenantScope binding shipped on PR #341 (9edff273): appId server-pinned, forged tenant -> tenant_required/403 pre-provider, actorId authenticated.",
+          "created_by": "adb",
+          "created_by_session_id": "52c54c77-7353-4b60-bc5c-2e2d723d3299",
+          "updated_at": 1783581148644,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "04727d1c-58f9-4427-9a3b-1f5decb27347",
+          "id": "ad.37.2",
+          "session_name": "ad",
+          "parent_uuid": "214182dc-9f1a-46f4-892c-3fe664df6762",
+          "title": "Agent-run ledger evidence redaction/retention deploy gate",
+          "status": "closed",
+          "priority": null,
+          "body": "Deploy-gate follow-up from PR #293 CodeRabbit thread https://github.com/withAutograph/arrusted-development/pull/293#discussion_r3533360199. HC query/mutation agent-run evidence can duplicate record-level values in tool_calls/final_outputs; rows are in-tenant and in the same store but have a different lifecycle from records. Design redaction/retention alongside auth before real deployment.",
+          "resolution": "Evidence redaction shipped on PR #341 (8586c0fe): no raw tool args/results/assistant text in agent_run; eval-bearing skeleton retained; footgun doc records V0 policy.",
+          "created_by": "adb",
+          "created_by_session_id": "52c54c77-7353-4b60-bc5c-2e2d723d3299",
+          "updated_at": 1783581148762,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "4d0facf1-f978-437f-a3ad-e73f159ab868",
+          "id": "ad.37.3",
+          "session_name": "ad",
+          "parent_uuid": "214182dc-9f1a-46f4-892c-3fe664df6762",
+          "title": "§2a deploy gates: server-minted runId, authenticated tenant binding, schemaRevisionId threading, deep request validation",
+          "status": "closed",
+          "priority": null,
+          "body": "Consolidates the release gates every PR-220 reviewer flagged (qodo #3, peer reviews, docs/agent-foundation.md §2a table). Not debt — explicit gates before real deploy: (1) server-mint runId (client-minted = spoofable attribution, §2.9); (2) appId/customerId from authenticated session, not request body; (3) thread schemaRevisionId through the run request so dry-run pins the revision (kernel-side AgentRunSchemaMismatch backstop already armed); (4) deep-validate visibleRecordsByModel/schema payloads once payloads stop being trusted app-generated. Blocks: first non-demo deploy.",
+          "resolution": "Pushed 795a994f on PR #341. Includes server schemaRevisionId threading into atomic dry-runs, stale_schema_revision typed-error coverage, explicit non-empty customerId auth binding, appId removal/rejection, and docs/agent-foundation.md §2a updates. Validated focused tests, scripted tool-calling, format:app, check:types, and route rerun after format.",
+          "created_by": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
+          "created_by_session_id": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
+          "updated_at": 1783581163288,
+          "direct_children": 0,
+          "total_descendants": 0
+        }
+      ],
+      "agents": [
+        {
+          "name": "adb",
+          "kind": "claude",
+          "idleFor": "4s",
+          "running": true
+        },
+        {
+          "name": "ada",
+          "kind": "codex",
+          "idleFor": "0s",
+          "running": true
+        }
+      ]
+    },
+    {
+      "id": "aon-pr-audit",
+      "project": "aon",
+      "title": "PR-AUDIT account and document cutover",
+      "status": "active",
+      "branch": "write-path-pr-audit",
+      "fableAgent": "refrev",
+      "reviewerAgent": "refrev",
+      "codexExecutor": "aona",
+      "summary": "PR #272 has passed the M2 final gate and is running CI and bot review. M3 is now being scoped as one bounded document-zone move: add trigger coverage, retire duplicate audit writers, and replace the document RPCs without pulling correspondence into the slice.",
+      "reviewState": "M2 GO; M3 awaiting scope approval",
+      "updatedAt": "2026-07-09T23:00:26-04:00",
+      "updatedBy": "aona",
+      "issuePrefixes": [
+        "refrev.11",
+        "aona.10"
+      ],
+      "chunks": [
+        {
+          "id": "m1-map",
+          "title": "Map write ownership and characterize account-zone invariants",
+          "status": "complete"
+        },
+        {
+          "id": "m2-account",
+          "title": "Cut account writes to typed TS and generic audit trigger",
+          "status": "complete"
+        },
+        {
+          "id": "m3-documents",
+          "title": "Cut document writes, attachments, and duplicate audit writers together",
+          "status": "active"
+        },
+        {
+          "id": "m4-drops",
+          "title": "Drop surviving transitional tables and RPC surfaces",
+          "status": "planned"
+        }
+      ],
+      "questions": [
+        {
+          "id": "Q1",
+          "text": "Should document attach/detach history move fully to audit_logs in M3, or keep workflow_changes append calls until PR5?",
+          "status": "open",
+          "askedAt": "2026-07-09T23:00:26-04:00"
+        }
+      ],
+      "prs": [
+        {
+          "number": 272,
+          "chunks": [
+            "m2-account",
+            "m3-documents"
+          ],
+          "headRefName": "write-path-pr-audit",
+          "headRefOid": "a98641d6c538824be6c5a128eebdb53546735235",
+          "isDraft": false,
+          "mergeStateStatus": "BLOCKED",
+          "state": "OPEN",
+          "statusCheckRollup": [
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T07:29:26Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29076699920/job/86309811271",
+              "name": "Database Contract",
+              "startedAt": "2026-07-10T07:26:50Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T07:30:08Z",
+              "conclusion": "FAILURE",
+              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29076699920/job/86309811282",
+              "name": "Registration Characterization",
+              "startedAt": "2026-07-10T07:26:50Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T07:30:57Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29076699920/job/86309811269",
+              "name": "Check (typecheck + lint + test + playbooks audit)",
+              "startedAt": "2026-07-10T07:26:50Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T07:32:09Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29076699920/job/86310489826",
+              "name": "Build",
+              "startedAt": "2026-07-10T07:30:59Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T07:32:34Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/abstractops/aon/actions/runs/29076699920/job/86310683349",
+              "name": "E2E (Smoke)",
+              "startedAt": "2026-07-10T07:32:12Z",
+              "status": "COMPLETED",
+              "workflowName": "CI"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T07:26:47Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://app.macroscope.com",
+              "name": "Macroscope - Correctness Check",
+              "startedAt": "2026-07-10T07:26:45Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T07:30:39Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://coderabbit.ai?utm_source=cr_app&utm_medium=github",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T07:27:11Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "Vercel",
+              "startedAt": "2026-07-10T07:27:21Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://vercel.com/abstractops/aon/E8guzwhA7XQaoxskRQ94AwmX63F2"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T07:27:22Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://vercel.com/github",
+              "name": "Vercel Preview Comments",
+              "startedAt": "2026-07-10T07:27:22Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T07:31:29Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://www.cubic.dev/pr/abstractops/aon/pull/272",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T07:26:55Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            }
+          ],
+          "title": "PR-AUDIT: account audit write cutover",
+          "updatedAt": "2026-07-10T07:31:28Z",
+          "url": "https://github.com/abstractops/aon/pull/272"
+        }
+      ],
+      "assessment": {
+        "mergeReadiness": 88,
+        "structuralRisk": 8,
+        "assessedHead": "59c89cd9",
+        "assessedAt": "2026-07-10T03:14:31.312Z",
+        "assessedBy": "refrev",
+        "rationale": "GO'd at final gate after 2 NO-GO cycles; CI green incl. verified real pgTAP on DB Contract; two confirmed bot blockers (7-arg straggler in link_workflow_account_artifact_atomic, RA human/null actor) are bounded fixes in an approved follow-up commit; core architecture verified faithful twice. Structural risk low: M2 is itself the deletion/rebuild. (Dashboard rating — routed to you per workstream-control collection protocol; no action needed.)",
+        "stale": true,
+        "currentHead": "a98641d6c538824be6c5a128eebdb53546735235"
+      },
+      "liveStatus": null,
+      "assessmentRequest": null,
+      "timeline": [
+        {
+          "at": "2026-07-10T03:14:31.312Z",
+          "actor": "refrev",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "merge=88 structural=8 head=59c89cd9 — GO'd at final gate after 2 NO-GO cycles; CI green incl. verified real pgTAP on DB Contract; two confirmed bot blockers (7-arg straggler in link_workflow_account_artifact_atomic, RA human/null actor) are bounded fixes in an approved follow-…"
+        },
+        {
+          "at": "2026-07-09T05:52:35.407Z",
+          "actor": "aona",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Ack practice ruling: PR-AUDIT worktree"
+        },
+        {
+          "at": "2026-07-09T05:52:22.471Z",
+          "actor": "aona",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "PR-AUDIT M2 validation ready"
+        },
+        {
+          "at": "2026-07-08T19:45:11.094Z",
+          "actor": "aona",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "PR-AUDIT M2 status: code/unit gates green, DB reset blocked"
+        }
+      ],
+      "references": [],
+      "afIssues": [
+        {
+          "uuid": "64e47913-bfc4-4a15-92cf-2bdcac067d18",
+          "id": "aona.10",
+          "session_name": "aona",
+          "parent_uuid": null,
+          "title": "Start PR-AUDIT M1 measurement and invariant map",
+          "status": "in_progress",
+          "priority": null,
+          "body": "M1 for refrev.11: measure account/documents/comments RPC surface, produce re-homing map for every invariant, add/identify behavioral pin scope, and recommend comments fold-in vs PR5. Milestone-gated before M2.",
+          "resolution": null,
+          "created_by": "aona",
+          "created_by_session_id": "019f3fee-baac-7770-9924-fe57bc579a6a",
+          "updated_at": 1783518081586,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "d7430390-30ca-4e00-8bd7-ac94a292e685",
+          "id": "refrev.11",
+          "session_name": "refrev",
+          "parent_uuid": null,
+          "title": "EPIC: De-RPC the surviving zones (~25 RPCs) — account → documents → comments → generic workflow/template",
+          "status": "in_progress",
+          "priority": null,
+          "body": "The plan's biggest remaining structural bet (Deferred section): retire audit-via-RPC + atomicity-via-plpgsql everywhere, under the PR4 architecture (plain TS writes + constraint/trigger invariants + audit trigger + shared audit helper). Ladder order is binding: ACCOUNT first (folds account_changes into audit_logs -> single audit stream, feed collapses to audit_logs-only), then documents, then comments (weakest justification), then generic workflow/template + terminal lifecycle. EVERY zone uses characterize-first-merge-first (harness+fixtures+CI gate as its own PR against current behavior, THEN the cutover PR judged by the merged gate — the PR4 lesson). Each cut re-homes invariants per a re-homing map before dropping; anon/PUBLIC revokes ride each zone's cut migration (refrev.7); closure arguments walk EVERY unique constraint on written tables (PR4 x9 lesson).",
+          "resolution": null,
+          "created_by": "refrev",
+          "created_by_session_id": "2a8633e2-1bbf-4302-97bf-232398158282",
+          "updated_at": 1783517822682,
+          "direct_children": 4,
+          "total_descendants": 4
+        },
+        {
+          "uuid": "6e0d7925-264d-4e1c-9dcc-809cd22a3adf",
+          "id": "refrev.11.1",
+          "session_name": "refrev",
+          "parent_uuid": "d7430390-30ca-4e00-8bd7-ac94a292e685",
+          "title": "Account-zone de-RPC (rung 1): 5 account RPCs -> TS + trigger audit; fold account_changes into audit_logs",
+          "status": "in_progress",
+          "priority": null,
+          "body": "create/update account_instance *_with_event/_with_change RPCs (~400-600 plpgsql). Preserve is_valid_account_instance_status_transition (re-home). Feed becomes audit_logs-only when done (plan Decision 5 endgame). Drop change_review_status enum + legacy columns after. Two PRs: characterization first, cutover second. Also migrates createAccountSlot off create_and_link_workflow_account_artifact_atomic (its last caller) enabling that RPC's PR5-deferred drop.",
+          "resolution": null,
+          "created_by": "refrev",
+          "created_by_session_id": "1a279f53-edd2-43b5-8562-700b90cd5baa",
+          "updated_at": 1783578890371,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "9ff19b7e-7058-40c7-b314-3a16f951a4a2",
+          "id": "refrev.11.2",
+          "session_name": "refrev",
+          "parent_uuid": "d7430390-30ca-4e00-8bd7-ac94a292e685",
+          "title": "Documents-zone de-RPC (rung 2): 4 document RPCs -> TS; trigger-cover documents; remove app-path log_audit_event",
+          "status": "open",
+          "priority": null,
+          "body": "create_document_atomic, create_and_attach/attach/detach_workflow_document_atomic. Per plan write-architecture: when the trigger newly covers documents, the direct logAuditEvent calls (records.ts, record-create-effects.ts) come out in the SAME PR (one-writer-per-table rule). Characterize-first.",
+          "resolution": null,
+          "created_by": "refrev",
+          "created_by_session_id": "2a8633e2-1bbf-4302-97bf-232398158282",
+          "updated_at": 1783400152155,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "5f18722e-aa80-4931-93f2-97db8cbdb8dd",
+          "id": "refrev.11.3",
+          "session_name": "refrev",
+          "parent_uuid": "d7430390-30ca-4e00-8bd7-ac94a292e685",
+          "title": "Comments-zone de-RPC (rung 3): 3 comment RPCs -> plain TS",
+          "status": "open",
+          "priority": null,
+          "body": "create_comment_thread_with_message_atomic, add_comment_message_to_thread_atomic, create_task_comment_message_atomic. Plan's 'weakest justification' trio — single-author threads never needed atomic RPCs. Smallest rung; good rehearsal slot for a new executor.",
+          "resolution": null,
+          "created_by": "refrev",
+          "created_by_session_id": "2a8633e2-1bbf-4302-97bf-232398158282",
+          "updated_at": 1783400152264,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "5af3c3ca-e156-4aca-8d8e-b33771ec1f50",
+          "id": "refrev.11.4",
+          "session_name": "refrev",
+          "parent_uuid": "d7430390-30ca-4e00-8bd7-ac94a292e685",
+          "title": "Generic workflow/template de-RPC (rung 4): ~10 RPCs incl. terminal lifecycle",
+          "status": "closed",
+          "priority": null,
+          "body": "create_workflow_instance(s)_from_template/types_atomic, create_workflow_template_with_stage_items_atomic, materialize_workflow_template_stages, create_workflow_task/artifact_in_stage_atomic, link/unlink_workflow_account_artifact_atomic, cancel/close/reopen_workflow_atomic, update_workflow_due_at_atomic. Biggest rung; PR2b's terminal-immutability trigger is a prerequisite (lands there). Interacts with the future 'registration as first-class domain object' question — litigate scope before starting.",
+          "resolution": "Dissolved: templates get DELETED with the system in PR-GEN (scaffolding-in-code design, Hari 2026-07-07), not de-RPC'd. Residual instance-level RPCs (create_workflow_task_in_stage_atomic, link/unlink artifact) fold into PR-AUDIT/PR5.",
+          "created_by": "refrev",
+          "created_by_session_id": "2a8633e2-1bbf-4302-97bf-232398158282",
+          "updated_at": 1783406487352,
+          "direct_children": 0,
+          "total_descendants": 0
+        }
+      ],
+      "agents": [
+        {
+          "name": "refrev",
+          "kind": "unknown",
+          "idleFor": "1s",
+          "running": true
+        },
+        {
+          "name": "aona",
+          "kind": "codex",
+          "idleFor": "3s",
+          "running": true
+        }
+      ]
+    },
+    {
+      "id": "aon-bulk-ops",
+      "project": "aon",
+      "title": "Internal bulk operations",
+      "status": "active",
+      "branch": "aonb/bulk-ops",
+      "fableAgent": "aonb",
+      "reviewerAgent": "refrev",
+      "codexExecutor": "aonb/backend-bulk",
+      "summary": "Backend and frontend bulk operations are implemented and the adversarial panel found one semantic regression in done_at behavior. Refrev ruled to preserve the old DONE-only timestamp semantics; the bounded correction is approved and the branch is at the push/PR boundary.",
+      "reviewState": "Conditional gate cleared; push and open PR next",
+      "updatedAt": "2026-07-09T14:53:26-04:00",
+      "updatedBy": "refrev",
+      "issuePrefixes": [
+        "aonb.1"
+      ],
+      "chunks": [
+        {
+          "id": "target-map",
+          "title": "Map bulk-action targets and authorization boundaries",
+          "status": "complete"
+        },
+        {
+          "id": "backend",
+          "title": "Implement bulk procedures using existing task mutations",
+          "status": "complete"
+        },
+        {
+          "id": "frontend",
+          "title": "Add multi-select, assignment, and status controls",
+          "status": "complete"
+        },
+        {
+          "id": "semantic-fix",
+          "title": "Restore behavior-identical DONE-only done_at stamping",
+          "status": "active"
+        },
+        {
+          "id": "publish",
+          "title": "Push the reviewed branch and open its PR",
+          "status": "planned"
+        }
+      ],
+      "questions": [],
+      "prs": [],
+      "assessment": {
+        "mergeReadiness": 72,
+        "structuralRisk": 12,
+        "assessedHead": null,
+        "assessedAt": "2026-07-10T03:14:31.427Z",
+        "assessedBy": "refrev",
+        "rationale": "gated GO, done_at behavior-identical fix confirmed applied, panels run; not yet pushed so no CI/bot signal, hence sub-80. Pattern is deliberately thin (batch loop over existing guards).",
+        "stale": false,
+        "currentHead": "26665f0297b1a0a7a509c8f5464bb351e612c688"
+      },
+      "liveStatus": null,
+      "assessmentRequest": null,
+      "timeline": [
+        {
+          "at": "2026-07-10T03:14:31.427Z",
+          "actor": "refrev",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "merge=72 structural=12 head=pre-push — gated GO, done_at behavior-identical fix confirmed applied, panels run; not yet pushed so no CI/bot signal, hence sub-80. Pattern is deliberately thin (batch loop over existing guards). [RATING aon-testing-corpus] merge=80 structural=5 he…"
+        }
+      ],
+      "references": [],
+      "afIssues": [
+        {
+          "uuid": "9884f3b6-bd16-4035-848d-7a2552e3c582",
+          "id": "aonb.1",
+          "session_name": "aonb",
+          "parent_uuid": null,
+          "title": "Internal bulk operations over existing work views (epic)",
+          "status": "open",
+          "priority": null,
+          "body": null,
+          "resolution": null,
+          "created_by": "aonb",
+          "created_by_session_id": "f482275c-e59e-427b-ae4b-127ac84a1411",
+          "updated_at": 1783580179833,
+          "direct_children": 3,
+          "total_descendants": 3
+        },
+        {
+          "uuid": "e320d070-732f-476b-8bf0-c139c104673e",
+          "id": "aonb.1.1",
+          "session_name": "aonb",
+          "parent_uuid": "9884f3b6-bd16-4035-848d-7a2552e3c582",
+          "title": "Map bulk-action targets: existing mutations + read models (reads/wiring)",
+          "status": "closed",
+          "priority": null,
+          "body": null,
+          "resolution": "Bulk-action target map done: /internal/tasks uses server action (applyInternalTriageUpdate), tRPC surface is workflow task view; status+AO assignment bulk-safe via existing guards",
+          "created_by": "aonb",
+          "created_by_session_id": "f482275c-e59e-427b-ae4b-127ac84a1411",
+          "updated_at": 1783583543148,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "341d9630-511d-4161-a406-3a697fc46c7e",
+          "id": "aonb.1.2",
+          "session_name": "aonb",
+          "parent_uuid": "9884f3b6-bd16-4035-848d-7a2552e3c582",
+          "title": "Multi-select + bulk assignment via existing tasks mutations",
+          "status": "in_progress",
+          "priority": null,
+          "body": null,
+          "resolution": null,
+          "created_by": "aonb",
+          "created_by_session_id": "f482275c-e59e-427b-ae4b-127ac84a1411",
+          "updated_at": 1783583543355,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "2074a086-a4f0-4cf3-867a-b2db564491fc",
+          "id": "aonb.1.3",
+          "session_name": "aonb",
+          "parent_uuid": "9884f3b6-bd16-4035-848d-7a2552e3c582",
+          "title": "Bulk status changes via existing mutations (isDoneTask semantics)",
+          "status": "open",
+          "priority": null,
+          "body": null,
+          "resolution": null,
+          "created_by": "aonb",
+          "created_by_session_id": "f482275c-e59e-427b-ae4b-127ac84a1411",
+          "updated_at": 1783580189467,
+          "direct_children": 0,
+          "total_descendants": 0
+        }
+      ],
+      "agents": [
+        {
+          "name": "aonb",
+          "kind": "claude",
+          "idleFor": "2s",
+          "running": true
+        },
+        {
+          "name": "refrev",
+          "kind": "unknown",
+          "idleFor": "1s",
+          "running": true
+        },
+        {
+          "name": "aonb/backend-bulk",
+          "running": false
+        }
+      ]
+    },
+    {
+      "id": "aon-testing-corpus",
+      "project": "aon",
+      "title": "Workflow testing corpus",
+      "status": "active",
+      "branch": "aonb/testing-corpus",
+      "fableAgent": "aonb",
+      "reviewerAgent": "refrev",
+      "codexExecutor": null,
+      "summary": "The scenario corpus and client-identity E2E coverage are implemented. The panel found and fixed a storage-state vacuity hole by making client generation explicit and asserting the JWT belongs to the seeded client-only user; the branch is ready for publication.",
+      "reviewState": "Panel fixes verified; push and open PR next",
+      "updatedAt": "2026-07-09T14:53:26-04:00",
+      "updatedBy": "refrev",
+      "issuePrefixes": [
+        "aonb.2",
+        "refrev.16"
+      ],
+      "chunks": [
+        {
+          "id": "scenario-suite",
+          "title": "Add scenario suites across the five generated workflow types",
+          "status": "complete"
+        },
+        {
+          "id": "client-state",
+          "title": "Create explicit client-only Playwright storage state",
+          "status": "complete"
+        },
+        {
+          "id": "identity-guard",
+          "title": "Assert client E2E tokens match the seeded client-only user",
+          "status": "complete"
+        },
+        {
+          "id": "publish",
+          "title": "Push the reviewed branch and open its PR",
+          "status": "active"
+        }
+      ],
+      "questions": [],
+      "prs": [],
+      "assessment": {
+        "mergeReadiness": 80,
+        "structuralRisk": 5,
+        "assessedHead": null,
+        "assessedAt": "2026-07-10T03:14:31.427Z",
+        "assessedBy": "refrev",
+        "rationale": "additive test files + purely-additive seed rows; panel closed the JWT-vacuity hole; client-RLS specs dormant in CI until the storage-state secret exists. (Dashboard ratings — routed to you per workstream-control collection protocol; no action needed.)",
+        "stale": false,
+        "currentHead": "ce79e94e43c4cb83d085445d64d7237aeca418a1"
+      },
+      "liveStatus": null,
+      "assessmentRequest": null,
+      "timeline": [
+        {
+          "at": "2026-07-10T03:14:31.427Z",
+          "actor": "refrev",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "additive test files + purely-additive seed rows; panel closed the JWT-vacuity hole; client-RLS specs dormant in CI until the storage-state secret exists. (Dashboard ratings — routed to you per workstream-control collection protocol; no action needed.)"
+        }
+      ],
+      "references": [],
+      "afIssues": [
+        {
+          "uuid": "0aca4e2e-8cae-4bc0-a299-15966a6247a6",
+          "id": "aonb.2",
+          "session_name": "aonb",
+          "parent_uuid": null,
+          "title": "Testing corpus: scenario suites + client-identity E2E (epic)",
+          "status": "open",
+          "priority": null,
+          "body": null,
+          "resolution": null,
+          "created_by": "aonb",
+          "created_by_session_id": "f482275c-e59e-427b-ae4b-127ac84a1411",
+          "updated_at": 1783580179939,
+          "direct_children": 2,
+          "total_descendants": 2
+        },
+        {
+          "uuid": "d3885f91-87d2-4198-95c5-51a83d6efe67",
+          "id": "aonb.2.1",
+          "session_name": "aonb",
+          "parent_uuid": "0aca4e2e-8cae-4bc0-a299-15966a6247a6",
+          "title": "Scenario suites across five workflow types via PR-GEN composition catalog",
+          "status": "open",
+          "priority": null,
+          "body": null,
+          "resolution": null,
+          "created_by": "aonb",
+          "created_by_session_id": "f482275c-e59e-427b-ae4b-127ac84a1411",
+          "updated_at": 1783580189561,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "9ba94958-b463-45d3-a51c-d2a24d83019e",
+          "id": "aonb.2.2",
+          "session_name": "aonb",
+          "parent_uuid": "0aca4e2e-8cae-4bc0-a299-15966a6247a6",
+          "title": "refrev.16: client-identity storage state + client-facing specs under client RLS",
+          "status": "open",
+          "priority": null,
+          "body": null,
+          "resolution": null,
+          "created_by": "aonb",
+          "created_by_session_id": "f482275c-e59e-427b-ae4b-127ac84a1411",
+          "updated_at": 1783580189675,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "7d305fe3-fb61-434e-a944-400a271b5033",
+          "id": "refrev.16",
+          "session_name": "refrev",
+          "parent_uuid": null,
+          "title": "E2E identity blind spot: CI runs admin-only storage state — client-RLS flows never exercised",
+          "status": "open",
+          "priority": null,
+          "body": "Found during PR2b slice-2 milestone review. The E2E job (gated on E2E_READY) uses PLAYWRIGHT_STORAGE_STATE=.auth/admin-storage-state.json, so specs like client-lifecycle / workflow-golden-path click client-facing buttons (Submit to AO) under an ADMIN identity. Wiring is validated; client RLS/guard behavior is not — a client-side RLS regression (e.g. audit_logs read policy, workflow write gates) would pass E2E. Fix direction: add a client-user storage state + run the client-facing specs under it (or a matrix). Post-PR2b; pairs naturally with the testing-readiness push once PR-GEN lands all 5 types.",
+          "resolution": null,
+          "created_by": "refrev",
+          "created_by_session_id": "2a8633e2-1bbf-4302-97bf-232398158282",
+          "updated_at": 1783414111493,
+          "direct_children": 0,
+          "total_descendants": 0
+        }
+      ],
+      "agents": [
+        {
+          "name": "aonb",
+          "kind": "claude",
+          "idleFor": "2s",
+          "running": true
+        },
+        {
+          "name": "refrev",
+          "kind": "unknown",
+          "idleFor": "1s",
+          "running": true
+        }
+      ]
+    },
+    {
+      "id": "arrusted-csv-kernel",
+      "project": "arrusted",
+      "title": "CSV import kernel-validation authority",
+      "status": "blocked",
+      "branch": "ad-41-csv-kernel-validate",
+      "fableAgent": "adc",
+      "reviewerAgent": "adb",
+      "codexExecutor": null,
+      "summary": "PR #342 exact head 4ad570c2 fixes the prior null-map and budget-terminal blockers and all current checks pass. Exact-head re-review found one remaining bounded blocker: kernel validation runs outside the wall-time budget and can stall indefinitely or report runtime_failed instead of budget_exhausted.",
+      "reviewState": "conditional-merge-ready at 4ad570c2; rating 4/5; blocked on kernel-validation deadline propagation",
+      "updatedAt": "2026-07-10T07:59:53.073Z",
+      "updatedBy": "019f4b02-740b-73f3-8902-4dde775b529e",
+      "issuePrefixes": [
+        "ad.41"
+      ],
+      "chunks": [
+        {
+          "id": "kernel-authority",
+          "title": "Delegate value validity to the kernel without silent compiler drops",
+          "status": "complete"
+        },
+        {
+          "id": "null-map",
+          "title": "Emit issues for map decisions with null model or field targets",
+          "status": "complete"
+        },
+        {
+          "id": "budget-terminal",
+          "title": "Preserve budget_exhausted as the terminal repair-loop state",
+          "status": "complete"
+        },
+        {
+          "id": "remrr",
+          "title": "Re-run cross-family merge-ready review on the fixed SHA",
+          "status": "complete"
+        },
+        {
+          "id": "kernel-timeout",
+          "title": "Bound kernel validation by remaining wall-time and preserve budget terminal state",
+          "status": "blocked"
+        }
+      ],
+      "questions": [],
+      "prs": [
+        {
+          "number": 342,
+          "chunks": [
+            "kernel-authority",
+            "null-map",
+            "budget-terminal",
+            "remrr"
+          ],
+          "headRefName": "ad-41-csv-kernel-validate",
+          "headRefOid": "4ad570c246786af4ecce81be4244dbf9400036e9",
+          "isDraft": false,
+          "mergeStateStatus": "CLEAN",
+          "state": "OPEN",
+          "statusCheckRollup": [
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:40:03Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566218",
+              "name": "Changes",
+              "startedAt": "2026-07-10T03:39:58Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:40:30Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566210",
+              "name": "Analyze (React)",
+              "startedAt": "2026-07-10T03:39:57Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:43:20Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566224",
+              "name": "Quality (Workspace)",
+              "startedAt": "2026-07-10T03:39:57Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:43:16Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566230",
+              "name": "Test (App)",
+              "startedAt": "2026-07-10T03:39:57Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:40:03Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281580731",
+              "name": "Developer (Setup)",
+              "startedAt": "2026-07-10T03:40:03Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:39:54Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://app.macroscope.com",
+              "name": "Macroscope - Correctness Check",
+              "startedAt": "2026-07-10T03:39:52Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:43:25Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://app.coderabbit.ai/change-stack/withAutograph/arrusted-development/pull/342",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T03:39:56Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "React Doctor",
+              "startedAt": "2026-07-10T03:40:25Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742"
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "Vercel",
+              "startedAt": "2026-07-10T03:41:40Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://vercel.com/autographing/apps/Ec2jxmSyBZ3Gs6fzarrEpE3rMHE1"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:41:41Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://vercel.com/github",
+              "name": "Vercel Preview Comments",
+              "startedAt": "2026-07-10T03:41:41Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:45:05Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/342",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T03:40:00Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            }
+          ],
+          "title": "ad.41 Phase 1: CSV import kernel-validate authority (harden)",
+          "updatedAt": "2026-07-10T03:45:03Z",
+          "url": "https://github.com/withAutograph/arrusted-development/pull/342"
+        }
+      ],
+      "assessment": {
+        "mergeReadiness": 88,
+        "structuralRisk": 5,
+        "assessedHead": "4ad570c2",
+        "assessedAt": "2026-07-10T04:36:44.914Z",
+        "assessedBy": "adb",
+        "rationale": "Evidence: dual-MRR blockers B1/B2 fixed and delta-review-closed on this head; CI fully green incl. cubic/CodeRabbit; one pre-existing liveness finding ruled follow-up (unbounded validateKernelPlan await -> ad.41 child), skip stated. Remaining merge risk is queue position + Hari's final read, not content. Structural: both reviewers independently confirmed the architecture core (shape-guards, kernel authority) sound — patch-forward decisively cheaper.",
+        "stale": false,
+        "currentHead": "4ad570c246786af4ecce81be4244dbf9400036e9"
+      },
+      "liveStatus": null,
+      "assessmentRequest": {
+        "requestedAt": "2026-07-10T08:00:41.424Z",
+        "requestedFrom": "adb",
+        "pending": true
+      },
+      "timeline": [
+        {
+          "at": "2026-07-10T08:00:41.424Z",
+          "actor": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+          "type": "assessment_request",
+          "label": "Assessment requested",
+          "text": "Evidence-backed judgment requested for current workstream"
+        },
+        {
+          "at": "2026-07-10T07:59:59.584Z",
+          "actor": "019f4b02-740b-73f3-8902-4dde775b529e",
+          "type": "disarm",
+          "label": "Session disarmed",
+          "text": "019f4b02-740b-73f3-8902-4dde775b529e disarmed arrusted-csv-kernel"
+        },
+        {
+          "at": "2026-07-10T07:59:53.074Z",
+          "actor": "019f4b02-740b-73f3-8902-4dde775b529e",
+          "type": "reconcile",
+          "label": "Reconciliation",
+          "text": "Exact-head reviewer judgment: conditional merge-ready 4/5; prior blockers fixed; one kernel-validation timeout blocker remains"
+        },
+        {
+          "at": "2026-07-10T07:59:41.947Z",
+          "actor": "019f4b02-740b-73f3-8902-4dde775b529e",
+          "type": "onboard",
+          "label": "Session armed",
+          "text": "019f4b02-740b-73f3-8902-4dde775b529e armed as reviewer"
+        },
+        {
+          "at": "2026-07-10T04:36:44.914Z",
+          "actor": "adb",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "merge=88 structural=5 head=4ad570c2"
+        },
+        {
+          "at": "2026-07-10T04:32:58.738Z",
+          "actor": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+          "type": "assessment_request",
+          "label": "Assessment requested",
+          "text": "Evidence-backed judgment requested for current workstream"
+        },
+        {
+          "at": "2026-07-10T03:50:42.640Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Delta-review: all 5 fixes CLOSE, carry-forward YES. One PRE-EXISTING finding needs your scope call (fold vs follow-up)"
+        },
+        {
+          "at": "2026-07-10T03:40:07.630Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Fix pass pushed — new head 4ad570c2; dispatching targeted delta-review of the fix commit"
+        },
+        {
+          "at": "2026-07-09T19:25:59.503Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Dual-MRR reconciled @ 60376564 — NOT merge-ready: 2 confirmed blockers (invariant-#3 core SOUND)"
+        },
+        {
+          "at": "2026-07-09T19:02:38.482Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Round-2 landed — final head 60376564 on PR #342; starting dual-MRR"
+        },
+        {
+          "at": "2026-07-09T18:51:23.563Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Ack — landing round-2, then I drive dual-MRR with your invariant-#3 rule; watching db.rs/server.rs overlap"
+        },
+        {
+          "at": "2026-07-09T17:48:24.285Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "ad.41 Phase 1 landed as PR #342 — needs your additional-reviewer pass + dual-MRR sequencing"
+        }
+      ],
+      "references": [],
+      "afIssues": [
+        {
+          "uuid": "1073fb87-18e6-4b55-9eb5-ff9e34818ded",
+          "id": "ad.41",
+          "session_name": "ad",
+          "parent_uuid": null,
+          "title": "PR-string: CSV import interactive agent parity (streaming, feedback loop, kernel-validate)",
+          "status": "in_progress",
+          "priority": null,
+          "body": "CSV import agent (apps/hc/agent/hc-csv-import) adopts the interactive behavior built for hc-query-mutation. Goal: user observes streaming, shares feedback, loops on synthesis; validation authority moves fully to the kernel. Owner: adc.\n\nAPPROACH SETTLED WITH HARI (2026-07-09): harden -> unify, correctness first. Two hard constraints:\n1. ZERO REGRESSION against the current CSV agent's effectiveness (it is very good; that bar is the acceptance gate, NOT just green CI). Reference the current one-shot flow's synthesis quality as the baseline to beat/hold.\n2. The interactive/chat panel is TBD — needs real eng + product design before it is built. Do NOT scaffold a panel or file placeholder UI children until that design exists.\n\nPHASING:\n- Phase 1 (Harden) = the existing ladder ad.41.1 -> ad.41.2 -> ad.41.3, sequenced in that order. This closes the invariant #3 violation and is what makes safe interactive looping possible (every re-synthesis round revalidates through the real kernel, not the mirror).\n- Phase 2 (Unify) = adopt packages/modules/agent-chat (useAgentChatSession) as the CSV surface — agent-chat's SECOND consumer, which is the legitimate substrate pressure per principles.md extraction-timing. Design-gated: produce an eng+product design brief AFTER Phase 1, then file children against the actual design. Streaming needs NO new substrate — runAgentTextStream + AgentStreamWireEvent<TTerminal> already exist and are app-agnostic; the 2026-07-07 transport doc already names CSV-import streaming as the deferred follow-on.\n\nKEY SURVEY FINDING (no-regression pivot for ad.41.1): the client mirror is not only a save-time guard — it feeds the agent's IN-LOOP repair (MAX_VALIDATION_ATTEMPTS). So \"retire the mirror\" cannot be a straight delete; the kernel dry-run must be reachable INSIDE the synthesis/repair loop, and mirror checks demote to UX hints over the kernel verdict. Otherwise synthesis quality regresses.\n\nSESSION MODEL (answers old open-Q #2): reference proves \"session\" is client-side only (useAgentChatSession); every turn incl. clarification answers + \"continue\" is a fresh server-minted run replaying text history; ledger is the durable per-run record. CSV import already half-does this (priorAnswers re-run loop).",
+          "resolution": "PHASE 1 + 2 BOT ROUNDS LANDED. PR #342, FINAL HEAD 60376564 (verified). Commits: ba2852fc(.1) 985e10ff(.2) 4ddfc40a(.3) 51475dd9(fmt) 272a35a2(bot-round-1: 2 P1) 60376564(CodeRabbit round-2: 1 Major ledger try/catch + serde optional + copy). Verified green each round: mise run check incl check:contracts, test:app 763/763 (15/15), cargo test -p arrusted-hc 117. adb coordinated (live): additional-reviewer pass AFTER round-2 (done, SHA sent), adc drives dual-MRR pinned to 60376564 with adb's invariant-#3 test (shape=prevents-silent-drop-only vs mirror=kernel-would-also-reject; trace deletion), adb reconciles as 3rd. Collision clear (ada ad.36/#354 in field_history; watch shared db.rs/server.rs disjoint hunks; merge order adb's: #341->#354->#342). Follow-up ad.41.5 (perf). Phase 2 (unify agent-chat) still design-gated. NOT merged (Hari). Env unstable — batching. Dual-MRR starting now.",
+          "created_by": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
+          "created_by_session_id": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
+          "updated_at": 1783623761833,
+          "direct_children": 5,
+          "total_descendants": 5
+        },
+        {
+          "uuid": "96f8788a-13d3-46d3-8967-ae2b4f63012a",
+          "id": "ad.41.1",
+          "session_name": "ad",
+          "parent_uuid": "1073fb87-18e6-4b55-9eb5-ff9e34818ded",
+          "title": "Wire CSV-import kernel-validate bridge — retire the load-bearing generated-id-catalog mirror",
+          "status": "in_progress",
+          "priority": null,
+          "body": "MRR BLOCKERS FIXED @ 4ad570c2 (pushed, PR #342 head). Delta-review (codex-xhigh, read-only, head-verified) + adb pending 2nd: ALL 5 FIXES CLOSE, no new defects, carry-forward YES.\n- B1 (null-target map drop): preview-compiler.ts + contract.ts emit missing_model_id/missing_field_id for null targets; both null cases regression-tested; can't reach completed/no-change.\n- B2 (budget precedence): runtime.ts hoists real-budget-exhaustion return ABOVE lastValidationIssues===0 branch (line ~238); non-budget paths intact; flipped test now asserts budget_exhausted.\n- Action-target narrowed to create_missing_lookup only; ignore_column ghost-target test flipped.\n- Validator seam fail-closed (kernel_validator_required, non-retryable; prod unaffected).\n- Rust positive budget-deser round-trip test added.\nVerified green: mise run check; test:app 768/768 (15/15); cargo test -p arrusted-hc 118. CI fully green on 4ad570c2 (cubic, CodeRabbit, Quality, Test, Analyze, Vercel, React Doctor).\n\nOPEN (adb scope call, sent): CodeRabbit Major/Heavy-lift at runtime.ts:200 — unbounded await on validateKernelPlan AFTER attempt timer cleared, can exceed maxWallTimeMs (hung run). PRE-EXISTING (existed at 60376564; NOT in fix delta; not raised by dual-MRR panel). My rec: file as new ad.41 child (follow-up), not fold into #342 (Heavy-lift, orthogonal to Phase-1 correctness thesis, would re-open verify/MRR on an unrelated axis). Awaiting adb ruling + carry-forward concurrence. Merge = Hari.",
+          "resolution": "COMMITTED ba2852fc (branch ad-41-csv-kernel-validate, not yet pushed). Orchestrator commit-level sign-off passed. Verified green on fresh worktree: check:types, check:kernel, check:boundaries, check:contracts, HC Rust data_import dry-run tests 4/4 (incl. validate_hc_change_set_dry_run_accepts_data_import_source_kind + atomic duplicate-group guard), test:app 757/757 hc + 15/15 tasks. Two real regressions were caught by canonical verification (worker's targeted checks missed both) and fixed: (1) 4 check:types errors from api/ + apps/api/ tsconfigs lacking @engines/@agent-foundation aliases once the bridge pulled apps/hc/agent/** in; (2) 2 test:app failures — a retired-mirror test + an unmocked kernel dry-run fetch hanging the runtime harness. OPEN FOR MRR: unknown model/field/relation/action id checks RETAINED pre-compile (against live Schema, not the mirror) — rationale is silent-drop prevention (compiler skips unknown-id mappings so kernel never sees them). Must be adjudicated at dual-MRR as shape-vs-correctness. Not pushed; PR at end of Phase 1.",
+          "created_by": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
+          "created_by_session_id": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
+          "updated_at": 1783655463525,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "d3dad5bf-34e2-49e0-854f-de27b0acc32d",
+          "id": "ad.41.2",
+          "session_name": "ad",
+          "parent_uuid": "1073fb87-18e6-4b55-9eb5-ff9e34818ded",
+          "title": "source-import validateFieldValueEnvelope: stop mutating input, defer FieldValue validity to the kernel",
+          "status": "in_progress",
+          "priority": null,
+          "body": "From the 2026-06-29 audit (Gap A / rec 2). SURVEY-CONFIRMED (2026-07-09):\n\nLOCATION: packages/modules/source-import/workflow.ts:476-628 (validateFieldValueEnvelope), inside the WriteBoundImportPreview structural validator. Two callers, same file: :422 (staged values) and :465 (priorValues). Reachable in production via useSourceImportSession.\n\nMUTATES ITS INPUT (the sharp edge — silent value rewrites, not just spurious rejects):\n- :537 valueObject[\"value\"] = normalized  (uppercased ISO country code)\n- :549 valueObject[\"value\"] = normalized  (uppercased ISO currency code)\n- :619 moneyRate[\"currency\"] = normalizedCurrency  (uppercased money_rate currency)\n\nCORRECTNESS IT DUPLICATES (kernel owns authoritatively in validate_write kernel/src/validation.rs:842, enum-option at :1213/:1228, validate_apply_against_schema :632): envelope type/value shape (:491-512), per-field.type value-shape switch (:514-627), ISO-3166 alpha-2 country (:528-539), ISO-4217 currency (:540-551), enum option_set membership (:592-598), money_rate currency ISO (:600-621).\n\nFIX: make it a pure kernel-verdict pass-through, OR an explicit kernel-confirmed normalization step (normalize where the kernel confirms the normalization is what apply would do) — not a silent rewriter living above the kernel. Depends on ad.41.1's dry-run bridge being reachable. Same no-regression gate: hold current synthesis effectiveness. (Body predates the agent branch; inherited but live. Outside boundary-lint scope.)",
+          "resolution": "COMMITTED 985e10ff (not pushed). Sign-off passed incl. orchestrator delta-review. Fix: pure kernel-verdict pass-through — validateFieldValueEnvelope removed entirely (mutation + duplicated FieldValue correctness). Delta-review CLEARED the no-regression concern at line level: normalization is not lost, it still happens upstream in import-classification.coerceImportFieldValue (uppercases iso_country/iso_currency at coercion, before preview); dedup/identity keys (lookupExternalKeyForImport) hash off the coercion-normalized value; sole consumer useSourceImportSession:583 is validate-only. So this deletes a redundant, drifting, silently-mutating second normalizer. Verified green: check:types, check:boundaries, test:app 757/757 hc + 15/15 tasks.",
+          "created_by": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
+          "created_by_session_id": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
+          "updated_at": 1783584430588,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "0f6c4a56-906a-4bab-83c1-43da60d248ef",
+          "id": "ad.41.3",
+          "session_name": "ad",
+          "parent_uuid": "1073fb87-18e6-4b55-9eb5-ff9e34818ded",
+          "title": "Make source-import handle budget-exhausted agent turns",
+          "status": "in_progress",
+          "priority": null,
+          "body": "Review noted source-import is the third runAgentText consumer and remains blind to budgetExhausted. This is pre-existing and behaviorally unchanged by #306/#307, so it should be tracked as follow-up rather than fixed in the held #298 amend unless explicitly rescoped.\n\nReference context: after #306/#307 settle, review said this is filed-worthy but not a gate.",
+          "resolution": "COMMITTED 4ddfc40a (not pushed). Sign-off passed incl. design review. Placement: generic stop-before-compile in source-import/useSourceImportSession (records terminal budget_exhausted, clears preview, no write — generic for all consumers); HC CSV agent owns wire/response+session/UI (CSV doesn't run through SourceImportSurface in prod). Frozen contract honored exactly: AgentBudgetExhaustion {toolCallsUsed, maxToolCalls}, terminal status budget_exhausted, no new fields/phases. Rust HC CSV response widened (hc_csv_import.rs/generated.rs); hc-client.ts REGENERATED via cargo generate-types (check:contracts confirms no drift). No-regression: normal synthesis path unchanged, timeout stays runtime_failed, preview gated on completed. Verified green: contracts, types, boundaries, kernel, test:app 760/760 + 15/15, cargo test -p arrusted-hc 115 pass. NOTE: survived an external mid-run kill (machine sleep) with no work lost; resumed + re-verified.",
+          "created_by": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
+          "created_by_session_id": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
+          "updated_at": 1783585755760,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "e5e91a2f-b471-42fb-bd22-d3c0fe339658",
+          "id": "ad.41.4",
+          "session_name": "adb",
+          "parent_uuid": "1073fb87-18e6-4b55-9eb5-ff9e34818ded",
+          "title": "CSV-import session persistence retains raw run request/response payloads",
+          "status": "open",
+          "priority": null,
+          "body": "From #341 Fable MRR (Low, pre-existing, outside that PR's scope): upsertHcCsvImportSession (apps/hc/agent/hc-csv-import/rust-client.ts:57-73) persists the full csv-import run request/response — same raw-payload retention class that ad.37.2 closed for agent_run. Fold into the ad.41 interactive-parity arc (retention policy should match the agent_run V0 policy in docs/known-footguns.md: redacted metadata, no raw transcripts).",
+          "resolution": null,
+          "created_by": "adb",
+          "created_by_session_id": "52c54c77-7353-4b60-bc5c-2e2d723d3299",
+          "updated_at": 1783582096890,
+          "direct_children": 0,
+          "total_descendants": 0
+        },
+        {
+          "uuid": "80759019-b97b-4c10-b69b-c0f5eb737c7a",
+          "id": "ad.41.5",
+          "session_name": "adc",
+          "parent_uuid": "1073fb87-18e6-4b55-9eb5-ff9e34818ded",
+          "title": "CSV import: eager records-snapshot fetch before plan synthesis (perf)",
+          "status": "open",
+          "priority": null,
+          "body": "Deferred from PR #342 bot round (qodo, apps/api/hc/agent/hc-csv-import/run.ts:~121). handleHcCsvImportRun fetches existing records for employee/position/org_assignment/lookup models BEFORE the agent returns a plan, to feed the kernel dry-run bridge (ad.41.1). This is broader than a post-plan scoped fetch: pre-run dry-run validation does not yet know which lookup/reference models the plan will actually touch, so it fetches all candidates.\n\nNot a correctness issue and not fixed in #342 (would be a design change, not a quick scoping win). Options to evaluate: (a) move/factor snapshot loading to AFTER plan synthesis so only touched models are fetched; (b) plan-dependent lazy fetch inside the validator; (c) accept eager fetch if the record volumes are bounded. Assess cost against real tenant sizes before investing. Owner TBD; surfaced so it is not lost. Relates to ad.41.1 bridge.",
+          "resolution": null,
+          "created_by": "adc",
+          "created_by_session_id": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
+          "updated_at": 1783614675989,
+          "direct_children": 0,
+          "total_descendants": 0
+        }
+      ],
+      "agents": [
+        {
+          "name": "adc",
+          "kind": "claude",
+          "idleFor": "2s",
+          "running": true
+        },
+        {
+          "name": "adb",
+          "kind": "claude",
+          "idleFor": "4s",
+          "running": true
+        }
+      ]
+    }
+  ],
+  "health": {
+    "afIssues": "ok",
+    "afInbox": "ok",
+    "afSessions": "ok",
+    "github": {
+      "aon": "ok",
+      "arrusted": "ok"
+    }
+  }
+}

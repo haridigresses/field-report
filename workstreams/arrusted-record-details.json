@@ -2,30 +2,104 @@
   "id": "arrusted-record-details",
   "project": "arrusted",
   "title": "Record-details tool hardening",
-  "status": "active",
+  "status": "blocked",
   "branch": "ada/record-details-hardening",
   "fableAgent": "adb",
   "reviewerAgent": "adb",
   "codexExecutor": "ada",
-  "summary": "PR #354 is green on pushed head 331a8040. A narrow enum-label follow-up is complete locally at 844882c4 and held for sign-off; two Qodo findings about history-limit documentation and truncated-delta baselines still need an explicit fold-or-park ruling.",
-  "reviewState": "Green pushed head; held amendment awaiting sign-off",
-  "updatedAt": "2026-07-09T19:29:16-04:00",
-  "updatedBy": "adb",
-  "issuePrefixes": ["ad.36"],
+  "summary": "PR #354 exact head 76866474 is conditional-merge-ready but not merge-ready. Two substantive blockers remain: truncated history emits a false first structured delta, and the custom-field output schema hand-mirrors the generated Rust wire union. Exact clamp docs are incomplete, and Quality Workspace is red on formatting.",
+  "reviewState": "conditional-merge-ready at 76866474; rating 4/5; blocked on history semantics, generated wire-schema authority, docs precision, and workspace formatting",
+  "updatedAt": "2026-07-10T08:02:24.820Z",
+  "updatedBy": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+  "issuePrefixes": [
+    "ad.36"
+  ],
   "chunks": [
-    { "id": "bounded-history", "title": "Bound field history and expose provenance safely", "status": "complete" },
-    { "id": "by-id", "title": "Fetch individual records without full-model scans", "status": "complete" },
-    { "id": "enum-labels", "title": "Resolve enum labels in current details and history", "status": "active" },
-    { "id": "review-findings", "title": "Rule on Qodo limit and truncated-baseline findings", "status": "planned" }
+    {
+      "id": "bounded-history",
+      "title": "Bound field history and expose provenance safely",
+      "status": "blocked",
+      "issueIds": [
+        "ad.36.1",
+        "ad.36.3"
+      ],
+      "commits": [
+        "5bc11d09"
+      ]
+    },
+    {
+      "id": "by-id",
+      "title": "Fetch individual records without full-model scans",
+      "status": "complete",
+      "issueIds": [
+        "ad.36.2"
+      ],
+      "commits": [
+        "331a8040"
+      ]
+    },
+    {
+      "id": "enum-labels",
+      "title": "Resolve enum labels in current details and history",
+      "status": "complete",
+      "issueIds": [
+        "ad.36.4"
+      ],
+      "commits": [
+        "844882c4"
+      ]
+    },
+    {
+      "id": "review-findings",
+      "title": "Rule on Qodo limit and truncated-baseline findings",
+      "status": "complete"
+    },
+    {
+      "id": "generated-custom-fields",
+      "title": "Derive custom-field output schema from generated contract authority",
+      "status": "blocked",
+      "issueIds": [
+        "ad.36.4"
+      ]
+    },
+    {
+      "id": "quality-regate",
+      "title": "Format the exact head and rerun workspace quality and exact-head review",
+      "status": "planned"
+    }
   ],
   "questions": [
     {
       "id": "Q1",
       "text": "Fold either Qodo finding into PR #354, or park both as separate follow-ups?",
-      "status": "open",
-      "askedAt": "2026-07-09T18:54:09-04:00"
+      "status": "answered",
+      "askedAt": "2026-07-09T18:54:09-04:00",
+      "answeredAt": "2026-07-10T08:00:04.058Z",
+      "answer": "Fold the truncated-history baseline correction and exact limit-clamp documentation into PR #354. Also replace the hand-typed custom-field wire schema with a generated canonical source and clear the formatting failure before re-review."
     }
   ],
-  "prs": [{ "number": 354, "chunks": ["bounded-history", "by-id", "enum-labels"] }],
-  "assessment": null
+  "prs": [
+    {
+      "number": 354,
+      "chunks": [
+        "bounded-history",
+        "by-id",
+        "enum-labels"
+      ]
+    }
+  ],
+  "assessment": null,
+  "references": [
+    {
+      "path": "docs/merge-ready-review.md",
+      "label": "Merge-ready review contract",
+      "kind": "review",
+      "quote": "Separate merge blockers from cleanup."
+    }
+  ],
+  "commits": [
+    "5bc11d09",
+    "331a8040",
+    "844882c4"
+  ]
 }

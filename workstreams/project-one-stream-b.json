@@ -9,17 +9,60 @@
   "codexExecutor": "aonb/backend-bulk",
   "summary": "Backend and frontend bulk operations are implemented and the adversarial panel found one semantic regression in done_at behavior. Refrev ruled to preserve the old DONE-only timestamp semantics; the bounded correction is approved and the branch is at the push/PR boundary.",
   "reviewState": "Conditional gate cleared; push and open PR next",
-  "updatedAt": "2026-07-09T14:53:26-04:00",
-  "updatedBy": "refrev",
-  "issuePrefixes": ["aonb.1"],
+  "updatedAt": "2026-07-10T08:02:24.194Z",
+  "updatedBy": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+  "issuePrefixes": [
+    "aonb.1"
+  ],
   "chunks": [
-    { "id": "target-map", "title": "Map bulk-action targets and authorization boundaries", "status": "complete" },
-    { "id": "backend", "title": "Implement bulk procedures using existing task mutations", "status": "complete" },
-    { "id": "frontend", "title": "Add multi-select, assignment, and status controls", "status": "complete" },
-    { "id": "semantic-fix", "title": "Restore behavior-identical DONE-only done_at stamping", "status": "active" },
-    { "id": "publish", "title": "Push the reviewed branch and open its PR", "status": "planned" }
+    {
+      "id": "target-map",
+      "title": "Map bulk-action targets and authorization boundaries",
+      "status": "complete",
+      "issueIds": [
+        "aonb.1.1"
+      ]
+    },
+    {
+      "id": "backend",
+      "title": "Implement bulk procedures using existing task mutations",
+      "status": "complete",
+      "issueIds": [
+        "aonb.1.2",
+        "aonb.1.3"
+      ]
+    },
+    {
+      "id": "frontend",
+      "title": "Add multi-select, assignment, and status controls",
+      "status": "complete",
+      "issueIds": [
+        "aonb.1.2"
+      ]
+    },
+    {
+      "id": "semantic-fix",
+      "title": "Restore behavior-identical DONE-only done_at stamping",
+      "status": "active",
+      "issueIds": [
+        "aonb.1.3"
+      ]
+    },
+    {
+      "id": "publish",
+      "title": "Push the reviewed branch and open its PR",
+      "status": "planned"
+    }
   ],
   "questions": [],
   "prs": [],
-  "assessment": null
+  "assessment": null,
+  "references": [
+    {
+      "path": "docs/merge-ready-review.md",
+      "label": "Merge-ready review contract",
+      "kind": "review",
+      "quote": "Necessity and scope: does this work need to exist, really?"
+    }
+  ]
 }

@@ -5,14 +5,16 @@
       "label": "AON",
       "repoPath": "/Users/graphy/aon",
       "githubRepo": "abstractops/aon",
-      "coordinator": "refrev"
+      "coordinator": "refrev",
+      "issueNamespaces": ["refrev", "aona", "aonb", "reforch"]
     },
     {
       "id": "arrusted",
       "label": "Arrusted",
       "repoPath": "/Users/graphy/repos/arrusted-development",
       "githubRepo": "withAutograph/arrusted-development",
-      "coordinator": "adb"
+      "coordinator": "adb",
+      "issueNamespaces": ["ad", "adb", "adc", "ada", "review"]
     }
   ]
 }

@@ -119,8 +119,26 @@ function normalizeChunks(chunks) {
   return chunks.map((chunk, index) => {
     const status = String(chunk.status || "planned");
     if (!["planned", "active", "blocked", "complete"].includes(status)) throw new Error("Chunk status must be planned, active, blocked, or complete");
-    return { id: slug(chunk.id || chunk.title || `milestone-${index + 1}`), title: shortText(chunk.title, "Chunk title", 240), status };
+    return {
+      id: slug(chunk.id || chunk.title || `milestone-${index + 1}`),
+      title: shortText(chunk.title, "Chunk title", 240),
+      status,
+      ...(Array.isArray(chunk.issueIds) ? { issueIds: chunk.issueIds.map(String) } : {}),
+      ...(Array.isArray(chunk.commits) ? { commits: chunk.commits.map(String) } : {}),
+      ...(Array.isArray(chunk.references) ? { references: normalizeReferences(chunk.references) } : {})
+    };
   });
+}
+
+function normalizeReferences(references) {
+  if (!Array.isArray(references)) throw new Error("references must be an array");
+  return references.slice(0, 12).map((reference) => ({
+    path: shortText(reference.path, "Reference path", 500),
+    label: shortText(reference.label || reference.path, "Reference label", 200),
+    kind: ["plan", "contract", "decision", "review"].includes(reference.kind) ? reference.kind : "plan",
+    ...(reference.section ? { section: sessionValue(reference.section) } : {}),
+    ...(reference.quote ? { quote: shortText(reference.quote, "Reference quote", 360) } : {})
+  }));
 }
 
 function applyCanonicalPatch(stream, patch) {
@@ -135,6 +153,15 @@ function applyCanonicalPatch(stream, patch) {
   if (patch.reviewState != null) next.reviewState = shortText(patch.reviewState, "Current gate", 500);
   if (patch.chunks != null) next.chunks = normalizeChunks(patch.chunks);
   if (patch.prs != null) next.prs = normalizePrs(patch.prs);
+  if (patch.references != null) next.references = normalizeReferences(patch.references);
+  if (patch.issuePrefixes != null) {
+    if (!Array.isArray(patch.issuePrefixes)) throw new Error("issuePrefixes must be an array");
+    next.issuePrefixes = [...new Set(patch.issuePrefixes.map((value) => sessionValue(value)).filter(Boolean))];
+  }
+  if (patch.commits != null) {
+    if (!Array.isArray(patch.commits) || patch.commits.some((sha) => !/^[0-9a-f]{7,40}$/i.test(sha))) throw new Error("commits must contain git SHAs");
+    next.commits = [...new Set(patch.commits)];
+  }
   if (patch.questions != null) {
     if (!Array.isArray(patch.questions)) throw new Error("questions must be an array");
     next.questions = patch.questions.map((question, index) => ({
@@ -171,6 +198,7 @@ async function createWorkstream(values) {
     questions: [],
     prs: [],
     issuePrefixes: [],
+    references: Array.isArray(values.references) ? normalizeReferences(values.references) : [],
     fableAgent: sessionValue(values.fableAgent || values.orchestrator || project.coordinator),
     reviewerAgent: sessionValue(values.reviewerAgent || values.reviewer || project.coordinator),
     codexExecutor: sessionValue(values.codexExecutor),
