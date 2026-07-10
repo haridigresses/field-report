@@ -1,17 +1,25 @@
 {
-  "id": "aon-pilot-slot-2",
+  "id": "aon-bulk-ops",
   "project": "aon",
-  "title": "AON pilot slot 2",
-  "status": "planned",
-  "fableAgent": null,
-  "reviewerAgent": "reforch",
-  "codexExecutor": null,
-  "summary": "Reserved for a second AON workstream during the pilot. Assign the Fable and Codex sessions when the stream is selected, then replace this text with its two or three line arc.",
-  "updatedAt": "2026-07-09T12:00:00-04:00",
-  "updatedBy": "setup",
+  "title": "Internal bulk operations",
+  "status": "active",
+  "branch": "aonb/bulk-ops",
+  "fableAgent": "aonb",
+  "reviewerAgent": "refrev",
+  "codexExecutor": "aonb/backend-bulk",
+  "summary": "Backend and frontend bulk operations are implemented and the adversarial panel found one semantic regression in done_at behavior. Refrev ruled to preserve the old DONE-only timestamp semantics; the bounded correction is approved and the branch is at the push/PR boundary.",
+  "reviewState": "Conditional gate cleared; push and open PR next",
+  "updatedAt": "2026-07-09T14:53:26-04:00",
+  "updatedBy": "refrev",
+  "issuePrefixes": ["aonb.1"],
   "chunks": [
-    { "id": "select", "title": "Select and describe the second AON pilot stream", "status": "planned" }
+    { "id": "target-map", "title": "Map bulk-action targets and authorization boundaries", "status": "complete" },
+    { "id": "backend", "title": "Implement bulk procedures using existing task mutations", "status": "complete" },
+    { "id": "frontend", "title": "Add multi-select, assignment, and status controls", "status": "complete" },
+    { "id": "semantic-fix", "title": "Restore behavior-identical DONE-only done_at stamping", "status": "active" },
+    { "id": "publish", "title": "Push the reviewed branch and open its PR", "status": "planned" }
   ],
   "questions": [],
-  "prs": []
+  "prs": [],
+  "assessment": null
 }

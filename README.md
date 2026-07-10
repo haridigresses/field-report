@@ -30,12 +30,14 @@ No background timer is used.
 
 Use **Edit sessions** on any workstream card to update the repository coordinator, Fable workstream agent, reviewer, or Codex executor. Saving persists the values to `config/projects.json` and the matching `workstreams/*.json` file, then refreshes collected state.
 
-Use **Edit branch rating** to link a branch and record two evidence-backed percentages:
+Each workstream displays two reviewer-owned, evidence-backed percentages:
 
 - **Merge readiness:** probability that the branch can merge without material changes beyond normal review and release gates. This is not merge authorization.
 - **Structural rebuild risk:** probability that architectural or contract rot makes a bounded rebuild safer or cheaper than continuing to patch the current branch.
 
-Record the assessed commit SHA, assessor, evidence summary, and timestamp. The card always shows both ratings; missing ratings display as unassessed rather than inventing confidence. When a linked GitHub PR advances beyond the assessed SHA, the rating is marked stale.
+Reviewers publish ratings through AF inbox using a leading subject such as `[RATING aon-pr-audit] merge=85 structural=15 head=59c89cd9` and put the evidence summary in the body. The collector accepts only an exact workstream ID. The card always shows both ratings; missing ratings display as unassessed rather than inventing confidence. When a linked GitHub PR advances beyond the assessed SHA, the rating is marked stale.
+
+The dashboard is organized as one visually segregated vertical track per repository. Each track combines curated workstream arcs with exact AF issue prefixes, AF session liveness, repository worktree state, configured GitHub PRs, CI state, open questions, and reviewer-owned ratings.
 
 ## Configure the pilot
 

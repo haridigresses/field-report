@@ -1,17 +1,24 @@
 {
-  "id": "arrusted-pilot-slot-2",
+  "id": "arrusted-csv-kernel",
   "project": "arrusted",
-  "title": "Arrusted pilot slot 2",
-  "status": "planned",
-  "fableAgent": null,
-  "reviewerAgent": null,
+  "title": "CSV import kernel-validation authority",
+  "status": "blocked",
+  "branch": "ad-41-csv-kernel-validate",
+  "fableAgent": "adc",
+  "reviewerAgent": "adb",
   "codexExecutor": null,
-  "summary": "Reserved for a second Arrusted workstream during the pilot. Assign the Fable and Codex sessions when the stream is selected, then replace this text with its two or three line arc.",
-  "updatedAt": "2026-07-09T12:00:00-04:00",
-  "updatedBy": "setup",
+  "summary": "PR #342 is green in CI but the SHA-pinned dual review found two confirmed contract blockers: null map targets can silently disappear, and repair-loop budget exhaustion can report the wrong terminal state. Adb concurred; the next step is one bounded fix pass followed by a fresh dual review on the new SHA.",
+  "reviewState": "NOT merge-ready: two confirmed blockers",
+  "updatedAt": "2026-07-09T19:30:17-04:00",
+  "updatedBy": "adb",
+  "issuePrefixes": ["ad.41"],
   "chunks": [
-    { "id": "select", "title": "Select and describe the second Arrusted pilot stream", "status": "planned" }
+    { "id": "kernel-authority", "title": "Delegate value validity to the kernel without silent compiler drops", "status": "complete" },
+    { "id": "null-map", "title": "Emit issues for map decisions with null model or field targets", "status": "blocked" },
+    { "id": "budget-terminal", "title": "Preserve budget_exhausted as the terminal repair-loop state", "status": "blocked" },
+    { "id": "remrr", "title": "Re-run cross-family merge-ready review on the fixed SHA", "status": "planned" }
   ],
   "questions": [],
-  "prs": []
+  "prs": [{ "number": 342, "chunks": ["kernel-authority", "null-map", "budget-terminal", "remrr"] }],
+  "assessment": null
 }

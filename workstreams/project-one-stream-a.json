@@ -1,28 +1,31 @@
 {
-  "id": "aon-current",
+  "id": "aon-pr-audit",
   "project": "aon",
-  "title": "AON current workstream",
+  "title": "PR-AUDIT account and document cutover",
   "status": "active",
-  "fableAgent": "aonb",
+  "branch": "write-path-pr-audit",
+  "fableAgent": "refrev",
   "reviewerAgent": "reforch",
-  "codexExecutor": null,
-  "summary": "The AON workstream agent is connected, but its concrete arc has not yet been recorded. Add the intended outcome, current position, and next decision before using this card as the pilot source of truth.",
-  "updatedAt": "2026-07-09T12:00:00-04:00",
-  "updatedBy": "setup",
+  "codexExecutor": "aona",
+  "summary": "PR #272 has passed the M2 final gate and is running CI and bot review. M3 is now being scoped as one bounded document-zone move: add trigger coverage, retire duplicate audit writers, and replace the document RPCs without pulling correspondence into the slice.",
+  "reviewState": "M2 GO; M3 awaiting scope approval",
+  "updatedAt": "2026-07-09T23:00:26-04:00",
+  "updatedBy": "aona",
+  "issuePrefixes": ["refrev.11", "aona.10"],
   "chunks": [
+    { "id": "m1-map", "title": "Map write ownership and characterize account-zone invariants", "status": "complete" },
+    { "id": "m2-account", "title": "Cut account writes to typed TS and generic audit trigger", "status": "complete" },
+    { "id": "m3-documents", "title": "Cut document writes, attachments, and duplicate audit writers together", "status": "active" },
+    { "id": "m4-drops", "title": "Drop surviving transitional tables and RPC surfaces", "status": "planned" }
+  ],
+  "questions": [
     {
-      "id": "arc",
-      "title": "Record the current workstream arc and exit criteria",
-      "status": "active"
-    },
-    {
-      "id": "delivery",
-      "title": "Replace with the next coherent implementation chunk",
-      "status": "planned"
+      "id": "Q1",
+      "text": "Should document attach/detach history move fully to audit_logs in M3, or keep workflow_changes append calls until PR5?",
+      "status": "open",
+      "askedAt": "2026-07-09T23:00:26-04:00"
     }
   ],
-  "questions": [],
-  "prs": [],
-  "branch": null,
+  "prs": [{ "number": 272, "chunks": ["m2-account", "m3-documents"] }],
   "assessment": null
 }

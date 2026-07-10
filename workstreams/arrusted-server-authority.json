@@ -1,0 +1,24 @@
+{
+  "id": "arrusted-server-authority",
+  "project": "arrusted",
+  "title": "Server-authority gates",
+  "status": "blocked",
+  "branch": "ada/server-authority-gates",
+  "fableAgent": "adb",
+  "reviewerAgent": "adb",
+  "codexExecutor": "ada",
+  "summary": "PR #341 is CI-green and GitHub reports a clean merge state, but the exact-head Cubic review found a P2 evidence-retention hole when result.steps is empty. The branch remains held until adb either applies or delegates a narrow amendment and revalidates the review gate.",
+  "reviewState": "CI green; held on current-head P2 review finding",
+  "updatedAt": "2026-07-09T19:29:16-04:00",
+  "updatedBy": "adb",
+  "issuePrefixes": ["ad.37"],
+  "chunks": [
+    { "id": "auth-boundary", "title": "Bind HC agent tenancy through server-side authority", "status": "complete" },
+    { "id": "redaction", "title": "Enforce evidence redaction and retention gates", "status": "complete" },
+    { "id": "tool-evidence", "title": "Preserve top-level tool evidence when no step records exist", "status": "blocked" },
+    { "id": "merge", "title": "Revalidate the amended SHA and clear the merge hold", "status": "planned" }
+  ],
+  "questions": [],
+  "prs": [{ "number": 341, "chunks": ["auth-boundary", "redaction", "tool-evidence", "merge"] }],
+  "assessment": null
+}

@@ -1,18 +1,24 @@
 {
-  "id": "arrusted-current",
-  "project": "arrusted",
-  "title": "Arrusted current workstream",
+  "id": "aon-testing-corpus",
+  "project": "aon",
+  "title": "Workflow testing corpus",
   "status": "active",
-  "fableAgent": "adc",
-  "reviewerAgent": null,
+  "branch": "aonb/testing-corpus",
+  "fableAgent": "aonb",
+  "reviewerAgent": "refrev",
   "codexExecutor": null,
-  "summary": "The Arrusted workstream agent is connected, but its concrete arc has not yet been recorded. Add the intended outcome, current position, and next decision before using this card as the pilot source of truth.",
-  "updatedAt": "2026-07-09T12:00:00-04:00",
-  "updatedBy": "setup",
+  "summary": "The scenario corpus and client-identity E2E coverage are implemented. The panel found and fixed a storage-state vacuity hole by making client generation explicit and asserting the JWT belongs to the seeded client-only user; the branch is ready for publication.",
+  "reviewState": "Panel fixes verified; push and open PR next",
+  "updatedAt": "2026-07-09T14:53:26-04:00",
+  "updatedBy": "refrev",
+  "issuePrefixes": ["aonb.2", "refrev.16"],
   "chunks": [
-    { "id": "arc", "title": "Record the current workstream arc and exit criteria", "status": "active" },
-    { "id": "delivery", "title": "Replace with the next coherent implementation chunk", "status": "planned" }
+    { "id": "scenario-suite", "title": "Add scenario suites across the five generated workflow types", "status": "complete" },
+    { "id": "client-state", "title": "Create explicit client-only Playwright storage state", "status": "complete" },
+    { "id": "identity-guard", "title": "Assert client E2E tokens match the seeded client-only user", "status": "complete" },
+    { "id": "publish", "title": "Push the reviewed branch and open its PR", "status": "active" }
   ],
   "questions": [],
-  "prs": []
+  "prs": [],
+  "assessment": null
 }

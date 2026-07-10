@@ -1,0 +1,31 @@
+{
+  "id": "arrusted-record-details",
+  "project": "arrusted",
+  "title": "Record-details tool hardening",
+  "status": "active",
+  "branch": "ada/record-details-hardening",
+  "fableAgent": "adb",
+  "reviewerAgent": "adb",
+  "codexExecutor": "ada",
+  "summary": "PR #354 is green on pushed head 331a8040. A narrow enum-label follow-up is complete locally at 844882c4 and held for sign-off; two Qodo findings about history-limit documentation and truncated-delta baselines still need an explicit fold-or-park ruling.",
+  "reviewState": "Green pushed head; held amendment awaiting sign-off",
+  "updatedAt": "2026-07-09T19:29:16-04:00",
+  "updatedBy": "adb",
+  "issuePrefixes": ["ad.36"],
+  "chunks": [
+    { "id": "bounded-history", "title": "Bound field history and expose provenance safely", "status": "complete" },
+    { "id": "by-id", "title": "Fetch individual records without full-model scans", "status": "complete" },
+    { "id": "enum-labels", "title": "Resolve enum labels in current details and history", "status": "active" },
+    { "id": "review-findings", "title": "Rule on Qodo limit and truncated-baseline findings", "status": "planned" }
+  ],
+  "questions": [
+    {
+      "id": "Q1",
+      "text": "Fold either Qodo finding into PR #354, or park both as separate follow-ups?",
+      "status": "open",
+      "askedAt": "2026-07-09T18:54:09-04:00"
+    }
+  ],
+  "prs": [{ "number": 354, "chunks": ["bounded-history", "by-id", "enum-labels"] }],
+  "assessment": null
+}

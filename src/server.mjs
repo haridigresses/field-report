@@ -85,36 +85,6 @@ async function updateSessions(workstreamId, values) {
   stream.fableAgent = sessionValue(values.fableAgent);
   stream.reviewerAgent = sessionValue(values.reviewerAgent);
   stream.codexExecutor = sessionValue(values.codexExecutor);
-
-  const projectFile = path.join(root, "config/projects.json");
-  const projectConfig = JSON.parse(await readFile(projectFile, "utf8"));
-  const project = projectConfig.projects.find((item) => item.id === stream.project);
-  if (!project) throw new Error("Workstream project is not configured");
-  project.coordinator = sessionValue(values.coordinator);
-
-  await writeJsonAtomic(streamFile, stream);
-  await writeJsonAtomic(projectFile, projectConfig);
-}
-
-function percentage(value, label) {
-  if (value == null || value === "") return null;
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0 || number > 100) throw new Error(`${label} must be between 0 and 100`);
-  return Math.round(number);
-}
-
-async function updateAssessment(workstreamId, values) {
-  const { streamFile, stream } = await findWorkstream(workstreamId);
-  const branch = sessionValue(values.branch);
-  const mergeReadiness = percentage(values.mergeReadiness, "Merge readiness");
-  const structuralRisk = percentage(values.structuralRisk, "Structural risk");
-  const rationale = sessionValue(values.rationale);
-  const assessedBy = sessionValue(values.assessedBy);
-  const assessedHead = sessionValue(values.assessedHead);
-  stream.branch = branch;
-  stream.assessment = [branch, mergeReadiness, structuralRisk, rationale, assessedBy, assessedHead].every((value) => value == null)
-    ? null
-    : { mergeReadiness, structuralRisk, rationale, assessedBy, assessedHead, assessedAt: new Date().toISOString() };
   await writeJsonAtomic(streamFile, stream);
 }
 
@@ -135,22 +105,6 @@ const server = http.createServer(async (req, res) => {
       const values = await readJsonBody(req);
       const operation = mutationPromise.then(async () => {
         await updateSessions(workstreamId, values);
-        await runCollect();
-      });
-      mutationPromise = operation.catch(() => {});
-      await operation;
-      return send(res, 200, JSON.stringify({ ok: true }), "application/json; charset=utf-8");
-    } catch (error) {
-      return send(res, error.message === "Unknown workstream" ? 404 : 400, JSON.stringify({ ok: false, error: error.message }), "application/json; charset=utf-8");
-    }
-  }
-  const assessmentRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/assessment$/);
-  if (req.method === "POST" && assessmentRoute) {
-    try {
-      const workstreamId = decodeURIComponent(assessmentRoute[1]);
-      const values = await readJsonBody(req);
-      const operation = mutationPromise.then(async () => {
-        await updateAssessment(workstreamId, values);
         await runCollect();
       });
       mutationPromise = operation.catch(() => {});
