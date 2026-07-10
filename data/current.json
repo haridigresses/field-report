@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-10T04:11:51.442Z",
+  "generatedAt": "2026-07-10T04:38:54.237Z",
   "projects": [
     {
       "id": "aon",
@@ -40,8 +40,8 @@
         "activeWorkstreams": 3,
         "openQuestions": 1,
         "openPrs": 15,
-        "failingChecks": 2,
-        "pendingChecks": 0,
+        "failingChecks": 3,
+        "pendingChecks": 2,
         "runningAgents": 3,
         "openIssues": 10
       }
@@ -103,128 +103,142 @@
             "enum-labels"
           ],
           "headRefName": "ada/record-details-hardening",
-          "headRefOid": "844882c4862d0a54bbbee260a30d4210e271f2da",
+          "headRefOid": "76866474edc8f0e745d2bdadec2c99fcdd53e7dc",
           "isDraft": false,
-          "mergeStateStatus": "CLEAN",
+          "mergeStateStatus": "UNSTABLE",
           "state": "OPEN",
           "statusCheckRollup": [
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:40:09Z",
+              "completedAt": "2026-07-10T04:35:29Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581405",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324/job/86287612309",
               "name": "Changes",
-              "startedAt": "2026-07-10T03:40:05Z",
+              "startedAt": "2026-07-10T04:35:24Z",
               "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:40:30Z",
+              "completedAt": "2026-07-10T04:35:45Z",
               "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581378",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324/job/86287612259",
               "name": "Analyze (React)",
-              "startedAt": "2026-07-10T03:40:07Z",
+              "startedAt": "2026-07-10T04:35:24Z",
               "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:43:42Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581371",
+              "completedAt": "2026-07-10T04:36:14Z",
+              "conclusion": "FAILURE",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324/job/86287612243",
               "name": "Quality (Workspace)",
-              "startedAt": "2026-07-10T03:40:06Z",
+              "startedAt": "2026-07-10T04:35:24Z",
               "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:44:06Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581396",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324/job/86287612283",
               "name": "Test (App)",
-              "startedAt": "2026-07-10T03:40:05Z",
-              "status": "COMPLETED",
+              "startedAt": "2026-07-10T04:35:26Z",
+              "status": "IN_PROGRESS",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:40:10Z",
+              "completedAt": "2026-07-10T04:35:29Z",
               "conclusion": "SKIPPED",
-              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281593843",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324/job/86287625457",
               "name": "Developer (Setup)",
-              "startedAt": "2026-07-10T03:40:10Z",
+              "startedAt": "2026-07-10T04:35:29Z",
               "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:39:59Z",
+              "completedAt": "0001-01-01T00:00:00Z",
+              "conclusion": "",
+              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/354",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T04:35:25Z",
+              "status": "IN_PROGRESS",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T04:36:38Z",
               "conclusion": "SKIPPED",
               "detailsUrl": "https://app.macroscope.com",
               "name": "Macroscope - Correctness Check",
-              "startedAt": "2026-07-10T03:39:57Z",
+              "startedAt": "2026-07-10T04:35:21Z",
               "status": "COMPLETED",
               "workflowName": ""
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:42:42Z",
+              "completedAt": "2026-07-10T04:37:13Z",
               "conclusion": "SUCCESS",
               "detailsUrl": "https://app.coderabbit.ai/change-stack/withAutograph/arrusted-development/pull/354",
               "name": "CodeRabbit / Review",
-              "startedAt": "2026-07-10T03:40:04Z",
+              "startedAt": "2026-07-10T04:35:22Z",
               "status": "COMPLETED",
               "workflowName": ""
             },
             {
               "__typename": "StatusContext",
               "context": "React Doctor",
-              "startedAt": "2026-07-10T03:40:27Z",
+              "startedAt": "2026-07-10T04:35:41Z",
               "state": "SUCCESS",
-              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968"
+              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29069398324"
             },
             {
               "__typename": "StatusContext",
               "context": "Vercel",
-              "startedAt": "2026-07-10T03:41:58Z",
+              "startedAt": "2026-07-10T04:37:18Z",
               "state": "SUCCESS",
-              "targetUrl": "https://vercel.com/autographing/apps/6AjHGffKubL7QhDYpPVWJ4VM5HMJ"
+              "targetUrl": "https://vercel.com/autographing/apps/8r4UfeKYTJ7bqhpRGJ7RofVvP4Le"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:41:59Z",
+              "completedAt": "2026-07-10T04:37:19Z",
               "conclusion": "SUCCESS",
               "detailsUrl": "https://vercel.com/github",
               "name": "Vercel Preview Comments",
-              "startedAt": "2026-07-10T03:41:59Z",
-              "status": "COMPLETED",
-              "workflowName": ""
-            },
-            {
-              "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:43:45Z",
-              "conclusion": "SUCCESS",
-              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/354",
-              "name": "cubic · AI code reviewer",
-              "startedAt": "2026-07-10T03:40:07Z",
+              "startedAt": "2026-07-10T04:37:19Z",
               "status": "COMPLETED",
               "workflowName": ""
             }
           ],
           "title": "Record-details tool hardening",
-          "updatedAt": "2026-07-10T03:42:39Z",
+          "updatedAt": "2026-07-10T04:37:19Z",
           "url": "https://github.com/withAutograph/arrusted-development/pull/354"
         }
       ],
       "assessment": {
+        "mergeReadiness": 80,
+        "structuralRisk": 5,
+        "assessedHead": "76866474",
+        "assessedAt": "2026-07-10T04:36:45.013Z",
+        "assessedBy": "adb",
+        "rationale": "Evidence: 5/6 children signed off at line level (bounded history in SQL, by-id confirmed pre-existing, enum labels, custom-fields parity per Hari's no-deferred-scope ruling); remaining: 36.5 tool consolidation + 36.3 provenance design note — the one child with cross-module schema risk, hence not higher. CI green each push; qodo round dispositioned (1 fold, 1 reasoned reject).",
         "stale": false,
-        "currentHead": "844882c4862d0a54bbbee260a30d4210e271f2da"
+        "currentHead": "76866474edc8f0e745d2bdadec2c99fcdd53e7dc"
       },
       "liveStatus": null,
       "assessmentRequest": null,
-      "timeline": [],
+      "timeline": [
+        {
+          "at": "2026-07-10T04:36:45.013Z",
+          "actor": "adb",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "merge=80 structural=5 head=76866474 (pending push)"
+        }
+      ],
       "afIssues": [
         {
           "uuid": "baccfc79-1582-438b-9e3e-37018062d62d",
@@ -327,13 +341,13 @@
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "1s",
+          "idleFor": "4s",
           "running": true
         },
         {
           "name": "ada",
           "kind": "codex",
-          "idleFor": "2s",
+          "idleFor": "0s",
           "running": true
         }
       ]
@@ -503,12 +517,25 @@
         }
       ],
       "assessment": {
+        "mergeReadiness": 93,
+        "structuralRisk": 3,
+        "assessedHead": "7af4954e",
+        "assessedAt": "2026-07-10T04:36:45.116Z",
+        "assessedBy": "adb",
+        "rationale": "Evidence: dual-MRR (codex-xhigh + Fable) both traced auth path sound end-to-end; redaction blocker fixed via shared helper + audit-evidence fallback landing; all bot findings adjudicated with dispositions; CI green on prior head, fix delta is 2-file additive. Gate is Hari's external security review — external-reviewer findings are the only material unknown. Structural: strongest branch in the portfolio.",
         "stale": false,
         "currentHead": "7af4954e0c9f4ce4f59667b2cbc8c5b5dcf64af0"
       },
       "liveStatus": null,
       "assessmentRequest": null,
       "timeline": [
+        {
+          "at": "2026-07-10T04:36:45.116Z",
+          "actor": "adb",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "merge=93 structural=3 head=7af4954e (pending push)"
+        },
         {
           "at": "2026-07-09T07:20:30.668Z",
           "actor": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
@@ -601,13 +628,13 @@
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "1s",
+          "idleFor": "4s",
           "running": true
         },
         {
           "name": "ada",
           "kind": "codex",
-          "idleFor": "2s",
+          "idleFor": "0s",
           "running": true
         }
       ]
@@ -919,19 +946,19 @@
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "3s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "reforch",
           "kind": "claude",
-          "idleFor": "1s",
+          "idleFor": "4s",
           "running": true
         },
         {
           "name": "aona",
           "kind": "codex",
-          "idleFor": "0s",
+          "idleFor": "3s",
           "running": true
         }
       ]
@@ -1072,13 +1099,13 @@
         {
           "name": "aonb",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "2s",
           "running": true
         },
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "3s",
+          "idleFor": "1s",
           "running": true
         },
         {
@@ -1219,13 +1246,13 @@
         {
           "name": "aonb",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "2s",
           "running": true
         },
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "3s",
+          "idleFor": "1s",
           "running": true
         }
       ]
@@ -1395,12 +1422,36 @@
         }
       ],
       "assessment": {
+        "mergeReadiness": 88,
+        "structuralRisk": 5,
+        "assessedHead": "4ad570c2",
+        "assessedAt": "2026-07-10T04:36:44.914Z",
+        "assessedBy": "adb",
+        "rationale": "Evidence: dual-MRR blockers B1/B2 fixed and delta-review-closed on this head; CI fully green incl. cubic/CodeRabbit; one pre-existing liveness finding ruled follow-up (unbounded validateKernelPlan await -> ad.41 child), skip stated. Remaining merge risk is queue position + Hari's final read, not content. Structural: both reviewers independently confirmed the architecture core (shape-guards, kernel authority) sound — patch-forward decisively cheaper.",
         "stale": false,
         "currentHead": "4ad570c246786af4ecce81be4244dbf9400036e9"
       },
       "liveStatus": null,
-      "assessmentRequest": null,
+      "assessmentRequest": {
+        "requestedAt": "2026-07-10T04:32:58.738Z",
+        "requestedFrom": "adb",
+        "pending": false
+      },
       "timeline": [
+        {
+          "at": "2026-07-10T04:36:44.914Z",
+          "actor": "adb",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "merge=88 structural=5 head=4ad570c2"
+        },
+        {
+          "at": "2026-07-10T04:32:58.738Z",
+          "actor": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+          "type": "assessment_request",
+          "label": "Assessment requested",
+          "text": "Evidence-backed judgment requested for current workstream"
+        },
         {
           "at": "2026-07-10T03:50:42.640Z",
           "actor": "adc",
@@ -1546,13 +1597,13 @@
         {
           "name": "adc",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "2s",
           "running": true
         },
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "1s",
+          "idleFor": "4s",
           "running": true
         }
       ]
