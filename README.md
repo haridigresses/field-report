@@ -108,7 +108,7 @@ Questions may also be recorded directly in the workstream JSON file. An unanswer
 
 - `workstreams/*.json` is the curated, one-file-per-workstream arc.
 - `data/current.json` is the latest generated aggregate and is replaced atomically.
-- `snapshots/YYYY-MM-DD-HASH.json` records materially distinct daily states. Repeated refreshes with no meaningful state change do not create duplicate snapshots.
+- `snapshots/YYYY-MM-DD.json` is the rolling daily snapshot. Git provides versions over time without creating a new large file for every factual refresh.
 - `generatedAt` records source refresh time; each workstream's `updatedAt` records its last meaningful narrative update.
 - Active workstreams older than 12 hours receive a stale warning.
 

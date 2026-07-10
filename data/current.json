@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-10T08:04:11.650Z",
+  "generatedAt": "2026-07-10T08:04:53.931Z",
   "projects": [
     {
       "id": "aon",
@@ -2364,13 +2364,13 @@
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "1s",
+          "idleFor": "3s",
           "running": true
         },
         {
           "name": "ada",
           "kind": "codex",
-          "idleFor": "2s",
+          "idleFor": "4s",
           "running": true
         }
       ]
@@ -2739,13 +2739,13 @@
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "1s",
+          "idleFor": "3s",
           "running": true
         },
         {
           "name": "ada",
           "kind": "codex",
-          "idleFor": "2s",
+          "idleFor": "4s",
           "running": true
         }
       ]
@@ -3107,13 +3107,13 @@
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "3s",
+          "idleFor": "4s",
           "running": true
         },
         {
           "name": "aona",
           "kind": "codex",
-          "idleFor": "0s",
+          "idleFor": "2s",
           "running": true
         }
       ]
@@ -3292,13 +3292,13 @@
         {
           "name": "aonb",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "3s",
+          "idleFor": "4s",
           "running": true
         },
         {
@@ -3474,13 +3474,13 @@
         {
           "name": "aonb",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "3s",
+          "idleFor": "4s",
           "running": true
         }
       ]
@@ -3930,13 +3930,13 @@
         {
           "name": "adc",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "1s",
+          "idleFor": "3s",
           "running": true
         }
       ]

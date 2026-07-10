@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -437,14 +437,10 @@ async function main() {
   await rename(temp, path.join(dataDir, "current.json"));
 
   const date = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-  const stable = JSON.stringify({ projects, workstreams: enrichedStreams });
-  const digest = createHash("sha256").update(stable).digest("hex").slice(0, 10);
-  const dailyFile = path.join(snapshotDir, `${date}-${digest}.json`);
-  try {
-    await readFile(dailyFile);
-  } catch {
-    await writeFile(dailyFile, serialized);
-  }
+  const dailyFile = path.join(snapshotDir, `${date}.json`);
+  const dailyTemp = `${dailyFile}.${process.pid}-${randomUUID()}.next`;
+  await writeFile(dailyTemp, serialized);
+  await rename(dailyTemp, dailyFile);
 
   process.stdout.write(`Refreshed ${enrichedStreams.length} workstreams at ${snapshot.generatedAt}\n`);
 }
