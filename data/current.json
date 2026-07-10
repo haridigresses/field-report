@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-10T07:08:10.507Z",
+  "generatedAt": "2026-07-10T07:09:46.726Z",
   "projects": [
     {
       "id": "aon",
@@ -341,13 +341,13 @@
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "ada",
           "kind": "codex",
-          "idleFor": "0s",
+          "idleFor": "2s",
           "running": true
         }
       ]
@@ -628,13 +628,13 @@
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "ada",
           "kind": "codex",
-          "idleFor": "0s",
+          "idleFor": "2s",
           "running": true
         }
       ]
@@ -952,13 +952,13 @@
         {
           "name": "reforch",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "aona",
           "kind": "codex",
-          "idleFor": "3s",
+          "idleFor": "0s",
           "running": true
         }
       ]
@@ -1099,7 +1099,7 @@
         {
           "name": "aonb",
           "kind": "claude",
-          "idleFor": "2s",
+          "idleFor": "1s",
           "running": true
         },
         {
@@ -1246,7 +1246,7 @@
         {
           "name": "aonb",
           "kind": "claude",
-          "idleFor": "2s",
+          "idleFor": "1s",
           "running": true
         },
         {
@@ -1597,13 +1597,13 @@
         {
           "name": "adc",
           "kind": "claude",
-          "idleFor": "2s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "4s",
+          "idleFor": "1s",
           "running": true
         }
       ]
