@@ -104,9 +104,45 @@ function messageText(message) {
 
 function protocol(message) {
   const subject = String(message.subject || message.title || "").trim();
-  const match = subject.match(/^\[(QUESTION|ANSWER|STATUS|COMPLETE|REVIEW|PR|RATING)\s+([^\]\s]+)(?:\s+(Q\d+))?\]\s*(.*)$/i);
+  const match = subject.match(/^\[(QUESTION|ANSWER|STATUS|COMPLETE|REVIEW|PR|RATING|ASSESSMENT|ASSESSMENT_REQUEST)\s+([^\]\s]+)(?:\s+(Q\d+))?\]\s*(.*)$/i);
   if (!match) return null;
   return { type: match[1].toUpperCase(), streamId: match[2], questionId: match[3], tail: match[4] || "", body: message.body || message.content || "" };
+}
+
+function keyValues(text) {
+  return Object.fromEntries([...String(text || "").matchAll(/(?:^|\s)([a-z_]+)=([^\s]+)/gi)].map((match) => [match[1].toLowerCase(), match[2]]));
+}
+
+function numberValue(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : null;
+}
+
+function lineValue(text, key) {
+  return String(text || "").match(new RegExp(`^${key}:\\s*(.+)$`, "im"))?.[1]?.trim() || null;
+}
+
+function structuredAssessment(message, streamId) {
+  const parsed = protocol(message);
+  if (parsed?.type !== "ASSESSMENT" || parsed.streamId !== streamId) return null;
+  const values = keyValues(`${parsed.tail}\n${parsed.body}`);
+  return {
+    outcomeConfidence: numberValue(values.outcome_confidence),
+    mergeReadiness: numberValue(values.merge_readiness),
+    structuralRisk: numberValue(values.structural_rebuild_risk),
+    assessedHead: /^[0-9a-f]{7,40}$/i.test(values.head || "") ? values.head : null,
+    necessity: values.necessity || null,
+    simplerPath: values.simpler_path || null,
+    scopeDrift: values.scope_drift || null,
+    contractIntegrity: values.contract_integrity || null,
+    evidenceQuality: values.evidence_quality || null,
+    verdict: values.verdict || null,
+    primaryRisk: lineValue(parsed.body, "primary_risk"),
+    nextGate: lineValue(parsed.body, "next_gate") || (values.next_gate ? values.next_gate.replaceAll("_", " ") : null),
+    rationale: lineValue(parsed.body, "rationale") || parsed.tail.replace(/(?:^|\s)[a-z_]+=[^\s]+/gi, " ").trim(),
+    assessedAt: new Date(messageMillis(message)).toISOString(),
+    assessedBy: message.from_name || message.fromName
+  };
 }
 
 function ratings(message) {
@@ -159,17 +195,20 @@ function derivedProtocolState(stream, inboxMessages) {
     .sort((a, b) => messageMillis(a.message) - messageMillis(b.message));
   let assessment = stream.assessment || null;
   let liveStatus = null;
-  for (const message of inboxMessages) {
+  let requestedAt = null;
+  let requestedFrom = null;
+  for (const message of [...inboxMessages].sort((a, b) => messageMillis(a) - messageMillis(b))) {
     const rating = ratings(message).find((candidate) => candidate.streamId === stream.id);
-    if (!rating) continue;
-    assessment = {
-      mergeReadiness: rating.mergeReadiness,
-      structuralRisk: rating.structuralRisk,
-      assessedHead: rating.assessedHead,
-      assessedAt: new Date(messageMillis(message)).toISOString(),
-      assessedBy: message.from_name || message.fromName,
-      rationale: message.body || rating.rationale
-    };
+    if (rating) assessment = {
+        mergeReadiness: rating.mergeReadiness,
+        structuralRisk: rating.structuralRisk,
+        assessedHead: rating.assessedHead,
+        assessedAt: new Date(messageMillis(message)).toISOString(),
+        assessedBy: message.from_name || message.fromName,
+        rationale: message.body || rating.rationale
+      };
+    const structured = structuredAssessment(message, stream.id);
+    if (structured) assessment = structured;
   }
   for (const { message, parsed } of relevant) {
     if (["STATUS", "COMPLETE", "REVIEW"].includes(parsed.type)) {
@@ -180,8 +219,64 @@ function derivedProtocolState(stream, inboxMessages) {
         from: message.from_name || message.fromName
       };
     }
+    if (parsed.type === "ASSESSMENT_REQUEST") {
+      requestedAt = new Date(messageMillis(message)).toISOString();
+      requestedFrom = message.to_name || message.toName;
+    }
   }
-  return { assessment, liveStatus };
+  return {
+    assessment,
+    liveStatus,
+    assessmentRequest: requestedAt ? {
+      requestedAt,
+      requestedFrom,
+      pending: !assessment?.assessedAt || new Date(assessment.assessedAt).getTime() < new Date(requestedAt).getTime()
+    } : null
+  };
+}
+
+function eventSummary(parsed) {
+  const labels = {
+    ASSESSMENT_REQUEST: "Assessment requested",
+    ASSESSMENT: "Reviewer assessment",
+    RATING: "Reviewer rating",
+    REVIEW: "Review decision",
+    QUESTION: "Uncertainty opened",
+    ANSWER: "Uncertainty resolved",
+    STATUS: "Execution update",
+    COMPLETE: "Milestone completed",
+    PR: "Delivery update"
+  };
+  return labels[parsed.type] || parsed.type;
+}
+
+function derivedTimeline(stream, inboxMessages, streamIssues) {
+  const materialTypes = new Set(["ASSESSMENT_REQUEST", "ASSESSMENT", "RATING", "REVIEW", "QUESTION", "ANSWER", "STATUS", "COMPLETE", "PR"]);
+  const issueUuids = new Set(streamIssues.map((issue) => issue.uuid).filter(Boolean));
+  const candidates = [];
+  for (const message of inboxMessages) {
+    const parsed = protocol(message);
+    if (parsed?.streamId === stream.id && materialTypes.has(parsed.type)) candidates.push({ message, parsed });
+    if (ratings(message).some((rating) => rating.streamId === stream.id) && parsed?.streamId !== stream.id) {
+      candidates.push({ message, parsed: { type: "RATING", streamId: stream.id, tail: ratings(message).find((rating) => rating.streamId === stream.id)?.rationale || "Reviewer rating updated" } });
+    }
+    if (!parsed && issueUuids.has(message.related_issue_uuid)) {
+      candidates.push({ message, parsed: { type: "EXECUTION", streamId: stream.id, tail: message.subject || message.body || "Issue-linked execution activity" } });
+    }
+  }
+  return candidates.sort((a, b) => messageMillis(b.message) - messageMillis(a.message))
+    .slice(0, 20)
+    .map(({ message, parsed }) => {
+      const raw = parsed.type === "ASSESSMENT" ? (parsed.body || parsed.tail) : (parsed.tail || parsed.body);
+      const text = String(raw || eventSummary(parsed)).replace(/\s+/g, " ").trim();
+      return {
+        at: new Date(messageMillis(message)).toISOString(),
+        actor: message.from_name || message.fromName || "AF",
+        type: parsed.type.toLowerCase(),
+        label: parsed.type === "EXECUTION" ? "Execution activity" : eventSummary(parsed),
+        text: text.length > 280 ? `${text.slice(0, 277)}…` : text
+      };
+    });
 }
 
 async function main() {
@@ -224,6 +319,8 @@ async function main() {
         currentHead: branchPr?.headRefOid || null
       },
       liveStatus: protocolState.liveStatus,
+      assessmentRequest: protocolState.assessmentRequest,
+      timeline: derivedTimeline(stream, inbox.items, streamIssues),
       questions: derivedQuestions(stream, inbox.items),
       prs: configuredPrs,
       afIssues: streamIssues,

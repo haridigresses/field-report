@@ -37,6 +37,16 @@ Each workstream displays two reviewer-owned, evidence-backed percentages:
 
 Reviewers publish ratings through AF inbox using a leading subject such as `[RATING aon-pr-audit] merge=85 structural=15 head=59c89cd9` and put the evidence summary in the body. The collector accepts only an exact workstream ID. The card always shows both ratings; missing ratings display as unassessed rather than inventing confidence. When a linked GitHub PR advances beyond the assessed SHA, the rating is marked stale.
 
+For a fuller judgment, select one or more outcomes and use **Request assessment**. The server sends the configured reviewer an evidence-backed rubric covering outcome confidence, merge readiness, structural rebuild risk, necessity, simpler paths, scope drift, contract integrity, evidence quality, plan contradictions, primary risk, and next gate. The request is recorded through AF and appears as pending until a newer assessment arrives.
+
+The structured response subject is:
+
+```text
+[ASSESSMENT <workstream-id>] head=<sha> outcome_confidence=<0-100> merge_readiness=<0-100> structural_rebuild_risk=<0-100> necessity=<clear|challenged|unjustified> simpler_path=<none_found|candidate|recommended> scope_drift=<none|low|material> contract_integrity=<sound|at_risk|broken> evidence_quality=<strong|partial|weak> verdict=<GO|CONDITIONAL_GO|NO_GO>
+```
+
+Its body uses `primary_risk:`, `next_gate:`, and `rationale:` lines. Existing compact `[RATING ...]` messages remain supported.
+
 The dashboard leads with one comparable row per durable outcome. Repository is an optional filter rather than the primary hierarchy. Each row reports phase, blockage, uncertainty, delivery artifact, confidence, and material risk. Selecting it opens the situation brief, milestone-to-PR delivery chain, reviewer evidence, AF issue count, and agent sessions.
 
 ## Configure the pilot
@@ -84,3 +94,5 @@ Useful AF message subjects:
 ```
 
 The first pilot intentionally keeps narrative updates explicit. AF and GitHub are collected automatically; the 2–3 line arc and semantically sized checklist remain curated by the workstream orchestrator or Codex executor.
+
+The deep-dive **Recent movement** timeline is derived from structured workstream messages and AF messages linked to the workstream's issue tree. It is append-only in source, capped to the 20 most recent material events in the UI, and intentionally excludes ordinary unlinked inbox chatter.

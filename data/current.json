@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-10T03:40:09.904Z",
+  "generatedAt": "2026-07-10T04:11:51.442Z",
   "projects": [
     {
       "id": "aon",
@@ -19,7 +19,7 @@
         "openQuestions": 1,
         "openPrs": 16,
         "failingChecks": 5,
-        "pendingChecks": 2,
+        "pendingChecks": 0,
         "runningAgents": 4,
         "openIssues": 12
       }
@@ -31,7 +31,7 @@
       "githubRepo": "withAutograph/arrusted-development",
       "coordinator": "adb",
       "repoState": {
-        "worktreeCount": 32,
+        "worktreeCount": 30,
         "prunableCount": 2,
         "rootBranch": "fix/shell-fs-asset-proxy...origin/fix/shell-fs-asset-proxy",
         "rootDirtyFiles": 1
@@ -41,7 +41,7 @@
         "openQuestions": 1,
         "openPrs": 15,
         "failingChecks": 2,
-        "pendingChecks": 19,
+        "pendingChecks": 0,
         "runningAgents": 3,
         "openIssues": 10
       }
@@ -105,75 +105,58 @@
           "headRefName": "ada/record-details-hardening",
           "headRefOid": "844882c4862d0a54bbbee260a30d4210e271f2da",
           "isDraft": false,
-          "mergeStateStatus": "UNSTABLE",
+          "mergeStateStatus": "CLEAN",
           "state": "OPEN",
           "statusCheckRollup": [
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
+              "completedAt": "2026-07-10T03:40:09Z",
+              "conclusion": "SUCCESS",
               "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581405",
               "name": "Changes",
               "startedAt": "2026-07-10T03:40:05Z",
-              "status": "IN_PROGRESS",
+              "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
+              "completedAt": "2026-07-10T03:40:30Z",
+              "conclusion": "SUCCESS",
               "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581378",
               "name": "Analyze (React)",
               "startedAt": "2026-07-10T03:40:07Z",
-              "status": "IN_PROGRESS",
+              "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
+              "completedAt": "2026-07-10T03:43:42Z",
+              "conclusion": "SUCCESS",
               "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581371",
               "name": "Quality (Workspace)",
               "startedAt": "2026-07-10T03:40:06Z",
-              "status": "IN_PROGRESS",
+              "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
+              "completedAt": "2026-07-10T03:44:06Z",
+              "conclusion": "SUCCESS",
               "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281581396",
               "name": "Test (App)",
               "startedAt": "2026-07-10T03:40:05Z",
-              "status": "IN_PROGRESS",
+              "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
-              "detailsUrl": "https://coderabbit.ai?utm_source=cr_app&utm_medium=github",
-              "name": "CodeRabbit / Review",
-              "startedAt": "2026-07-10T03:40:04Z",
-              "status": "IN_PROGRESS",
-              "workflowName": ""
-            },
-            {
-              "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
-              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/354",
-              "name": "cubic · AI code reviewer",
-              "startedAt": "2026-07-10T03:40:07Z",
-              "status": "IN_PROGRESS",
-              "workflowName": ""
-            },
-            {
-              "__typename": "StatusContext",
-              "context": "Vercel",
-              "startedAt": "2026-07-10T03:39:58Z",
-              "state": "PENDING",
-              "targetUrl": "https://vercel.com/autographing/apps/6AjHGffKubL7QhDYpPVWJ4VM5HMJ"
+              "completedAt": "2026-07-10T03:40:10Z",
+              "conclusion": "SKIPPED",
+              "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968/job/86281593843",
+              "name": "Developer (Setup)",
+              "startedAt": "2026-07-10T03:40:10Z",
+              "status": "COMPLETED",
+              "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
@@ -187,17 +170,51 @@
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:39:59Z",
+              "completedAt": "2026-07-10T03:42:42Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://app.coderabbit.ai/change-stack/withAutograph/arrusted-development/pull/354",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T03:40:04Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "React Doctor",
+              "startedAt": "2026-07-10T03:40:27Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067327968"
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "Vercel",
+              "startedAt": "2026-07-10T03:41:58Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://vercel.com/autographing/apps/6AjHGffKubL7QhDYpPVWJ4VM5HMJ"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:41:59Z",
               "conclusion": "SUCCESS",
               "detailsUrl": "https://vercel.com/github",
               "name": "Vercel Preview Comments",
-              "startedAt": "2026-07-10T03:39:59Z",
+              "startedAt": "2026-07-10T03:41:59Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:43:45Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/354",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T03:40:07Z",
               "status": "COMPLETED",
               "workflowName": ""
             }
           ],
           "title": "Record-details tool hardening",
-          "updatedAt": "2026-07-10T03:40:00Z",
+          "updatedAt": "2026-07-10T03:42:39Z",
           "url": "https://github.com/withAutograph/arrusted-development/pull/354"
         }
       ],
@@ -206,6 +223,8 @@
         "currentHead": "844882c4862d0a54bbbee260a30d4210e271f2da"
       },
       "liveStatus": null,
+      "assessmentRequest": null,
+      "timeline": [],
       "afIssues": [
         {
           "uuid": "baccfc79-1582-438b-9e3e-37018062d62d",
@@ -308,13 +327,13 @@
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "0s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "ada",
           "kind": "codex",
-          "idleFor": "0s",
+          "idleFor": "2s",
           "running": true
         }
       ]
@@ -370,7 +389,7 @@
           "headRefName": "ada/server-authority-gates",
           "headRefOid": "7af4954e0c9f4ce4f59667b2cbc8c5b5dcf64af0",
           "isDraft": false,
-          "mergeStateStatus": "UNSTABLE",
+          "mergeStateStatus": "CLEAN",
           "state": "OPEN",
           "statusCheckRollup": [
             {
@@ -385,32 +404,32 @@
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
+              "completedAt": "2026-07-10T03:40:25Z",
+              "conclusion": "SUCCESS",
               "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573862",
               "name": "Analyze (React)",
               "startedAt": "2026-07-10T03:40:01Z",
-              "status": "IN_PROGRESS",
+              "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
+              "completedAt": "2026-07-10T03:42:25Z",
+              "conclusion": "SUCCESS",
               "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573861",
               "name": "Quality (Workspace)",
               "startedAt": "2026-07-10T03:40:02Z",
-              "status": "IN_PROGRESS",
+              "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
+              "completedAt": "2026-07-10T03:44:11Z",
+              "conclusion": "SUCCESS",
               "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384/job/86281573850",
               "name": "Test (App)",
               "startedAt": "2026-07-10T03:40:02Z",
-              "status": "IN_PROGRESS",
+              "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
@@ -425,33 +444,6 @@
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
-              "detailsUrl": "https://coderabbit.ai?utm_source=cr_app&utm_medium=github",
-              "name": "CodeRabbit / Review",
-              "startedAt": "2026-07-10T03:40:00Z",
-              "status": "IN_PROGRESS",
-              "workflowName": ""
-            },
-            {
-              "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
-              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/341",
-              "name": "cubic · AI code reviewer",
-              "startedAt": "2026-07-10T03:40:07Z",
-              "status": "IN_PROGRESS",
-              "workflowName": ""
-            },
-            {
-              "__typename": "StatusContext",
-              "context": "Vercel",
-              "startedAt": "2026-07-10T03:39:58Z",
-              "state": "PENDING",
-              "targetUrl": "https://vercel.com/autographing/apps/5jrc6wbrivTDMqottKqdhkkZN4XC"
-            },
-            {
-              "__typename": "CheckRun",
               "completedAt": "2026-07-10T03:39:59Z",
               "conclusion": "SKIPPED",
               "detailsUrl": "https://app.macroscope.com",
@@ -462,17 +454,51 @@
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:39:59Z",
+              "completedAt": "2026-07-10T03:42:10Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://app.coderabbit.ai/change-stack/withAutograph/arrusted-development/pull/341",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T03:40:00Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "React Doctor",
+              "startedAt": "2026-07-10T03:40:21Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067325384"
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "Vercel",
+              "startedAt": "2026-07-10T03:41:57Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://vercel.com/autographing/apps/5jrc6wbrivTDMqottKqdhkkZN4XC"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:41:58Z",
               "conclusion": "SUCCESS",
               "detailsUrl": "https://vercel.com/github",
               "name": "Vercel Preview Comments",
-              "startedAt": "2026-07-10T03:39:59Z",
+              "startedAt": "2026-07-10T03:41:58Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:43:02Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/341",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T03:40:07Z",
               "status": "COMPLETED",
               "workflowName": ""
             }
           ],
           "title": "Server-authority gates: bind HC agent tenant through Better Auth",
-          "updatedAt": "2026-07-10T03:39:59Z",
+          "updatedAt": "2026-07-10T03:42:06Z",
           "url": "https://github.com/withAutograph/arrusted-development/pull/341"
         }
       ],
@@ -481,6 +507,30 @@
         "currentHead": "7af4954e0c9f4ce4f59667b2cbc8c5b5dcf64af0"
       },
       "liveStatus": null,
+      "assessmentRequest": null,
+      "timeline": [
+        {
+          "at": "2026-07-09T07:20:30.668Z",
+          "actor": "019f3fd2-75c6-7181-ab81-5c108a7cb79f",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Resolved: PR: Pre-deploy server-authority gates (auth, redaction, validation)"
+        },
+        {
+          "at": "2026-07-09T07:12:28.764Z",
+          "actor": "adb",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Resolved: Agent-run ledger evidence redaction/retention deploy gate"
+        },
+        {
+          "at": "2026-07-09T07:12:28.647Z",
+          "actor": "adb",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Resolved: Swap HC agent tenant resolver to Better Auth after PR 188 merges"
+        }
+      ],
       "afIssues": [
         {
           "uuid": "214182dc-9f1a-46f4-892c-3fe664df6762",
@@ -551,13 +601,13 @@
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "0s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "ada",
           "kind": "codex",
-          "idleFor": "0s",
+          "idleFor": "2s",
           "running": true
         }
       ]
@@ -674,31 +724,21 @@
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
-              "detailsUrl": "https://coderabbit.ai?utm_source=cr_app&utm_medium=github",
-              "name": "CodeRabbit / Review",
-              "startedAt": "2026-07-10T03:32:14Z",
-              "status": "IN_PROGRESS",
-              "workflowName": ""
-            },
-            {
-              "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
-              "detailsUrl": "https://www.cubic.dev/pr/abstractops/aon/pull/272",
-              "name": "cubic · AI code reviewer",
-              "startedAt": "2026-07-10T03:32:25Z",
-              "status": "IN_PROGRESS",
-              "workflowName": ""
-            },
-            {
-              "__typename": "CheckRun",
               "completedAt": "2026-07-10T03:32:14Z",
               "conclusion": "SKIPPED",
               "detailsUrl": "https://app.macroscope.com",
               "name": "Macroscope - Correctness Check",
               "startedAt": "2026-07-10T03:32:10Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:47:14Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://app.coderabbit.ai/change-stack/abstractops/aon/pull/272",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T03:32:14Z",
               "status": "COMPLETED",
               "workflowName": ""
             },
@@ -718,10 +758,20 @@
               "startedAt": "2026-07-10T03:32:58Z",
               "status": "COMPLETED",
               "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:42:32Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://www.cubic.dev/pr/abstractops/aon/pull/272",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T03:32:25Z",
+              "status": "COMPLETED",
+              "workflowName": ""
             }
           ],
           "title": "PR-AUDIT: account audit write cutover",
-          "updatedAt": "2026-07-10T03:33:40Z",
+          "updatedAt": "2026-07-10T03:47:45Z",
           "url": "https://github.com/abstractops/aon/pull/272"
         }
       ],
@@ -736,6 +786,37 @@
         "currentHead": "e1d174163b0cd0bffe5430717f279f4dfe7b6faf"
       },
       "liveStatus": null,
+      "assessmentRequest": null,
+      "timeline": [
+        {
+          "at": "2026-07-10T03:14:31.312Z",
+          "actor": "refrev",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "merge=88 structural=8 head=59c89cd9 — GO'd at final gate after 2 NO-GO cycles; CI green incl. verified real pgTAP on DB Contract; two confirmed bot blockers (7-arg straggler in link_workflow_account_artifact_atomic, RA human/null actor) are bounded fixes in an approved follow-…"
+        },
+        {
+          "at": "2026-07-09T05:52:35.407Z",
+          "actor": "aona",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Ack practice ruling: PR-AUDIT worktree"
+        },
+        {
+          "at": "2026-07-09T05:52:22.471Z",
+          "actor": "aona",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "PR-AUDIT M2 validation ready"
+        },
+        {
+          "at": "2026-07-08T19:45:11.094Z",
+          "actor": "aona",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "PR-AUDIT M2 status: code/unit gates green, DB reset blocked"
+        }
+      ],
       "afIssues": [
         {
           "uuid": "64e47913-bfc4-4a15-92cf-2bdcac067d18",
@@ -838,19 +919,19 @@
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "1s",
+          "idleFor": "3s",
           "running": true
         },
         {
           "name": "reforch",
           "kind": "claude",
-          "idleFor": "0s",
+          "idleFor": "1s",
           "running": true
         },
         {
           "name": "aona",
           "kind": "codex",
-          "idleFor": "3s",
+          "idleFor": "0s",
           "running": true
         }
       ]
@@ -911,6 +992,16 @@
         "currentHead": null
       },
       "liveStatus": null,
+      "assessmentRequest": null,
+      "timeline": [
+        {
+          "at": "2026-07-10T03:14:31.427Z",
+          "actor": "refrev",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "merge=72 structural=12 head=pre-push — gated GO, done_at behavior-identical fix confirmed applied, panels run; not yet pushed so no CI/bot signal, hence sub-80. Pattern is deliberately thin (batch loop over existing guards). [RATING aon-testing-corpus] merge=80 structural=5 he…"
+        }
+      ],
       "afIssues": [
         {
           "uuid": "9884f3b6-bd16-4035-848d-7a2552e3c582",
@@ -981,13 +1072,13 @@
         {
           "name": "aonb",
           "kind": "claude",
-          "idleFor": "2s",
+          "idleFor": "4s",
           "running": true
         },
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "1s",
+          "idleFor": "3s",
           "running": true
         },
         {
@@ -1048,6 +1139,16 @@
         "currentHead": null
       },
       "liveStatus": null,
+      "assessmentRequest": null,
+      "timeline": [
+        {
+          "at": "2026-07-10T03:14:31.427Z",
+          "actor": "refrev",
+          "type": "rating",
+          "label": "Reviewer rating",
+          "text": "additive test files + purely-additive seed rows; panel closed the JWT-vacuity hole; client-RLS specs dormant in CI until the storage-state secret exists. (Dashboard ratings — routed to you per workstream-control collection protocol; no action needed.)"
+        }
+      ],
       "afIssues": [
         {
           "uuid": "0aca4e2e-8cae-4bc0-a299-15966a6247a6",
@@ -1118,13 +1219,13 @@
         {
           "name": "aonb",
           "kind": "claude",
-          "idleFor": "2s",
+          "idleFor": "4s",
           "running": true
         },
         {
           "name": "refrev",
           "kind": "unknown",
-          "idleFor": "1s",
+          "idleFor": "3s",
           "running": true
         }
       ]
@@ -1180,7 +1281,7 @@
           "headRefName": "ad-41-csv-kernel-validate",
           "headRefOid": "4ad570c246786af4ecce81be4244dbf9400036e9",
           "isDraft": false,
-          "mergeStateStatus": "UNSTABLE",
+          "mergeStateStatus": "CLEAN",
           "state": "OPEN",
           "statusCheckRollup": [
             {
@@ -1195,32 +1296,32 @@
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
+              "completedAt": "2026-07-10T03:40:30Z",
+              "conclusion": "SUCCESS",
               "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566210",
               "name": "Analyze (React)",
               "startedAt": "2026-07-10T03:39:57Z",
-              "status": "IN_PROGRESS",
+              "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
+              "completedAt": "2026-07-10T03:43:20Z",
+              "conclusion": "SUCCESS",
               "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566224",
               "name": "Quality (Workspace)",
               "startedAt": "2026-07-10T03:39:57Z",
-              "status": "IN_PROGRESS",
+              "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
+              "completedAt": "2026-07-10T03:43:16Z",
+              "conclusion": "SUCCESS",
               "detailsUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742/job/86281566230",
               "name": "Test (App)",
               "startedAt": "2026-07-10T03:39:57Z",
-              "status": "IN_PROGRESS",
+              "status": "COMPLETED",
               "workflowName": "Check"
             },
             {
@@ -1235,33 +1336,6 @@
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
-              "detailsUrl": "https://coderabbit.ai?utm_source=cr_app&utm_medium=github",
-              "name": "CodeRabbit / Review",
-              "startedAt": "2026-07-10T03:39:56Z",
-              "status": "IN_PROGRESS",
-              "workflowName": ""
-            },
-            {
-              "__typename": "CheckRun",
-              "completedAt": "0001-01-01T00:00:00Z",
-              "conclusion": "",
-              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/342",
-              "name": "cubic · AI code reviewer",
-              "startedAt": "2026-07-10T03:40:00Z",
-              "status": "IN_PROGRESS",
-              "workflowName": ""
-            },
-            {
-              "__typename": "StatusContext",
-              "context": "Vercel",
-              "startedAt": "2026-07-10T03:39:52Z",
-              "state": "PENDING",
-              "targetUrl": "https://vercel.com/autographing/apps/Ec2jxmSyBZ3Gs6fzarrEpE3rMHE1"
-            },
-            {
-              "__typename": "CheckRun",
               "completedAt": "2026-07-10T03:39:54Z",
               "conclusion": "SKIPPED",
               "detailsUrl": "https://app.macroscope.com",
@@ -1272,17 +1346,51 @@
             },
             {
               "__typename": "CheckRun",
-              "completedAt": "2026-07-10T03:39:53Z",
+              "completedAt": "2026-07-10T03:43:25Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://app.coderabbit.ai/change-stack/withAutograph/arrusted-development/pull/342",
+              "name": "CodeRabbit / Review",
+              "startedAt": "2026-07-10T03:39:56Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "React Doctor",
+              "startedAt": "2026-07-10T03:40:25Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://github.com/withAutograph/arrusted-development/actions/runs/29067322742"
+            },
+            {
+              "__typename": "StatusContext",
+              "context": "Vercel",
+              "startedAt": "2026-07-10T03:41:40Z",
+              "state": "SUCCESS",
+              "targetUrl": "https://vercel.com/autographing/apps/Ec2jxmSyBZ3Gs6fzarrEpE3rMHE1"
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:41:41Z",
               "conclusion": "SUCCESS",
               "detailsUrl": "https://vercel.com/github",
               "name": "Vercel Preview Comments",
-              "startedAt": "2026-07-10T03:39:53Z",
+              "startedAt": "2026-07-10T03:41:41Z",
+              "status": "COMPLETED",
+              "workflowName": ""
+            },
+            {
+              "__typename": "CheckRun",
+              "completedAt": "2026-07-10T03:45:05Z",
+              "conclusion": "SUCCESS",
+              "detailsUrl": "https://www.cubic.dev/pr/withAutograph/arrusted-development/pull/342",
+              "name": "cubic · AI code reviewer",
+              "startedAt": "2026-07-10T03:40:00Z",
               "status": "COMPLETED",
               "workflowName": ""
             }
           ],
           "title": "ad.41 Phase 1: CSV import kernel-validate authority (harden)",
-          "updatedAt": "2026-07-10T03:40:02Z",
+          "updatedAt": "2026-07-10T03:45:03Z",
           "url": "https://github.com/withAutograph/arrusted-development/pull/342"
         }
       ],
@@ -1291,6 +1399,51 @@
         "currentHead": "4ad570c246786af4ecce81be4244dbf9400036e9"
       },
       "liveStatus": null,
+      "assessmentRequest": null,
+      "timeline": [
+        {
+          "at": "2026-07-10T03:50:42.640Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Delta-review: all 5 fixes CLOSE, carry-forward YES. One PRE-EXISTING finding needs your scope call (fold vs follow-up)"
+        },
+        {
+          "at": "2026-07-10T03:40:07.630Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Fix pass pushed — new head 4ad570c2; dispatching targeted delta-review of the fix commit"
+        },
+        {
+          "at": "2026-07-09T19:25:59.503Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Dual-MRR reconciled @ 60376564 — NOT merge-ready: 2 confirmed blockers (invariant-#3 core SOUND)"
+        },
+        {
+          "at": "2026-07-09T19:02:38.482Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Round-2 landed — final head 60376564 on PR #342; starting dual-MRR"
+        },
+        {
+          "at": "2026-07-09T18:51:23.563Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "Ack — landing round-2, then I drive dual-MRR with your invariant-#3 rule; watching db.rs/server.rs overlap"
+        },
+        {
+          "at": "2026-07-09T17:48:24.285Z",
+          "actor": "adc",
+          "type": "execution",
+          "label": "Execution activity",
+          "text": "ad.41 Phase 1 landed as PR #342 — needs your additional-reviewer pass + dual-MRR sequencing"
+        }
+      ],
       "afIssues": [
         {
           "uuid": "1073fb87-18e6-4b55-9eb5-ff9e34818ded",
@@ -1316,11 +1469,11 @@
           "title": "Wire CSV-import kernel-validate bridge — retire the load-bearing generated-id-catalog mirror",
           "status": "in_progress",
           "priority": null,
-          "body": "DUAL-MRR @ 60376564 (SHA-scoped): NOT merge-ready. codex-xhigh conditional 4/5 + Claude 5/5 (Fable infra-blocked, Claude substituted). Reconcile in worktree MRR342_RECONCILED.md.\n\nINVARIANT-#3 (the flagged item): BOTH reviewers converged via adb's deletion-trace test — retained pre-compile model/field/relation id checks are SHAPE (silent-drop guards, compiler continues past bad ids so kernel never sees them), NOT mirrors. Disposition SOUND, keep. EXCEPTION: the blanket ACTION-target check is overbroad — shape only for create_missing_lookup; for create_or_match_employee/create_org_assignment/ignore_column the target is ignored metadata. NARROW it (non-blocking).\n\n2 CONFIRMED BLOCKERS (verified in-code):\n- B1 HIGH: preview-compiler.ts:132-133 — decision:'map' mapping with NULL targetModelId/targetFieldId silently skipped, no issue emitted → 'completed' plan with silently-missing column (no-regression hole; deleted validator used to emit missing_model_id/field_id). Fix + regression-test both null cases.\n- B2 HIGH-contract: runtime.ts:225-257 — budget_exhausted return nested inside `if (lastValidationIssues.length===0)`, so tool-budget exhaustion during a repair attempt after prior issues falls through to validation_failed, losing terminal budget_exhausted (frozen-contract violation). A test asserts the bug. Fix precedence + correct test.\n\nNON-BLOCKING fold-ins: fallback validateKernelPlan fail-closed; action-target narrow; positive budget-payload deser round-trip test.\n\nAwaiting adb third-reviewer concurrence, then bounded fix pass → re-verify → re-MRR new SHA. Merge = Hari.",
+          "body": "MRR BLOCKERS FIXED @ 4ad570c2 (pushed, PR #342 head). Delta-review (codex-xhigh, read-only, head-verified) + adb pending 2nd: ALL 5 FIXES CLOSE, no new defects, carry-forward YES.\n- B1 (null-target map drop): preview-compiler.ts + contract.ts emit missing_model_id/missing_field_id for null targets; both null cases regression-tested; can't reach completed/no-change.\n- B2 (budget precedence): runtime.ts hoists real-budget-exhaustion return ABOVE lastValidationIssues===0 branch (line ~238); non-budget paths intact; flipped test now asserts budget_exhausted.\n- Action-target narrowed to create_missing_lookup only; ignore_column ghost-target test flipped.\n- Validator seam fail-closed (kernel_validator_required, non-retryable; prod unaffected).\n- Rust positive budget-deser round-trip test added.\nVerified green: mise run check; test:app 768/768 (15/15); cargo test -p arrusted-hc 118. CI fully green on 4ad570c2 (cubic, CodeRabbit, Quality, Test, Analyze, Vercel, React Doctor).\n\nOPEN (adb scope call, sent): CodeRabbit Major/Heavy-lift at runtime.ts:200 — unbounded await on validateKernelPlan AFTER attempt timer cleared, can exceed maxWallTimeMs (hung run). PRE-EXISTING (existed at 60376564; NOT in fix delta; not raised by dual-MRR panel). My rec: file as new ad.41 child (follow-up), not fold into #342 (Heavy-lift, orthogonal to Phase-1 correctness thesis, would re-open verify/MRR on an unrelated axis). Awaiting adb ruling + carry-forward concurrence. Merge = Hari.",
           "resolution": "COMMITTED ba2852fc (branch ad-41-csv-kernel-validate, not yet pushed). Orchestrator commit-level sign-off passed. Verified green on fresh worktree: check:types, check:kernel, check:boundaries, check:contracts, HC Rust data_import dry-run tests 4/4 (incl. validate_hc_change_set_dry_run_accepts_data_import_source_kind + atomic duplicate-group guard), test:app 757/757 hc + 15/15 tasks. Two real regressions were caught by canonical verification (worker's targeted checks missed both) and fixed: (1) 4 check:types errors from api/ + apps/api/ tsconfigs lacking @engines/@agent-foundation aliases once the bridge pulled apps/hc/agent/** in; (2) 2 test:app failures — a retired-mirror test + an unmocked kernel dry-run fetch hanging the runtime harness. OPEN FOR MRR: unknown model/field/relation/action id checks RETAINED pre-compile (against live Schema, not the mirror) — rationale is silent-drop prevention (compiler skips unknown-id mappings so kernel never sees them). Must be adjudicated at dual-MRR as shape-vs-correctness. Not pushed; PR at end of Phase 1.",
           "created_by": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
           "created_by_session_id": "6d534f9f-37cb-4bb4-b538-cecb3df57dd0",
-          "updated_at": 1783625171949,
+          "updated_at": 1783655463525,
           "direct_children": 0,
           "total_descendants": 0
         },
@@ -1393,13 +1546,13 @@
         {
           "name": "adc",
           "kind": "claude",
-          "idleFor": "0s",
+          "idleFor": "4s",
           "running": true
         },
         {
           "name": "adb",
           "kind": "claude",
-          "idleFor": "0s",
+          "idleFor": "1s",
           "running": true
         }
       ]

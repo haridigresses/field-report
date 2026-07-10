@@ -88,6 +88,67 @@ async function updateSessions(workstreamId, values) {
   await writeJsonAtomic(streamFile, stream);
 }
 
+async function currentStream(workstreamId) {
+  const data = JSON.parse(await readFile(path.join(root, "data/current.json"), "utf8"));
+  const stream = data.workstreams.find((candidate) => candidate.id === workstreamId);
+  return stream ? { stream, project: data.projects.find((project) => project.id === stream.project) } : null;
+}
+
+function assessmentPrompt(stream, returnTarget, currentHead) {
+  const prs = (stream.prs || []).map((pr) => `#${pr.number} (${pr.state || "unknown"}; head ${pr.headRefOid || "unknown"})`).join(", ") || "none yet";
+  return `You are the authoritative orchestrator/reviewer for workstream ${stream.id}. Give an honest, evidence-backed assessment using what you have observed in this workstream, the repository's merge-ready-review rules, the current branch, and linked AF issues. Inspect current evidence if needed; do not merely repeat the dashboard summary.
+
+Outcome: ${stream.title}
+Current situation: ${stream.liveStatus?.text || stream.summary}
+Branch: ${stream.branch || "none"}
+Current head: ${currentHead}
+Linked PRs: ${prs}
+
+Explicitly test:
+- Is each material mechanism necessary for the stated outcome?
+- Is there a materially simpler design that preserves required behavior?
+- Has scope drifted or absorbed unrelated work?
+- Are ownership, authorization, persistence, compatibility, and failure contracts coherent?
+- Does the evidence prove the behavior, or merely exercise the implementation?
+- Is there any structural rot where a bounded rebuild would be safer or cheaper than continued patching?
+- Is execution contradicting an earlier plan, decision, or constraint?
+
+Send the assessment through AF to ${returnTarget} with this exact subject:
+[ASSESSMENT ${stream.id}] head=${currentHead} outcome_confidence=<0-100> merge_readiness=<0-100> structural_rebuild_risk=<0-100> necessity=<clear|challenged|unjustified> simpler_path=<none_found|candidate|recommended> scope_drift=<none|low|material> contract_integrity=<sound|at_risk|broken> evidence_quality=<strong|partial|weak> verdict=<GO|CONDITIONAL_GO|NO_GO>
+
+Use this exact body shape, keeping each value to one concise line:
+primary_risk: <single most important unresolved risk>
+next_gate: <evidence or action that clears the current gate>
+rationale: <2-4 sentences explaining the judgment, including any simpler alternative or plan contradiction>`;
+}
+
+async function requestAssessments(ids) {
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 20) throw new Error("Select between 1 and 20 workstreams");
+  const uniqueIds = [...new Set(ids.map((id) => String(id)))];
+  const results = [];
+  for (const id of uniqueIds) {
+    const { stream } = await findWorkstream(id);
+    const current = await currentStream(id);
+    if (!current) throw new Error(`No collected state for ${id}`);
+    const { stream: live, project } = current;
+    const recipient = stream.reviewerAgent || stream.fableAgent;
+    if (!recipient) throw new Error(`No reviewer or Fable agent configured for ${id}`);
+    const subject = `[ASSESSMENT_REQUEST ${id}] Evidence-backed judgment requested for current workstream`;
+    const returnTarget = project?.coordinator || stream.fableAgent || recipient;
+    let currentHead = live.assessment?.currentHead || live.prs?.find((pr) => pr.headRefName === live.branch)?.headRefOid || null;
+    if (!currentHead && project?.repoPath && live.branch) {
+      try {
+        const resolved = await exec("git", ["-C", project.repoPath, "rev-parse", live.branch], { timeout: 10_000, maxBuffer: 1024 * 1024 });
+        currentHead = resolved.stdout.trim();
+      } catch { currentHead = "replace-with-current-sha"; }
+    }
+    const body = assessmentPrompt(live, returnTarget, currentHead || "replace-with-current-sha");
+    await exec("af", ["inbox", "send", recipient, subject, "--body", body], { cwd: root, timeout: 30_000, maxBuffer: 1024 * 1024 });
+    results.push({ id, recipient });
+  }
+  return results;
+}
+
 const server = http.createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://127.0.0.1").pathname;
   if (req.method === "POST" && pathname === "/api/refresh") {
@@ -96,6 +157,21 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, JSON.stringify({ ok: true, message: stdout.trim() }), "application/json; charset=utf-8");
     } catch (error) {
       return send(res, 500, JSON.stringify({ ok: false, error: error.stderr || error.message }), "application/json; charset=utf-8");
+    }
+  }
+  if (req.method === "POST" && pathname === "/api/assessments/request") {
+    try {
+      const { workstreamIds } = await readJsonBody(req);
+      const operation = mutationPromise.then(async () => {
+        const requested = await requestAssessments(workstreamIds);
+        await runCollect();
+        return requested;
+      });
+      mutationPromise = operation.catch(() => {});
+      const requested = await operation;
+      return send(res, 200, JSON.stringify({ ok: true, requested }), "application/json; charset=utf-8");
+    } catch (error) {
+      return send(res, 400, JSON.stringify({ ok: false, error: error.stderr || error.message }), "application/json; charset=utf-8");
     }
   }
   const sessionRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/sessions$/);
