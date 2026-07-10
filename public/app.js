@@ -8,6 +8,9 @@ const totalStreams = document.querySelector("#total-streams");
 const portfolioSignal = document.querySelector("#portfolio-signal");
 const selectionCount = document.querySelector("#selection-count");
 const requestAssessmentButton = document.querySelector("#request-assessment");
+const newWorkstreamButton = document.querySelector("#new-workstream");
+const newWorkstreamDialog = document.querySelector("#new-workstream-dialog");
+const newWorkstreamForm = document.querySelector("#new-workstream-form");
 
 let dashboard = null;
 let activeRepo = "all";
@@ -254,6 +257,7 @@ function renderDashboard() {
   renderBrief();
   freshness.textContent = `Snapshot ${new Date(dashboard.generatedAt).toLocaleString()} · ${relativeTime(dashboard.generatedAt)}`;
   health.textContent = JSON.stringify(dashboard.health, null, 2);
+  newWorkstreamForm.elements.project.innerHTML = dashboard.projects.map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.label)}</option>`).join("");
 }
 
 async function saveSessions(event) {
@@ -307,5 +311,27 @@ refreshButton.addEventListener("click", async () => {
 });
 
 requestAssessmentButton.addEventListener("click", () => requestAssessments([...selectedStreams]));
+
+newWorkstreamButton.addEventListener("click", () => newWorkstreamDialog.showModal());
+newWorkstreamDialog.querySelector(".dialog-close").addEventListener("click", () => newWorkstreamDialog.close());
+newWorkstreamForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submit = form.querySelector("button[type=submit]");
+  const status = form.querySelector(".form-status");
+  submit.disabled = true;
+  status.textContent = "Creating…";
+  try {
+    const values = Object.fromEntries(new FormData(form));
+    const response = await fetch("/api/workstreams", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Could not create outcome");
+    form.reset();
+    newWorkstreamDialog.close();
+    activeRepo = result.workstream.project;
+    activeStream = result.workstream.id;
+    await load();
+  } catch (error) { status.textContent = error.message; } finally { submit.disabled = false; }
+});
 
 load().catch((error) => { freshness.textContent = error.message; });

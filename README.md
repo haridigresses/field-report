@@ -1,6 +1,31 @@
-# Workstream Control
+# Field Report
 
 A local portfolio field report for Codex executors, Fable/Claude agents, Agent Fixes coordination, and GitHub pull requests.
+
+Agents and users interact through the `fr` CLI. AF subject syntax remains an internal compatibility layer; normal instructions should be natural language such as “track this in Field Report,” “record this decision,” or “reconcile this workstream.”
+
+## Install
+
+```bash
+node scripts/install.mjs
+```
+
+This installs `fr` in `~/.local/bin`, the shared `field-report` skill for Codex and Claude, Claude's `/fr` command, and quiet Claude session-start/stop hooks. Hooks automatically arm only when the repository and branch match exactly; otherwise they do nothing.
+
+Common operations:
+
+```bash
+fr create --repo aon --title "Document-zone cutover" --outcome "Move document writes to the canonical audit boundary" --orchestrator refrev
+fr onboard aon-document-zone-cutover
+fr ask "Does attachment history belong in this slice?"
+fr checkpoint --summary "Implementation complete; exact-SHA review is next" --status active --gate "Exact-SHA review"
+fr reconcile --data '{"summary":"...","chunks":[...]}'
+fr assess
+fr watch start
+fr watch stop
+```
+
+Field Report writes canonical updates immediately and refreshes external GitHub/AF facts in a debounced background pass.
 
 ## Operating topology
 

@@ -24,6 +24,7 @@ h2 { margin-bottom: 3px; font-size: 1.35rem; font-weight: 500; }
 h3 { margin: 0; font-size: .9rem; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
 .kicker { margin-bottom: 8px; color: var(--muted); font-size: .7rem; font-weight: 500; letter-spacing: .16em; text-transform: uppercase; }
 .masthead { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--ink); }
+.masthead-actions { display: flex; gap: 8px; }
 .masthead #freshness { margin: 8px 0 0; color: var(--muted); font-size: .78rem; }
 .masthead button, .close-brief { border: 1px solid var(--ink); border-radius: 0; padding: 8px 13px; background: transparent; cursor: pointer; }
 .masthead button:hover, .close-brief:hover { background: var(--ink); color: var(--paper); }
@@ -118,6 +119,20 @@ dd { margin: 0; font-size: .82rem; line-height: 1.35; }
 .session-editor button { justify-self: start; padding: 5px 9px; border: 1px solid var(--ink); background: transparent; color: var(--ink); }
 .health { margin-top: 30px; color: var(--muted); font-size: .72rem; }
 .health pre { white-space: pre-wrap; }
+dialog { width: min(620px, calc(100% - 28px)); border: 1px solid var(--ink); padding: 0; background: var(--paper); color: var(--ink); }
+dialog::backdrop { background: color-mix(in srgb, var(--ink) 45%, transparent); }
+dialog form { display: grid; gap: 18px; padding: 24px; }
+dialog header, dialog footer { display: flex; justify-content: space-between; align-items: start; gap: 20px; }
+dialog header { padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+dialog h2 { font-family: Georgia, "Times New Roman", serif; font-size: 2rem; font-weight: 400; }
+dialog label { display: grid; gap: 6px; color: var(--muted); font-size: .75rem; }
+dialog label span { font-weight: 400; }
+dialog input, dialog select, dialog textarea { width: 100%; border: 1px solid var(--line); padding: 9px 10px; background: transparent; color: var(--ink); font: inherit; }
+dialog textarea { resize: vertical; }
+.form-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.dialog-close, dialog footer button { border: 1px solid var(--ink); padding: 7px 11px; background: transparent; color: var(--ink); cursor: pointer; }
+dialog footer { align-items: center; padding-top: 14px; border-top: 1px solid var(--line); }
+.form-status { color: var(--critical); font-size: .75rem; }
 @media (max-width: 900px) {
   main { width: min(100% - 28px, 760px); }
   .portfolio-header { display: none; }
@@ -133,6 +148,7 @@ dd { margin: 0; font-size: .82rem; line-height: 1.35; }
 @media (max-width: 520px) {
   main { width: calc(100% - 20px); padding-top: 18px; }
   .masthead { align-items: start; }
+  .masthead-actions { flex-direction: column; }
   .repo-nav { gap: 16px; overflow-x: auto; }
   .repo-filter { flex: 0 0 auto; }
   .row-open { grid-template-columns: 1fr 1fr; }
@@ -143,4 +159,5 @@ dd { margin: 0; font-size: .82rem; line-height: 1.35; }
   .section-head { align-items: start; }
   .selection-actions { align-items: flex-start; flex-direction: column; gap: 8px; }
   .movement-list li { grid-template-columns: 1fr; gap: 3px; }
+  .form-pair { grid-template-columns: 1fr; }
 }

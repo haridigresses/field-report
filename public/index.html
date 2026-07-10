@@ -14,7 +14,7 @@
         <h1>Field Report</h1>
         <p id="freshness">Loading current snapshot…</p>
       </div>
-      <button id="refresh" type="button">Refresh</button>
+      <div class="masthead-actions"><button id="new-workstream" type="button">New outcome</button><button id="refresh" type="button">Refresh</button></div>
     </header>
 
     <nav id="repo-nav" class="repo-nav" aria-label="Repository filter"></nav>
@@ -37,6 +37,17 @@
       <summary>Source health</summary>
       <pre id="health"></pre>
     </details>
+    <dialog id="new-workstream-dialog">
+      <form id="new-workstream-form">
+        <header><div><p class="kicker">Field Report</p><h2>New outcome</h2></div><button class="dialog-close" type="button" aria-label="Close new outcome form">Close</button></header>
+        <label>Repository<select name="project" required></select></label>
+        <label>Outcome title<input name="title" required maxlength="160" placeholder="Document-zone cutover"></label>
+        <label>Intended outcome<textarea name="outcome" required maxlength="1200" rows="4" placeholder="What should be true when this workstream is done?"></textarea></label>
+        <div class="form-pair"><label>Orchestrator<input name="orchestrator" placeholder="AF agent name"></label><label>Reviewer<input name="reviewer" placeholder="AF agent name"></label></div>
+        <label>Starting branch <span>(optional)</span><input name="branch" placeholder="agent/document-cutover"></label>
+        <footer><span class="form-status" aria-live="polite"></span><button type="submit">Create outcome</button></footer>
+      </form>
+    </dialog>
   </main>
   <script src="/app.js" type="module"></script>
 </body>

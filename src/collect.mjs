@@ -12,6 +12,20 @@ async function readJson(file) {
   return JSON.parse(await readFile(file, "utf8"));
 }
 
+async function readLocalEvents(streamId) {
+  try {
+    const content = await readFile(path.join(root, "events", `${streamId}.jsonl`), "utf8");
+    const labels = { created: "Workstream created", onboard: "Session armed", disarm: "Session disarmed", checkpoint: "Checkpoint", reconcile: "Reconciliation", status: "Situation update", question: "Uncertainty opened", decision: "Decision recorded", milestone: "Milestone update", update: "Workstream update", updated: "Workstream update" };
+    return content.split("\n").filter(Boolean).map((line) => JSON.parse(line)).map((event) => ({
+      at: event.at,
+      actor: event.actor || "fr",
+      type: event.type,
+      label: labels[event.type] || "Field Report update",
+      text: event.text
+    }));
+  } catch { return []; }
+}
+
 async function command(command, args, cwd = root) {
   try {
     const { stdout } = await exec(command, args, { cwd, maxBuffer: 10 * 1024 * 1024, timeout: 30_000 });
@@ -283,6 +297,7 @@ async function main() {
   const { projects } = await readJson(path.join(root, "config/projects.json"));
   const files = (await readdir(path.join(root, "workstreams"))).filter((file) => file.endsWith(".json")).sort();
   const streams = await Promise.all(files.map((file) => readJson(path.join(root, "workstreams", file))));
+  const localEventsByStream = Object.fromEntries(await Promise.all(streams.map(async (stream) => [stream.id, await readLocalEvents(stream.id)])));
   const agents = [...new Set(projects.flatMap((project) => [project.coordinator]).concat(streams.flatMap((stream) => [stream.fableAgent, stream.reviewerAgent, stream.codexExecutor])).filter(Boolean))];
   const prNumbersByProject = Object.fromEntries(projects.map((project) => [project.id, [...new Set(streams.filter((stream) => stream.project === project.id).flatMap((stream) => (stream.prs || []).map((pr) => typeof pr === "number" ? pr : pr.number)))]]));
 
@@ -320,7 +335,8 @@ async function main() {
       },
       liveStatus: protocolState.liveStatus,
       assessmentRequest: protocolState.assessmentRequest,
-      timeline: derivedTimeline(stream, inbox.items, streamIssues),
+      timeline: [...derivedTimeline(stream, inbox.items, streamIssues), ...(localEventsByStream[stream.id] || [])]
+        .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 20),
       questions: derivedQuestions(stream, inbox.items),
       prs: configuredPrs,
       afIssues: streamIssues,

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Field Report"
+  short_description: "Maintain durable workstream state with fr"
+  default_prompt: "Use Field Report to track or reconcile this workstream."
