@@ -17,6 +17,7 @@ Common operations:
 ```bash
 fr create --repo aon --title "Document-zone cutover" --outcome "Move document writes to the canonical audit boundary" --orchestrator refrev
 fr coordinate aon
+fr catchup
 fr onboard aon-document-zone-cutover --role workstream-orchestrator
 fr workflow
 fr ask "Does attachment history belong in this slice?"
@@ -44,6 +45,8 @@ AF issues remain the execution ledger; Field Report links issue trees to durable
 - Field Report is the durable control plane; sleeping agent sessions never own the only copy of pending work or review evidence.
 - Agent Fixes provides names, inbox coordination, issues, session visibility, and execution provenance.
 - GitHub remains authoritative for pull-request state.
+
+Repository coordinators own routine orientation. `fr coordinate` runs an initial catch-up; later `fr catchup` calls report semantic and delivery changes since the durable repository cursor plus all outcomes currently needing attention. Workstream orchestrators keep Field Report current and push AF messages only for consequential exceptions that require coordinator awareness or action.
 
 `fr assess` and `fr delegate review` both send a bounded review request to the workstream orchestrator. The orchestrator may delegate to Fable through `claude-aws` or to Codex panels, but only an explicit `fr pass record` at a full 40-character SHA counts as completed review evidence.
 

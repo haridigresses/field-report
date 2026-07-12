@@ -24,6 +24,24 @@ async function fixture() {
         res.end(JSON.stringify({ event: { metadata: { passId: "pass-1", head: "abcdef1234567890" } } }));
       } else if (req.url === "/api/assessments/request") {
         res.end(JSON.stringify({ requested: [{ recipient: "repo/orchestrator" }] }));
+      } else if (req.url === "/data/current.json") {
+        res.end(JSON.stringify({
+          generatedAt: "2026-07-12T15:00:00.000Z",
+          projects: [{ id: "sample", label: "Sample", metrics: { activeWorkstreams: 1, openPrs: 1, openQuestions: 1 } }],
+          workstreams: [{
+            id: "sample-stream",
+            project: "sample",
+            title: "Repair import authority",
+            status: "active",
+            updatedAt: "2026-07-12T14:30:00.000Z",
+            reviewState: "User decision required before publication",
+            branch: "sample/import-authority",
+            chunks: [{ id: "publish", title: "Publish reviewed branch", status: "planned" }],
+            questions: [{ id: "Q1", text: "Which contract applies?", status: "open", askedAt: "2026-07-12T14:20:00.000Z" }],
+            prs: [{ number: 42, state: "OPEN", headRefName: "sample/import-authority", headRefOid: "abcdef1234567890", updatedAt: "2026-07-12T14:40:00.000Z" }],
+            timeline: []
+          }]
+        }));
       } else {
         res.statusCode = 404;
         res.end(JSON.stringify({ error: "not found" }));
@@ -61,6 +79,21 @@ test("fr delegate review dispatches as a top-level command", async () => {
     const { stdout } = await exec(process.execPath, [cli, "delegate", "review", "sample-stream"], { env: mock.env });
     assert.match(stdout, /Requested delegated review from repo\/orchestrator/);
     assert.equal(mock.requests[0].url, "/api/assessments/request");
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr catchup advances a durable repository cursor", async () => {
+  const mock = await fixture();
+  try {
+    const first = await exec(process.execPath, [cli, "catchup", "sample"], { env: mock.env });
+    assert.match(first.stdout, /initial orientation/);
+    assert.match(first.stdout, /Repair import authority/);
+    assert.match(first.stdout, /decision needed/);
+    const second = await exec(process.execPath, [cli, "catchup", "sample"], { env: mock.env });
+    assert.match(second.stdout, /No semantic or delivery changes since the last catch-up/);
+    assert.match(second.stdout, /Other attention still open:[\s\S]*Repair import authority/);
   } finally {
     await mock.close();
   }

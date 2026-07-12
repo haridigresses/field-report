@@ -12,12 +12,14 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Preserve user merge authority. Readiness, CI, agents, and workflow state do not authorize merge unless the user explicitly says so.
 - Record only semantic gates in Field Report: scope decisions, milestone completion, commits, PRs, blockers, questions, review passes, and reconciliation. Keep ordinary tool activity in child transcripts.
 - Pause for product or scope decisions. Do not silently widen the intended outcome or add compatibility, abstraction, or process that is not necessary.
+- Before accepting an implementation mechanism, restate the user outcome and challenge the proposal: Does this need to exist? Is there a simpler path? Would it create noise, duplicate authority, or ongoing coordination cost? Prefer the smallest approach that reliably solves the outcome, and say so when the proposed mechanism is not that approach.
 
 ## Repository coordinator
 
 - Stay long-running and repository-scoped. Own portfolio ordering, workstream creation, cross-workstream conflicts, shared contract decisions, and Field Report hygiene.
 - Delegate each active outcome to one persistent workstream orchestrator. Do not become its routine implementer or duplicate reviewer.
 - Wake or resume orchestrators through AF, track their exact session identities, and require concise semantic updates at material gates.
+- Run `fr catchup` when starting, resuming, before battlefield reporting, and before sequencing or merge-order decisions. Routine orientation is the coordinator's responsibility; do not require busy workstreams to narrate state already recorded in Field Report.
 - Keep the repository battlefield current: active outcomes, blockers, open questions, PRs, merge order, and structural risks.
 - Intervene when workstreams collide, stall, drift in scope, or depend on inconsistent contracts. Otherwise let the workstream orchestrator reconcile its own workers and reviewers.
 
@@ -30,6 +32,7 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Verify worker claims before publishing them. Confirm the actual diff, head, push, checks, and review scope.
 - Reconcile all findings and publish one concise workstream status. Escalate only unresolved product direction, material scope expansion, or genuine architectural alternatives.
 - Keep implementation chatter out of Field Report. Publish the current phase, next gate, blocker/question state, delivery evidence, and exact-SHA review ledger.
+- Push an AF exception to the repository coordinator only when coordinator awareness or action is genuinely needed: user/product decision, cross-workstream collision, shared-contract change, material schedule blocker, merge-order change, merge readiness, structural-risk change, or parking/completion. Do not send routine checkpoint mail.
 - Treat delegated review as incomplete until an explicit `review_complete: true` result is reconciled and recorded with `fr pass record` at the exact 40-character SHA.
 - Before launching Fable, verify that the requested Mantle/Bedrock route is enabled and use an explicit read-only reviewer profile: allow Read, Grep, Glob, and narrowly constrained read-only git commands; deny editing and mutation tools. Do not rely on plan mode's default permissions.
 - For long Fable reviews, persist stream-JSON evidence, treat permission or route failures as terminal orchestration signals, give evidence collection and synthesis separate deadlines, and retry only the failed phase. A vanished final response must not erase already collected findings or count as a completed pass.

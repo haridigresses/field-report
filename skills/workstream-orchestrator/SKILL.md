@@ -14,3 +14,7 @@ Use Fable through `claude-aws` as the primary independent reviewer when useful, 
 Require an explicit `review_complete: true` envelope with verdict, findings, confidence, and the exact reviewed SHA. Reuse persisted evidence when retrying only a blocked synthesis phase. Verify worker and reviewer claims, reconcile disagreements against evidence, then publish the completed judgment with `fr pass record`; a partial or vanished review never counts as a pass.
 
 Publish only semantic state to Field Report: phase, next gate, blocker/question state, delivery evidence, and the exact-SHA review ledger. Escalate material product direction or scope expansion; resolve implementation coordination internally.
+
+Before implementing or delegating a proposed mechanism, restate the user outcome and ask whether the mechanism is necessary, simpler alternatives exist, or it creates noise, duplication, or ongoing coordination cost. Push back with the smallest reliable design when appropriate.
+
+Do not narrate routine progress to the repository coordinator. Send an AF exception only for a user/product decision, cross-workstream collision, shared-contract change, material schedule blocker, merge-order change, merge readiness, structural-risk change, or parking/completion. Keep Field Report current so the coordinator can pull routine orientation with `fr catchup`.

@@ -13,6 +13,7 @@ Run `fr status`. If unarmed:
 
 - Run `fr auto-onboard` when the current branch already belongs to a workstream.
 - Run `fr coordinate <repo-id>` for a persistent repository coordinator.
+- Run `fr catchup` whenever a repository coordinator resumes or needs a fresh battlefield view.
 - Run `fr onboard <id> --role workstream-orchestrator|reviewer|executor` when the workstream ID is known.
 - Run `fr create ...` when the user asks to track a new durable outcome.
 
@@ -48,5 +49,6 @@ Checkpoint at material gates: meaningful commit, push, PR creation, review verdi
 - AF transports review requests; only a completed `fr pass record` entry is dashboard review authority. Do not publish semantic state with AF subject protocols.
 - Never silently change the durable outcome or accept material scope expansion. Record it as a question or proposal for the user.
 - Preserve history; correct stale state with a new checkpoint rather than rewriting past events.
+- Challenge implementation mechanisms before executing them: restate the user outcome, test necessity, seek the simpler path, and reject noisy or duplicative coordination. Workstreams push consequential exceptions; repository coordinators pull routine orientation with `fr catchup`.
 
 Run `fr help` for command syntax.

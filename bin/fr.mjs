@@ -17,6 +17,7 @@ function usage() {
 Usage:
     fr onboard [workstream-id] [--role workstream-orchestrator|reviewer|executor]
     fr coordinate <repo-id>
+    fr catchup [repo-id] [--peek] [--since <iso-time>]
     fr workflow [repo-coordinator|workstream-orchestrator|executor|reviewer|all]
   fr auto-onboard
   fr status
@@ -124,7 +125,82 @@ async function coordinate(projectId) {
   if (!project) throw new Error(`Unknown repository: ${projectId}`);
   context.state.sessions[context.who.key] = { projectId, role: "repo-coordinator", actor: context.who.actor, cwd: context.who.cwd, armedAt: new Date().toISOString() };
   await writeState(context.state);
-  process.stdout.write(`Coordinating ${project.label} as repo-coordinator.\n${project.metrics?.activeWorkstreams || 0} active workstreams · ${project.metrics?.openPrs || 0} open PRs · ${project.metrics?.openQuestions || 0} open questions.\n\n${workflow.markdown}\n`);
+  const report = await catchup(projectId, { data, context });
+  process.stdout.write(`Coordinating ${project.label} as repo-coordinator.\n${project.metrics?.activeWorkstreams || 0} active workstreams · ${project.metrics?.openPrs || 0} open PRs · ${project.metrics?.openQuestions || 0} open questions.\n\n${report}\n\n${workflow.markdown}\n`);
+}
+
+function timestamp(value) {
+  const parsed = new Date(value || 0).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function compact(value, limit = 180) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function activityAt(stream) {
+  return Math.max(
+    timestamp(stream.updatedAt),
+    ...(stream.timeline || []).map((event) => timestamp(event.at)),
+    ...(stream.prs || []).map((pr) => timestamp(pr.updatedAt)),
+    ...(stream.questions || []).flatMap((question) => [timestamp(question.askedAt), timestamp(question.answeredAt)])
+  );
+}
+
+function attentionReasons(stream) {
+  const reasons = [];
+  const openQuestions = (stream.questions || []).filter((question) => question.status === "open").length;
+  const failingChecks = (stream.prs || []).flatMap((pr) => pr.statusCheckRollup || []).filter((check) => check.conclusion === "FAILURE" || check.state === "FAILURE").length;
+  const mergeBlocked = (stream.prs || []).some((pr) => pr.state === "OPEN" && pr.mergeStateStatus === "BLOCKED");
+  if (stream.status === "blocked") reasons.push("blocked");
+  if (failingChecks) reasons.push(`${failingChecks} failing check${failingChecks === 1 ? "" : "s"}`);
+  if (mergeBlocked) reasons.push("merge blocked");
+  if (openQuestions) reasons.push(`${openQuestions} open question${openQuestions === 1 ? "" : "s"}`);
+  if (stream.assessment?.stale) reasons.push("review stale");
+  if (stream.assessmentRequest?.pending) reasons.push("review requested");
+  if (/authori[sz]ation|merge authority|required approval|awaiting approval|user decision|hold/i.test(stream.reviewState || "")) reasons.push("decision needed");
+  if (/exact[- ]head review|review.*pending|pending.*review/i.test(stream.reviewState || "")) reasons.push("review due");
+  if (["active", "blocked"].includes(stream.status) && Date.now() - timestamp(stream.updatedAt) > 12 * 3600_000) reasons.push("status older than 12h");
+  return [...new Set(reasons)];
+}
+
+function deliverySummary(stream) {
+  const pr = (stream.prs || []).find((candidate) => candidate.state === "OPEN" && candidate.headRefName === stream.branch) || (stream.prs || []).find((candidate) => candidate.state === "OPEN");
+  if (pr) return `PR #${pr.number} ${String(pr.state || "").toLowerCase()}${pr.headRefOid ? ` @ ${pr.headRefOid.slice(0, 8)}` : ""}`;
+  const completed = (stream.chunks || []).filter((chunk) => chunk.status === "complete").length;
+  return `pre-PR · ${completed}/${(stream.chunks || []).length} milestones`;
+}
+
+function catchupEntry(stream) {
+  const reasons = attentionReasons(stream);
+  const next = (stream.chunks || []).find((chunk) => ["blocked", "active", "planned"].includes(chunk.status))?.title || "Outcome delivered";
+  return `${reasons.length ? "!" : "•"} ${stream.title} — ${stream.status}${reasons.length ? ` · ${reasons.join(", ")}` : ""}\n  Gate: ${compact(stream.reviewState || "No gate recorded")}\n  Next: ${compact(next, 120)} · ${deliverySummary(stream)} · updated ${new Date(activityAt(stream)).toLocaleString()}`;
+}
+
+async function catchup(projectId, options = {}) {
+  const data = options.data || await api("GET", "/data/current.json");
+  const context = options.context || await armed();
+  projectId ||= context.binding?.projectId;
+  if (!projectId) throw new Error("Specify a repository ID or coordinate this session first");
+  const project = data.projects.find((candidate) => candidate.id === projectId);
+  if (!project) throw new Error(`Unknown repository: ${projectId}`);
+  context.state.coordinatorCursors ||= {};
+  const sinceValue = options.since || context.state.coordinatorCursors[projectId] || null;
+  const since = timestamp(sinceValue);
+  const streams = data.workstreams.filter((stream) => stream.project === projectId);
+  const changed = streams.filter((stream) => since ? activityAt(stream) > since : stream.status !== "complete").sort((left, right) => activityAt(right) - activityAt(left));
+  const attention = streams.filter((stream) => stream.status !== "complete" && attentionReasons(stream).length).sort((left, right) => activityAt(right) - activityAt(left));
+  const changedIds = new Set(changed.map((stream) => stream.id));
+  const additionalAttention = attention.filter((stream) => !changedIds.has(stream.id));
+  const lines = [`Catch-up for ${project.label}${sinceValue ? ` since ${new Date(since).toLocaleString()}` : " · initial orientation"}`];
+  lines.push("", sinceValue ? "Changed:" : "Active outcomes:", changed.length ? changed.map(catchupEntry).join("\n") : "No semantic or delivery changes since the last catch-up.");
+  lines.push("", "Other attention still open:", additionalAttention.length ? additionalAttention.map(catchupEntry).join("\n") : attention.length ? "All current attention items are included above." : "Nothing currently needs coordinator attention.");
+  if (!options.peek) {
+    context.state.coordinatorCursors[projectId] = data.generatedAt || new Date().toISOString();
+    await writeState(context.state);
+  }
+  return lines.join("\n");
 }
 
 async function autoOnboard() {
@@ -185,6 +261,7 @@ async function main() {
   }
     if (command === "onboard") return onboard(positional[0], flags.role || "orchestrator");
     if (command === "coordinate") return coordinate(positional[0]);
+    if (command === "catchup") return process.stdout.write(`${await catchup(positional[0], { peek: Boolean(flags.peek), since: flags.since })}\n`);
     if (command === "workflow") {
       const role = positional[0] || context.binding?.role || "shared";
       const workflow = await api("GET", `/api/workflow?role=${encodeURIComponent(role)}`);
