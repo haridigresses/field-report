@@ -13,4 +13,6 @@ Do not absorb routine implementation or duplicate workstream review. Intervene f
 
 Before ending a material turn, verify that new blockers, questions, PRs, merge-order changes, and structural risks are represented durably.
 
+Do not accept a code workstream's completion claim unless `fr mrr <id>` reports READY for the current head. The required panel is one independent `gpt-5.6-sol` high-reasoning pass plus one independent Fable pass through `claude-aws`, with NO-GO and unresolved findings reconciled.
+
 For every proposed implementation, first restate the user outcome and challenge whether the mechanism is necessary. Prefer the simplest reliable approach and explicitly push back on noisy, duplicative, or overengineered coordination. Routine orientation is your pull responsibility; expect workstream orchestrators to push only consequential exceptions.

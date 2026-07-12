@@ -42,6 +42,8 @@ async function fixture() {
             timeline: []
           }]
         }));
+      } else if (req.url === "/api/workstreams/sample-stream/mrr") {
+        res.end(JSON.stringify({ required: true, ready: false, head: "abcdef1234567890abcdef1234567890abcdef12", reasons: ["missing completed Fable review via claude-aws on the exact head"], lanes: { codexSol: { verdict: "GO", model: "gpt-5.6-sol" }, fable: null } }));
       } else {
         res.statusCode = 404;
         res.end(JSON.stringify({ error: "not found" }));
@@ -94,6 +96,18 @@ test("fr catchup advances a durable repository cursor", async () => {
     const second = await exec(process.execPath, [cli, "catchup", "sample"], { env: mock.env });
     assert.match(second.stdout, /No semantic or delivery changes since the last catch-up/);
     assert.match(second.stdout, /Other attention still open:[\s\S]*Repair import authority/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr mrr reports the missing review lane", async () => {
+  const mock = await fixture();
+  try {
+    const result = await exec(process.execPath, [cli, "mrr", "sample-stream"], { env: mock.env });
+    assert.match(result.stdout, /MRR gate at abcdef12: NOT READY/);
+    assert.match(result.stdout, /Codex gpt-5\.6-sol: GO/);
+    assert.match(result.stdout, /Fable via claude-aws: MISSING/);
   } finally {
     await mock.close();
   }

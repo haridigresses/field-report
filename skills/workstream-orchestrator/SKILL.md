@@ -13,6 +13,8 @@ Use Fable through `claude-aws` as the primary independent reviewer when useful, 
 
 Require an explicit `review_complete: true` envelope with verdict, findings, confidence, and the exact reviewed SHA. Reuse persisted evidence when retrying only a blocked synthesis phase. Verify worker and reviewer claims, reconcile disagreements against evidence, then publish the completed judgment with `fr pass record`; a partial or vanished review never counts as a pass.
 
+Every PR-level delivery chunk requires the full exact-head MRR panel before it is done: one independent `gpt-5.6-sol` high-reasoning review and one independent Fable review through `claude-aws`. Record both passes, reconcile NO-GO or unresolved findings, and run `fr mrr`. Implementation complete, repository checks green, or a single 5/5 reviewer does not satisfy this gate. Field Report will reject the first `complete` transition for a code workstream until `fr mrr` reports READY.
+
 Publish only semantic state to Field Report: phase, next gate, blocker/question state, delivery evidence, and the exact-SHA review ledger. Escalate material product direction or scope expansion; resolve implementation coordination internally.
 
 Before implementing or delegating a proposed mechanism, restate the user outcome and ask whether the mechanism is necessary, simpler alternatives exist, or it creates noise, duplication, or ongoing coordination cost. Push back with the smallest reliable design when appropriate.

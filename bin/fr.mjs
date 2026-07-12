@@ -18,6 +18,7 @@ Usage:
     fr onboard [workstream-id] [--role workstream-orchestrator|reviewer|executor]
     fr coordinate <repo-id>
     fr catchup [repo-id] [--peek] [--since <iso-time>]
+    fr mrr [workstream-id]
     fr workflow [repo-coordinator|workstream-orchestrator|executor|reviewer|all]
   fr auto-onboard
   fr status
@@ -278,7 +279,7 @@ async function main() {
     const stream = await api("GET", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}`);
     return process.stdout.write(`Armed as ${context.binding.role} since ${context.binding.armedAt}.\n${describe(stream)}\n`);
   }
-  if (command === "show") {
+    if (command === "show") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
     const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
     return process.stdout.write(flags.json ? `${JSON.stringify(stream, null, 2)}\n` : `${describe(stream)}\n`);
@@ -351,6 +352,7 @@ async function main() {
       verdict: flags.verdict,
       reviewer: flags.reviewer || context.who.actor,
       model: flags.model,
+      reasoning: flags.reasoning,
       summary: flags.summary,
       mergeReadiness: flags.merge,
       structuralRisk: flags.structural,
@@ -368,6 +370,15 @@ async function main() {
     if (!targetId) throw new Error("Specify a workstream ID or arm this session");
     const result = await api("POST", "/api/assessments/request", { workstreamIds: [targetId] });
     return process.stdout.write(`Requested delegated review from ${result.requested[0].recipient} for ${targetId}.\n`);
+  }
+  if (command === "mrr") {
+    if (!id) throw new Error("Specify a workstream ID or arm this session");
+    const result = await api("GET", `/api/workstreams/${encodeURIComponent(id)}/mrr`);
+    if (!result.required) return process.stdout.write(`${id}: MRR panel is not required for this non-code outcome.\n`);
+    const lane = (name, pass) => `${name}: ${pass ? `${pass.verdict} · ${pass.model || pass.reviewer}${pass.reasoning ? ` · ${pass.reasoning}` : ""}` : "MISSING"}`;
+    const lines = [`${id} MRR gate at ${result.head ? result.head.slice(0, 8) : "unresolved head"}: ${result.ready ? "READY" : "NOT READY"}`, lane("Codex gpt-5.6-sol", result.lanes.codexSol), lane("Fable via claude-aws", result.lanes.fable)];
+    if (result.reasons?.length) lines.push(...result.reasons.map((reason) => `- ${reason}`));
+    return process.stdout.write(`${lines.join("\n")}\n`);
   }
   if (command === "disarm") {
     if (!context.binding) return process.stdout.write("This session is not armed.\n");

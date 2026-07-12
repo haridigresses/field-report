@@ -5,6 +5,7 @@ import { appendFile, mkdir, readFile, readdir, rename, stat, writeFile } from "n
 import http from "node:http";
 import path from "node:path";
 import { promisify } from "node:util";
+import { evaluateMrr } from "./mrr.mjs";
 import { fileURLToPath } from "node:url";
 
 const exec = promisify(execFile);
@@ -229,6 +230,12 @@ async function appendWorkstreamEvent(id, event) {
 async function updateWorkstream(id, patch, eventType = "updated") {
   const { streamFile, stream } = await findWorkstream(id);
   const next = applyCanonicalPatch(stream, patch);
+  if (stream.status !== "complete" && next.status === "complete" && (next.branch || (next.prs || []).length || (next.commits || []).length)) {
+    const current = await currentStream(id);
+    if (!current) throw new Error("Cannot verify the MRR completion gate; refresh Field Report sources first");
+    const mrr = evaluateMrr({ ...current.stream, branch: next.branch, prs: current.stream.prs || next.prs, commits: next.commits });
+    if (!mrr.ready) throw new Error(`MRR completion gate is not satisfied: ${mrr.reasons.join("; ")}. Run fr mrr ${id}.`);
+  }
   await writeJsonAtomic(streamFile, next);
   await appendWorkstreamEvent(id, { type: eventType, actor: patch.updatedBy, text: patch.eventText || patch.summary || patch.reviewState || `${eventType} checkpoint` });
   return next;
@@ -270,6 +277,12 @@ async function currentStream(workstreamId) {
   const data = JSON.parse(await readFile(path.join(root, "data/current.json"), "utf8"));
   const stream = data.workstreams.find((candidate) => candidate.id === workstreamId);
   return stream ? { stream, project: data.projects.find((project) => project.id === stream.project) } : null;
+}
+
+async function mrrStatus(workstreamId) {
+  const current = await currentStream(workstreamId);
+  if (!current) throw new Error(`No collected state for ${workstreamId}; refresh sources first`);
+  return evaluateMrr(current.stream);
 }
 
 function assessmentPrompt(stream, currentHead) {
@@ -318,6 +331,7 @@ async function recordReviewPass(id, values) {
       passId: values.passId || randomUUID(), head, verdict, reviewComplete: true,
       reviewer: values.reviewer || values.actor || "reviewer",
       model: values.model || "unknown",
+      reasoning: values.reasoning || null,
       independent: values.independent !== false,
       findings: Array.isArray(values.findings) ? values.findings : [],
       unresolved: Array.isArray(values.unresolved) ? values.unresolved : [],
@@ -476,6 +490,11 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, JSON.stringify({ role, markdown: await workflowContract(role) }), "application/json; charset=utf-8");
   }
   if (pathname === "/api/workstreams") return send(res, 200, JSON.stringify({ workstreams: await listCanonicalWorkstreams() }), "application/json; charset=utf-8");
+  const mrrRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/mrr$/);
+  if (mrrRoute) {
+    try { return send(res, 200, JSON.stringify(await mrrStatus(decodeURIComponent(mrrRoute[1]))), "application/json; charset=utf-8"); }
+    catch (error) { return send(res, 400, JSON.stringify({ error: error.message }), "application/json; charset=utf-8"); }
+  }
   if (workstreamRoute) {
     try { return send(res, 200, JSON.stringify((await findWorkstream(decodeURIComponent(workstreamRoute[1]))).stream), "application/json; charset=utf-8"); }
     catch { return send(res, 404, JSON.stringify({ error: "Unknown workstream" }), "application/json; charset=utf-8"); }

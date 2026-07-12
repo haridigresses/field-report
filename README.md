@@ -18,6 +18,7 @@ Common operations:
 fr create --repo aon --title "Document-zone cutover" --outcome "Move document writes to the canonical audit boundary" --orchestrator refrev
 fr coordinate aon
 fr catchup
+fr mrr aon-document-zone-cutover
 fr onboard aon-document-zone-cutover --role workstream-orchestrator
 fr workflow
 fr ask "Does attachment history belong in this slice?"
@@ -25,7 +26,7 @@ fr checkpoint --summary "Implementation complete; exact-SHA review is next" --st
 fr reconcile --data '{"summary":"...","chunks":[...]}'
 fr assess
 fr delegate review aon-document-zone-cutover
-fr pass record aon-document-zone-cutover --head 4ad570c2e81ac141fa18cc0893465264b533f637 --verdict CONDITIONAL_GO --reviewer codex-xhigh --model gpt-5.6 --merge 82 --structural 8 --summary "Contracts hold; one evidence gap remains."
+fr pass record aon-document-zone-cutover --head 4ad570c2e81ac141fa18cc0893465264b533f637 --verdict CONDITIONAL_GO --reviewer codex-sol-high --model gpt-5.6-sol --reasoning high --merge 82 --structural 8 --summary "Contracts hold; one evidence gap remains."
 fr link issue ad.41
 fr link commit 4ad570c2 --chunk kernel-timeout
 fr reference --path docs/import-principles.md --kind contract --quote "Ambiguity and contradiction surface as reviewable, actionable issues at compile time."
@@ -53,6 +54,8 @@ Repository coordinators own routine orientation. `fr coordinate` runs an initial
 `docs/fr-workflow.md` is the canonical opt-in orchestration contract. It is not copied into repository `AGENTS.md` files used by other developers. `fr coordinate`, `fr onboard`, and `fr workflow` load the shared contract plus only the armed session's role section.
 
 Review passes record reviewer, model, verdict, exact head SHA, readiness/risk judgments, findings, and unresolved considerations. When the branch advances, prior passes remain in history but are counted as superseded rather than current-head evidence.
+
+For code outcomes, completion is guarded by the exact-head MRR panel. One independent `gpt-5.6-sol` high-reasoning pass and one independent Fable pass through `claude-aws` must both be recorded and reconciled; `fr mrr <id>` reports the missing lane or READY. Field Report rejects the first transition to `complete` while this gate is unsatisfied. Non-code outcomes without a branch, PR, or commits are exempt.
 
 ## Start
 

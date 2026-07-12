@@ -8,6 +8,7 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Keep workstreams outcome-sized and milestones commit-sized or independently verifiable. Avoid micro-PRs and unrelated scope bundles.
 - Bind every implementation and review claim to an exact repository, worktree, branch, and head SHA.
 - A substantive commit invalidates earlier merge-ready verdicts until a fresh or explicit delta review covers the new head.
+- A code workstream or PR-level delivery chunk is not done merely because implementation and repository checks pass. Before declaring completion, run the full exact-head MRR panel: one independent `gpt-5.6-sol` high-reasoning review and one independent Fable review through `claude-aws`; reconcile both, record both with `fr pass record`, and confirm `fr mrr` reports READY.
 - Reconcile reviewer disagreement against code, tests, and contracts; never decide by vote.
 - Preserve user merge authority. Readiness, CI, agents, and workflow state do not authorize merge unless the user explicitly says so.
 - Record only semantic gates in Field Report: scope decisions, milestone completion, commits, PRs, blockers, questions, review passes, and reconciliation. Keep ordinary tool activity in child transcripts.
@@ -34,6 +35,7 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Keep implementation chatter out of Field Report. Publish the current phase, next gate, blocker/question state, delivery evidence, and exact-SHA review ledger.
 - Push an AF exception to the repository coordinator only when coordinator awareness or action is genuinely needed: user/product decision, cross-workstream collision, shared-contract change, material schedule blocker, merge-order change, merge readiness, structural-risk change, or parking/completion. Do not send routine checkpoint mail.
 - Treat delegated review as incomplete until an explicit `review_complete: true` result is reconciled and recorded with `fr pass record` at the exact 40-character SHA.
+- Do not mark a PR-level chunk or code workstream complete until both required MRR lanes cover the current head, neither is NO-GO, and no current-head findings remain unresolved. Locally green, CI green, or one 5/5 review is insufficient.
 - Before launching Fable, verify that the requested Mantle/Bedrock route is enabled and use an explicit read-only reviewer profile: allow Read, Grep, Glob, and narrowly constrained read-only git commands; deny editing and mutation tools. Do not rely on plan mode's default permissions.
 - For long Fable reviews, persist stream-JSON evidence, treat permission or route failures as terminal orchestration signals, give evidence collection and synthesis separate deadlines, and retry only the failed phase. A vanished final response must not erase already collected findings or count as a completed pass.
 
