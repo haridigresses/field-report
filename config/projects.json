@@ -6,7 +6,7 @@
       "repoPath": "/Users/graphy/aon",
       "githubRepo": "abstractops/aon",
       "coordinator": "refrev",
-      "issueNamespaces": ["refrev", "aona", "aonb", "reforch"]
+      "issueNamespaces": ["aon", "aon-orch", "refrev", "aona", "aonb", "reforch"]
     },
     {
       "id": "arrusted",

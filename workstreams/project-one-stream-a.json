@@ -1,52 +1,52 @@
 {
   "id": "aon-pr-audit",
   "project": "aon",
-  "title": "PR-AUDIT account and document cutover",
-  "status": "active",
-  "branch": "write-path-pr-audit",
+  "title": "PR-AUDIT account-zone hard-cut rebuild",
+  "status": "complete",
+  "branch": "codex/pr-audit-contract",
   "fableAgent": "refrev",
   "reviewerAgent": "refrev",
-  "codexExecutor": "aona",
-  "summary": "PR #272 has passed the M2 final gate and is running CI and bot review. M3 is now being scoped as one bounded document-zone move: add trigger coverage, retire duplicate audit writers, and replace the document RPCs without pulling correspondence into the slice.",
-  "reviewState": "M2 GO; M3 awaiting scope approval",
-  "updatedAt": "2026-07-10T08:02:23.795Z",
-  "updatedBy": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+  "codexExecutor": "audit-exec",
+  "summary": "PR-AUDIT account-zone hard-cut rebuild completed: PR #275 and PR #276 merged; final contract head e9e53a7b merged to main as 763a74f8.",
+  "reviewState": "COMPLETE — account-zone audit cutover and legacy RPC/account_changes removal merged",
+  "updatedAt": "2026-07-12T02:37:52.846Z",
+  "updatedBy": "audit-exec",
   "issuePrefixes": [
     "refrev.11",
-    "aona.10"
+    "aona.10",
+    "5867f09e-65c6-4755-8121-f5e0c8fd0642",
+    "audit-exec.2",
+    "audit-exec.6"
   ],
   "chunks": [
     {
-      "id": "m1-map",
-      "title": "Map write ownership and characterize account-zone invariants",
+      "id": "pr-a-expand",
+      "title": "PR1: expand + cut over with executable P1-P8 parity against the real read surface",
       "status": "complete",
-      "issueIds": [
-        "aona.10"
+      "commits": [
+        "2f0c68c2",
+        "3960929dc20c7541d5f3e04b6ceece03d595c381",
+        "5db467e4",
+        "3a359d37",
+        "52509c94c88a50e1318cd2c8fbc3f1e54ca03144",
+        "ac3a0c3b0f351a74ec68d9f0ffc0ff245fad4573"
       ]
     },
     {
-      "id": "m2-account",
-      "title": "Cut account writes to typed TS and generic audit trigger",
-      "status": "complete",
-      "issueIds": [
-        "refrev.11.1"
-      ]
-    },
-    {
-      "id": "m3-documents",
-      "title": "Cut document writes, attachments, and duplicate audit writers together",
+      "id": "pr-b-cutover",
+      "title": "PR2: destructive legacy RPC and account_changes removal only",
       "status": "active",
-      "issueIds": [
-        "refrev.11.2"
+      "commits": [
+        "238470e6be1c30eb7b1ecfafc7817d9dab54f825",
+        "e9e53a7b04c4a348e6119334377ea1c8cb6bca0f"
       ]
     },
     {
-      "id": "m4-drops",
-      "title": "Drop surviving transitional tables and RPC surfaces",
-      "status": "planned",
-      "issueIds": [
-        "refrev.11.3",
-        "refrev.11.4"
+      "id": "pr-c-contract",
+      "title": "Superseded three-PR contract-removal milestone",
+      "status": "complete",
+      "commits": [
+        "815da80268808d12b6f4a71e87eceef0674d7c36"
       ]
     }
   ],
@@ -54,26 +54,39 @@
     {
       "id": "Q1",
       "text": "Should document attach/detach history move fully to audit_logs in M3, or keep workflow_changes append calls until PR5?",
-      "status": "open",
-      "askedAt": "2026-07-09T23:00:26-04:00"
+      "status": "answered",
+      "askedAt": "2026-07-09T23:00:26-04:00",
+      "answeredAt": "2026-07-10T18:18:15.003Z",
+      "answer": "Deferred, not decided in this rebuild: document, attachment, correspondence, and workflow-change surfaces remain unchanged for a separately gated follow-up; this account-zone stack adds no compatibility path."
     }
   ],
   "prs": [
     {
-      "number": 272,
+      "number": 275,
       "chunks": [
-        "m2-account",
-        "m3-documents"
+        "pr-a-expand"
+      ]
+    },
+    {
+      "number": 276,
+      "chunks": [
+        "pr-b-cutover"
       ]
     }
   ],
   "assessment": null,
   "references": [
     {
+      "path": "docs/pr-audit-phase-0-contract-inventory.md",
+      "label": "PR-AUDIT Phase 0 hard-cut contract",
+      "kind": "contract",
+      "quote": "There is no backwards-compatibility or data/history-preservation requirement."
+    },
+    {
       "path": "docs/write-path-simplification-plan.md",
-      "label": "Write-path simplification plan",
-      "kind": "plan",
-      "quote": "Each cut RPC’s invariant lands in a constraint, a trigger, TS, or is intentionally-dropped."
+      "label": "Canonical write-path scope",
+      "kind": "decision",
+      "quote": "Document de-RPC is a separately gated follow-up and is not smuggled into this stack."
     },
     {
       "path": "docs/merge-ready-review.md",
@@ -83,6 +96,10 @@
     }
   ],
   "commits": [
-    "59c89cd9"
+    "2f0c68c2",
+    "3960929dc20c7541d5f3e04b6ceece03d595c381",
+    "8c54dd918ab36956b47871849021c49c2c0963c1",
+    "815da80268808d12b6f4a71e87eceef0674d7c36",
+    "52509c94c88a50e1318cd2c8fbc3f1e54ca03144"
   ]
 }

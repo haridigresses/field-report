@@ -7,13 +7,12 @@
   "fableAgent": "aonb",
   "reviewerAgent": "refrev",
   "codexExecutor": null,
-  "summary": "The scenario corpus and client-identity E2E coverage are implemented. The panel found and fixed a storage-state vacuity hole by making client generation explicit and asserting the JWT belongs to the seeded client-only user; the branch is ready for publication.",
-  "reviewState": "Panel fixes verified; push and open PR next",
-  "updatedAt": "2026-07-10T08:02:24.520Z",
-  "updatedBy": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+  "summary": "PR #274 is open at ce79e94e43c4cb83d085445d64d7237aeca418a1; all CI and automated review checks are green. Client-RLS specs still require PLAYWRIGHT_CLIENT_STORAGE_STATE_B64 activation to execute under client identity.",
+  "reviewState": "PR #274 green but mergeStateStatus BLOCKED; awaiting required approval/user merge authority and post-merge CI-secret activation",
+  "updatedAt": "2026-07-11T21:57:14.259Z",
+  "updatedBy": "aon",
   "issuePrefixes": [
-    "aonb.2",
-    "refrev.16"
+    "aon.24"
   ],
   "chunks": [
     {
@@ -21,7 +20,7 @@
       "title": "Add scenario suites across the five generated workflow types",
       "status": "complete",
       "issueIds": [
-        "aonb.2.1"
+        "aon.24.1"
       ]
     },
     {
@@ -29,8 +28,7 @@
       "title": "Create explicit client-only Playwright storage state",
       "status": "complete",
       "issueIds": [
-        "aonb.2.2",
-        "refrev.16"
+        "aon.24.2"
       ]
     },
     {
@@ -38,17 +36,40 @@
       "title": "Assert client E2E tokens match the seeded client-only user",
       "status": "complete",
       "issueIds": [
-        "refrev.16"
+        "aon.24.2"
       ]
     },
     {
       "id": "publish",
-      "title": "Push the reviewed branch and open its PR",
+      "title": "Push the reviewed branch and open PR #274",
+      "status": "complete"
+    },
+    {
+      "id": "merge",
+      "title": "Obtain required approval and user merge authorization for PR #274",
       "status": "active"
+    },
+    {
+      "id": "activate-client-ci",
+      "title": "Provision PLAYWRIGHT_CLIENT_STORAGE_STATE_B64 and prove client-RLS specs execute in CI",
+      "status": "planned",
+      "issueIds": [
+        "aon.24.2"
+      ]
     }
   ],
   "questions": [],
-  "prs": [],
+  "prs": [
+    {
+      "number": 274,
+      "chunks": [
+        "scenario-suite",
+        "client-state",
+        "identity-guard",
+        "publish"
+      ]
+    }
+  ],
   "assessment": null,
   "references": [
     {

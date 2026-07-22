@@ -1,0 +1,72 @@
+{
+  "id": "arrusted-canonical-docs-and-backlog-reconciliation",
+  "project": "arrusted",
+  "title": "Canonical docs and backlog reconciliation",
+  "summary": "User corrected scope: PR #368 only migrated loose-thread tracking and does not yet complete the promised canonical planning-doc parity audit against the Agent Foundations pivot and broader repository landscape.",
+  "status": "active",
+  "branch": "codex/docs-backlog-reconciliation",
+  "reviewState": "Audit canonical docs plus stale AF/PR references, update PR #368, then rerun exact-head review.",
+  "chunks": [
+    {
+      "id": "issue-reconciliation",
+      "title": "Resolve verified stale AF issues",
+      "status": "complete",
+      "issueIds": [
+        "ad.1",
+        "ad.5.3",
+        "ad.6",
+        "ad.8.7",
+        "ad.24"
+      ]
+    },
+    {
+      "id": "loose-thread-migration",
+      "title": "Map loose threads into durable AF and contract ownership",
+      "status": "complete"
+    },
+    {
+      "id": "doc-repair",
+      "title": "Remove stale agent-plan references and delete loose-threads ledger",
+      "status": "complete",
+      "commits": [
+        "4c0592da582cf4d2f3cbda93baf9921c585e6f26",
+        "4fa43a84b120ccc0ca6cdaab6819603a23adfe71"
+      ]
+    },
+    {
+      "id": "review-and-pr",
+      "title": "Run docs checks, panel review, push, and open PR",
+      "status": "complete",
+      "commits": [
+        "4fa43a84b120ccc0ca6cdaab6819603a23adfe71"
+      ]
+    }
+  ],
+  "questions": [],
+  "prs": [
+    {
+      "number": 368,
+      "chunks": [
+        "loose-thread-migration",
+        "doc-repair",
+        "review-and-pr"
+      ]
+    }
+  ],
+  "issuePrefixes": [
+    "ad.1",
+    "ad.5.3",
+    "ad.6",
+    "ad.8.7",
+    "ad.24"
+  ],
+  "references": [],
+  "orchestrator": "ad",
+  "assessment": null,
+  "updatedAt": "2026-07-12T07:04:45.991Z",
+  "updatedBy": "ad",
+  "commits": [
+    "4c0592da582cf4d2f3cbda93baf9921c585e6f26",
+    "4fa43a84b120ccc0ca6cdaab6819603a23adfe71"
+  ]
+}

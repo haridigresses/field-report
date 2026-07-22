@@ -1,0 +1,106 @@
+{
+  "id": "aon-pr-corr-correspondence-de-rpc-verification-and-cutover",
+  "project": "aon",
+  "title": "PR-CORR zero-application-RPC cutover",
+  "summary": "PR #282 merged at b4d77fd7 via merge commit ea5986ad after all exact-head CI, E2E, Vercel, CodeRabbit, Cubic, Sol, and Fable gates passed. The PR-CORR zero-application-RPC cutover outcome is delivered.",
+  "status": "complete",
+  "branch": "codex/pr-corr-derpc-implementation",
+  "reviewState": "MERGED — outcome delivered",
+  "chunks": [
+    {
+      "id": "contract",
+      "title": "Inventory correspondence RPC semantics and define the zero-application-RPC contract",
+      "status": "complete",
+      "issueIds": [
+        "aon.50.1.3"
+      ]
+    },
+    {
+      "id": "cutover",
+      "title": "Implement plain-TS correspondence body and attachment-document materialization with re-homed invariants",
+      "status": "complete",
+      "issueIds": [
+        "aon.50.1.3"
+      ],
+      "commits": [
+        "252db07f7d7afe962c1f38c8e7a1ec4d26ea6532"
+      ]
+    },
+    {
+      "id": "verification",
+      "title": "Prove body-only, body-plus-attachment, thread association, containment, replay, and failure behavior",
+      "status": "complete",
+      "issueIds": [
+        "aon.50.1.3"
+      ],
+      "commits": [
+        "828ecd4cf9fe9a58f76985b9b39d726c2ba9aa4a",
+        "c1f5ea1e91f3d02f2d398803d7ac532b2622b43c",
+        "6f4b1dab9c3632a591a7bb2f947ef4473b5aacc8",
+        "1a606f2739c17e9c4e35d98138f97531e4040847",
+        "1f8de381aceecbda9dbff0a15d91c19e1827bec4",
+        "10687bf80de22d3f06a7b079f389266057fc8891",
+        "ea8e2a5e902dff85de6b89779d685d9e3295617c",
+        "df7add6be1ddbaab82370f7d9ee3b53876426f08",
+        "b4d77fd7c814538f1a48fd86ea93ca1a5bca909a",
+        "ea5986ad4b0d76d2b7814742437f6d280dfc037b"
+      ]
+    }
+  ],
+  "questions": [],
+  "prs": [
+    {
+      "number": 271,
+      "chunks": []
+    },
+    {
+      "number": 277,
+      "chunks": [
+        "contract"
+      ]
+    },
+    {
+      "number": 278,
+      "chunks": [
+        "cutover",
+        "verification"
+      ]
+    },
+    {
+      "number": 282,
+      "chunks": [
+        "cutover",
+        "verification"
+      ]
+    }
+  ],
+  "issuePrefixes": [
+    "aon.50.1.3",
+    "audit-exec.8"
+  ],
+  "references": [
+    {
+      "path": "docs/pr-corr-verification-spec.md",
+      "label": "PR-CORR cross-tenant containment contract",
+      "kind": "contract"
+    },
+    {
+      "path": "docs/write-path-simplification-plan.md",
+      "label": "Write-path simplification plan",
+      "kind": "plan"
+    }
+  ],
+  "orchestrator": "audit-exec",
+  "assessment": null,
+  "updatedAt": "2026-07-17T02:53:34.351Z",
+  "updatedBy": "audit-exec",
+  "commits": [
+    "17f399634f4ed293c6287ff8613c1d52768e408d",
+    "96f7978bbc1b0b13e8b6733cee9083e28423c731",
+    "6bc5b81a4505a1f0bc97d0e218d448a65c76723b",
+    "b3412ccad199b5fd7d8526f9ef02d85bc9b2bd3d",
+    "cee22d7c6a47a0d861575a1b597617c9e90220fc",
+    "1ba83282db9973f03253488b21ec5c9fc8cb3b91",
+    "1a606f2739c17e9c4e35d98138f97531e4040847"
+  ]
+}

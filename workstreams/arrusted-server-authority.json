@@ -5,12 +5,12 @@
   "status": "active",
   "branch": "ada/server-authority-gates",
   "fableAgent": "adb",
-  "reviewerAgent": "adb",
+  "reviewerAgent": "ada",
   "codexExecutor": "ada",
   "summary": "PR #341 exact head 7af4954e is merge-ready. The fallback tool-evidence hole is fixed, all current checks pass, all material reviewer findings are addressed or stale against current code, and no unresolved content blocker remains. Awaiting explicit PR-number merge authorization.",
   "reviewState": "merge-ready at 7af4954e; rating 5/5; all checks green; awaiting merge authorization",
-  "updatedAt": "2026-07-10T08:02:25.135Z",
-  "updatedBy": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+  "updatedAt": "2026-07-10T08:08:42.635Z",
+  "updatedBy": "019f4b02-740b-73f3-8902-4dde775b529e",
   "issuePrefixes": [
     "ad.37"
   ],

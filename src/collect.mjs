@@ -4,6 +4,7 @@ import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { classifyPullRequests } from "./prs.mjs";
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -49,7 +50,7 @@ async function collectIssues() {
 
 async function collectPullRequests(project, configuredNumbers) {
   if (!project.githubRepo || project.githubRepo.startsWith("owner/")) return { items: [] };
-  const fields = "number,title,url,state,isDraft,headRefName,headRefOid,updatedAt,mergeStateStatus,statusCheckRollup";
+  const fields = "number,title,url,state,isDraft,headRefName,headRefOid,updatedAt,mergeStateStatus,reviewDecision,statusCheckRollup";
   const result = await command("gh", ["pr", "list", "--repo", project.githubRepo, "--state", "open", "--limit", "100", "--json", fields]);
   if (!result.ok) return { items: [], error: result.error };
   try {
@@ -213,11 +214,11 @@ async function main() {
   const agentsByName = Object.fromEntries(agentStatus.items.map((agent) => [agent.name, agent]));
   const enrichedStreams = await Promise.all(streams.map(async (stream) => {
     const livePrs = prsByProject[stream.project]?.items || [];
-    const configuredPrs = (stream.prs || []).map((configured) => {
+    const configuredPrs = classifyPullRequests((stream.prs || []).map((configured) => {
       const number = typeof configured === "number" ? configured : configured.number;
       return { ...configured, ...(livePrs.find((pr) => pr.number === number) || {}), number };
-    });
-    const branchPr = livePrs.find((pr) => pr.headRefName === stream.branch);
+    }), stream.branch);
+    const branchPr = configuredPrs.find((pr) => pr.current) || null;
     const issuePrefixes = stream.issuePrefixes || [];
     const streamIssues = issues.items.filter((issue) => issuePrefixes.some((prefix) => issue.id === prefix || issue.id?.startsWith(`${prefix}.`)));
     const orchestrator = stream.orchestrator || stream.fableAgent || null;

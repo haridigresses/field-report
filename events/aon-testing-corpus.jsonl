@@ -1,2 +1,4 @@
 {"id":"77543c94-afe1-43c8-9a64-f7b0b9ebc53e","workstreamId":"aon-testing-corpus","at":"2026-07-10T08:01:42.506Z","type":"reconcile","actor":"019f4918-4b84-7650-8d7f-e8e8c0180165","text":"Linked test-corpus issue ladder and evidence contract"}
 {"id":"fcd8ba0f-8dc1-4b1d-96b1-7285d0933f1d","workstreamId":"aon-testing-corpus","at":"2026-07-10T08:02:24.520Z","type":"reconcile","actor":"019f4918-4b84-7650-8d7f-e8e8c0180165","text":"Pinned exact review context"}
+{"id":"cf5d081e-ac79-4dfc-97cd-5860e4fa0208","workstreamId":"aon-testing-corpus","at":"2026-07-11T21:56:54.948Z","type":"checkpoint","actor":"aon","text":"Reconciled against live GitHub state and aon.24.2."}
+{"id":"ae5a8cac-75b5-42c9-876f-c0bb1b592a46","workstreamId":"aon-testing-corpus","at":"2026-07-11T21:57:14.261Z","type":"reconcile","actor":"aon","text":"Corrected stale publication milestone, linked PR, and migrated AF issue IDs."}

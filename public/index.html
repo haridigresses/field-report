@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <a class="skip-link" href="#portfolio-title">Skip to portfolio</a>
+  <a class="skip-link" href="#workstreams">Skip to workstreams</a>
   <main>
     <header class="masthead">
       <div>
@@ -15,24 +15,27 @@
         <h1>Field Report</h1>
         <p id="freshness">Loading current snapshot…</p>
       </div>
-      <div class="masthead-actions"><button id="new-workstream" type="button">New outcome</button><button id="refresh" type="button">Refresh</button></div>
+      <div class="masthead-actions"><button id="new-workstream" type="button">New outcome</button><button id="refresh" type="button">Refresh</button><button id="issues-open" type="button">AF issues</button></div>
     </header>
 
-    <nav id="repo-nav" class="repo-nav" aria-label="Repository filter"></nav>
+    <section id="workstreams" class="workstream-controls" aria-label="Workstreams">
+      <nav id="repo-nav" class="repo-nav" aria-label="Repository filter"></nav>
+      <span id="portfolio-signal" class="portfolio-signal"></span>
+        <div id="portfolio-sort" class="portfolio-sort" role="group" aria-label="Sort outcomes">
+          <span>Sort</span>
+          <button type="button" data-sort="attention">Needs attention</button>
+          <button type="button" data-sort="agent">Agent</button>
+          <button type="button" data-sort="updated">Updated</button>
+        </div>
+    </section>
 
-    <section class="portfolio-section" aria-labelledby="portfolio-title">
-      <header class="section-head">
-        <div><h2 id="portfolio-title">Portfolio</h2><p id="portfolio-signal"></p></div>
-        <span id="total-streams"></span>
-      </header>
+    <section class="portfolio-section" aria-label="Outcome table">
+      <div id="portfolio" class="portfolio"></div>
       <div id="selection-actions" class="selection-actions" aria-live="polite">
         <span id="selection-count">Select outcomes to request fresh reviewer judgment.</span>
         <button id="request-assessment" type="button" disabled>Request assessment</button>
       </div>
-      <div id="portfolio" class="portfolio"></div>
     </section>
-
-    <section id="workstream-brief" class="workstream-brief" aria-live="polite"></section>
 
     <details class="health">
       <summary>Source health</summary>
@@ -54,6 +57,9 @@
       <nav id="issues-repo-tabs" class="issues-repo-tabs" aria-label="Issue repository"></nav>
       <div class="issues-controls"><label>Parent issue status<select id="issues-filter"><option value="active">Active</option><option value="all">All</option><option value="closed">Closed</option></select></label><span id="issues-summary"></span></div>
       <div id="issues-list" class="issues-list"></div>
+    </dialog>
+    <dialog id="workstream-drawer" class="issues-drawer workstream-drawer">
+      <div id="workstream-brief" class="workstream-brief" aria-live="polite"></div>
     </dialog>
     <dialog id="evidence-drawer" class="issues-drawer evidence-drawer">
       <header><div><p class="kicker">Current workstream</p><h2 id="evidence-title">Supporting evidence</h2></div><button class="evidence-close" type="button" aria-label="Close supporting evidence">Close</button></header>

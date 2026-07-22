@@ -1,0 +1,38 @@
+{
+  "id": "arrusted-hc-schema-artifact-drift-enforcement",
+  "project": "arrusted",
+  "title": "HC schema artifact drift enforcement",
+  "summary": "PR #360 exact head 5d90a674 is clean with all current checks green. Review comments at the prior SHA were addressed by a substantive new commit, so exact-head reconciliation remains before readiness.",
+  "status": "active",
+  "branch": "ada/ad-5-9-schema-build-drift",
+  "reviewState": "substantive head change after bot review; exact-head review pending",
+  "chunks": [
+    {
+      "id": "schema-gate",
+      "title": "Enforce generated schema and domain-lib artifact freshness",
+      "status": "active",
+      "issueIds": [
+        "ad.5.9"
+      ]
+    }
+  ],
+  "questions": [],
+  "prs": [
+    {
+      "number": 360,
+      "chunks": [
+        "schema-gate"
+      ]
+    }
+  ],
+  "issuePrefixes": [
+    "ad.5.9"
+  ],
+  "references": [],
+  "fableAgent": "ada",
+  "reviewerAgent": "adb",
+  "codexExecutor": null,
+  "assessment": null,
+  "updatedAt": "2026-07-10T20:50:44.071Z",
+  "updatedBy": "019f4dc6-c8ca-7173-9a82-f9574c7cec7b"
+}

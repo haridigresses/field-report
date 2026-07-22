@@ -1,16 +1,16 @@
 import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { promisify } from "node:util";
-import { evaluateMrr } from "./mrr.mjs";
+import { createFieldReportStore } from "./store.mjs";
 import { fileURLToPath } from "node:url";
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4177);
+const store = createFieldReportStore(root);
 const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8" };
 let refreshPromise;
 let refreshQueued = false;
@@ -59,334 +59,6 @@ async function readJsonBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 
-function sessionValue(value) {
-  if (value == null || String(value).trim() === "") return null;
-  const normalized = String(value).trim();
-  if (normalized.length > 200 || /[\r\n\0]/.test(normalized)) throw new Error("Session identifiers must be a single line under 200 characters");
-  return normalized;
-}
-
-async function writeJsonAtomic(file, value) {
-  const temp = `${file}.${process.pid}-${randomUUID()}.next`;
-  await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`);
-  await rename(temp, file);
-}
-
-async function findWorkstream(workstreamId) {
-  const workstreamDir = path.join(root, "workstreams");
-  const files = (await readdir(workstreamDir)).filter((file) => file.endsWith(".json"));
-  for (const file of files) {
-    const candidate = JSON.parse(await readFile(path.join(workstreamDir, file), "utf8"));
-    if (candidate.id === workstreamId) {
-      return { streamFile: path.join(workstreamDir, file), stream: candidate };
-    }
-  }
-  throw new Error("Unknown workstream");
-}
-
-async function listCanonicalWorkstreams() {
-  const workstreamDir = path.join(root, "workstreams");
-  const files = (await readdir(workstreamDir)).filter((file) => file.endsWith(".json")).sort();
-  return Promise.all(files.map(async (file) => JSON.parse(await readFile(path.join(workstreamDir, file), "utf8"))));
-}
-
-function workstreamId(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized) || normalized.length > 80) throw new Error("Workstream IDs use lowercase letters, numbers, and hyphens");
-  return normalized;
-}
-
-function shortText(value, label, max = 500) {
-  const normalized = String(value || "").trim();
-  if (!normalized || normalized.length > max || /\0/.test(normalized)) throw new Error(`${label} must be between 1 and ${max} characters`);
-  return normalized;
-}
-
-function slug(value) {
-  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
-}
-
-function normalizePrs(prs) {
-  if (!Array.isArray(prs)) throw new Error("prs must be an array");
-  return prs.map((pr) => {
-    const number = Number(typeof pr === "object" ? pr.number : pr);
-    if (!Number.isInteger(number) || number < 1) throw new Error("PR numbers must be positive integers");
-    return typeof pr === "object" ? { number, chunks: Array.isArray(pr.chunks) ? pr.chunks.map(String) : [] } : { number, chunks: [] };
-  });
-}
-
-function normalizeChunks(chunks) {
-  if (!Array.isArray(chunks)) throw new Error("chunks must be an array");
-  return chunks.map((chunk, index) => {
-    const status = String(chunk.status || "planned");
-    if (!["planned", "active", "blocked", "complete"].includes(status)) throw new Error("Chunk status must be planned, active, blocked, or complete");
-    return {
-      id: slug(chunk.id || chunk.title || `milestone-${index + 1}`),
-      title: shortText(chunk.title, "Chunk title", 240),
-      status,
-      ...(Array.isArray(chunk.issueIds) ? { issueIds: chunk.issueIds.map(String) } : {}),
-      ...(Array.isArray(chunk.commits) ? { commits: chunk.commits.map(String) } : {}),
-      ...(Array.isArray(chunk.references) ? { references: normalizeReferences(chunk.references) } : {})
-    };
-  });
-}
-
-function normalizeReferences(references) {
-  if (!Array.isArray(references)) throw new Error("references must be an array");
-  return references.slice(0, 12).map((reference) => ({
-    path: shortText(reference.path, "Reference path", 500),
-    label: shortText(reference.label || reference.path, "Reference label", 200),
-    kind: ["plan", "contract", "decision", "review"].includes(reference.kind) ? reference.kind : "plan",
-    ...(reference.section ? { section: sessionValue(reference.section) } : {}),
-    ...(reference.quote ? { quote: shortText(reference.quote, "Reference quote", 360) } : {})
-  }));
-}
-
-function applyCanonicalPatch(stream, patch) {
-  const next = { ...stream };
-  if (patch.title != null) next.title = shortText(patch.title, "Title", 160);
-  if (patch.summary != null) next.summary = shortText(patch.summary, "Summary", 1200);
-  if (patch.status != null) {
-    if (!["planned", "active", "blocked", "complete"].includes(patch.status)) throw new Error("Status must be planned, active, blocked, or complete");
-    next.status = patch.status;
-  }
-  if (patch.branch !== undefined) next.branch = patch.branch ? sessionValue(patch.branch) : null;
-  if (patch.reviewState != null) next.reviewState = shortText(patch.reviewState, "Current gate", 500);
-  if (patch.chunks != null) next.chunks = normalizeChunks(patch.chunks);
-  if (patch.prs != null) next.prs = normalizePrs(patch.prs);
-  if (patch.references != null) next.references = normalizeReferences(patch.references);
-  if (patch.issuePrefixes != null) {
-    if (!Array.isArray(patch.issuePrefixes)) throw new Error("issuePrefixes must be an array");
-    next.issuePrefixes = [...new Set(patch.issuePrefixes.map((value) => sessionValue(value)).filter(Boolean))];
-  }
-  if (patch.commits != null) {
-    if (!Array.isArray(patch.commits) || patch.commits.some((sha) => !/^[0-9a-f]{7,40}$/i.test(sha))) throw new Error("commits must contain git SHAs");
-    next.commits = [...new Set(patch.commits)];
-  }
-  if (patch.questions != null) {
-    if (!Array.isArray(patch.questions)) throw new Error("questions must be an array");
-    next.questions = patch.questions.map((question, index) => ({
-      id: String(question.id || `Q${index + 1}`),
-      text: shortText(question.text, "Question", 600),
-      status: question.status === "answered" ? "answered" : "open",
-      ...(question.askedAt ? { askedAt: question.askedAt } : {}),
-      ...(question.answeredAt ? { answeredAt: question.answeredAt } : {}),
-      ...(question.answer ? { answer: String(question.answer) } : {})
-    }));
-  }
-  if (patch.orchestrator !== undefined) next.orchestrator = sessionValue(patch.orchestrator);
-  next.updatedAt = new Date().toISOString();
-  next.updatedBy = patch.updatedBy ? sessionValue(patch.updatedBy) : "fr";
-  return next;
-}
-
-async function createWorkstream(values) {
-  const config = JSON.parse(await readFile(path.join(root, "config/projects.json"), "utf8"));
-  const project = config.projects.find((candidate) => candidate.id === values.project);
-  if (!project) throw new Error("Unknown project");
-  const id = workstreamId(values.id || `${project.id}-${slug(values.title)}`);
-  try { await findWorkstream(id); throw new Error("Workstream already exists"); } catch (error) { if (error.message !== "Unknown workstream") throw error; }
-  const now = new Date().toISOString();
-  const stream = {
-    id,
-    project: project.id,
-    title: shortText(values.title, "Title", 160),
-    summary: shortText(values.summary || values.outcome, "Outcome", 1200),
-    status: "planned",
-    branch: values.branch ? sessionValue(values.branch) : null,
-    reviewState: values.reviewState ? shortText(values.reviewState, "Current gate", 500) : "Workstream created; initial plan pending",
-    chunks: Array.isArray(values.chunks) ? normalizeChunks(values.chunks) : [],
-    questions: [],
-    prs: [],
-    issuePrefixes: [],
-    references: Array.isArray(values.references) ? normalizeReferences(values.references) : [],
-    orchestrator: sessionValue(values.orchestrator || project.coordinator),
-    assessment: null,
-    updatedAt: now,
-    updatedBy: values.updatedBy ? sessionValue(values.updatedBy) : "fr"
-  };
-  const file = path.join(root, "workstreams", `${id}.json`);
-  await writeJsonAtomic(file, stream);
-  await appendWorkstreamEvent(id, { type: "created", text: `Created workstream: ${stream.summary}`, actor: stream.updatedBy });
-  return stream;
-}
-
-async function appendWorkstreamEvent(id, event) {
-  const eventsDir = path.join(root, "events");
-  await mkdir(eventsDir, { recursive: true });
-  const record = {
-    id: randomUUID(),
-    workstreamId: id,
-    at: new Date().toISOString(),
-    type: String(event.type || "update").toLowerCase(),
-    actor: sessionValue(event.actor) || "fr",
-    text: shortText(event.text || event.summary || event.type || "Update", "Event text", 1200),
-    ...(event.metadata && typeof event.metadata === "object" ? { metadata: event.metadata } : {})
-  };
-  await appendFile(path.join(eventsDir, `${id}.jsonl`), `${JSON.stringify(record)}\n`);
-  return record;
-}
-
-async function updateWorkstream(id, patch, eventType = "updated") {
-  const { streamFile, stream } = await findWorkstream(id);
-  const next = applyCanonicalPatch(stream, patch);
-  if (stream.status !== "complete" && next.status === "complete" && (next.branch || (next.prs || []).length || (next.commits || []).length)) {
-    const current = await currentStream(id);
-    if (!current) throw new Error("Cannot verify the MRR completion gate; refresh Field Report sources first");
-    const mrr = evaluateMrr({ ...current.stream, branch: next.branch, prs: current.stream.prs || next.prs, commits: next.commits });
-    if (!mrr.ready) throw new Error(`MRR completion gate is not satisfied: ${mrr.reasons.join("; ")}. Run fr mrr ${id}.`);
-  }
-  await writeJsonAtomic(streamFile, next);
-  await appendWorkstreamEvent(id, { type: eventType, actor: patch.updatedBy, text: patch.eventText || patch.summary || patch.reviewState || `${eventType} checkpoint` });
-  return next;
-}
-
-async function recordQuestion(id, values) {
-  const { streamFile, stream } = await findWorkstream(id);
-  const existing = stream.questions || [];
-  const numeric = existing.map((question) => Number(String(question.id).replace(/^Q/i, ""))).filter(Number.isFinite);
-  const questionId = values.questionId || `Q${Math.max(0, ...numeric) + 1}`;
-  const question = { id: questionId, text: shortText(values.text, "Question", 600), status: "open", askedAt: new Date().toISOString() };
-  const next = applyCanonicalPatch(stream, { questions: [...existing, question], updatedBy: values.actor });
-  await writeJsonAtomic(streamFile, next);
-  await appendWorkstreamEvent(id, { type: "question", actor: values.actor, text: question.text, metadata: { questionId } });
-  return question;
-}
-
-async function recordDecision(id, values) {
-  const { streamFile, stream } = await findWorkstream(id);
-  const questions = [...(stream.questions || [])];
-  const index = questions.findIndex((question) => question.id === values.questionId);
-  if (index < 0) throw new Error("Unknown question");
-  const answer = shortText(values.text, "Decision", 800);
-  questions[index] = { ...questions[index], status: "answered", answer, answeredAt: new Date().toISOString() };
-  const next = applyCanonicalPatch(stream, { questions, updatedBy: values.actor });
-  await writeJsonAtomic(streamFile, next);
-  await appendWorkstreamEvent(id, { type: "decision", actor: values.actor, text: answer, metadata: { questionId: values.questionId } });
-  return questions[index];
-}
-
-async function updateSessions(workstreamId, values) {
-  const { streamFile, stream } = await findWorkstream(workstreamId);
-  const next = applyCanonicalPatch(stream, { orchestrator: values.orchestrator, updatedBy: values.actor || "dashboard" });
-  await writeJsonAtomic(streamFile, next);
-  await appendWorkstreamEvent(workstreamId, { type: "checkpoint", actor: next.updatedBy, text: `Orchestrator set to ${next.orchestrator || "unassigned"}` });
-}
-
-async function currentStream(workstreamId) {
-  const data = JSON.parse(await readFile(path.join(root, "data/current.json"), "utf8"));
-  const stream = data.workstreams.find((candidate) => candidate.id === workstreamId);
-  return stream ? { stream, project: data.projects.find((project) => project.id === stream.project) } : null;
-}
-
-async function mrrStatus(workstreamId) {
-  const current = await currentStream(workstreamId);
-  if (!current) throw new Error(`No collected state for ${workstreamId}; refresh sources first`);
-  return evaluateMrr(current.stream);
-}
-
-function assessmentPrompt(stream, currentHead) {
-  const prs = (stream.prs || []).map((pr) => `#${pr.number} (${pr.state || "unknown"}; head ${pr.headRefOid || "unknown"})`).join(", ") || "none yet";
-  return `You are the authoritative orchestrator/reviewer for workstream ${stream.id}. Give an honest, evidence-backed assessment using what you have observed in this workstream, the repository's merge-ready-review rules, the current branch, and linked AF issues. Inspect current evidence if needed; do not merely repeat the dashboard summary.
-
-This request authorizes a read-only review and publication of the assessment. Do not wait for separate user confirmation unless completing the review would require a state-changing action outside that scope.
-
-Outcome: ${stream.title}
-Dashboard orientation (may be stale): ${stream.liveStatus?.text || stream.summary}
-Branch: ${stream.branch || "none"}
-Current head: ${currentHead}
-Linked PRs: ${prs}
-
-First reconcile the dashboard orientation against the current branch head, PR state, AF issue history, prior plan, and prior reviewer decisions. When they disagree, use the current evidence and call out the drift explicitly.
-
-Explicitly test:
-- Is each material mechanism necessary for the stated outcome?
-- Is there a materially simpler design that preserves required behavior?
-- Has scope drifted or absorbed unrelated work?
-- Are ownership, authorization, persistence, compatibility, and failure contracts coherent?
-- Does the evidence prove the behavior, or merely exercise the implementation?
-- Is there any structural rot where a bounded rebuild would be safer or cheaper than continued patching?
-- Is execution contradicting an earlier plan, decision, or constraint?
-
-  Publish the judgment directly to Field Report; AF is only the delivery channel for this request. Run this command with the exact 40-character reviewed SHA and concise values:
-
-  fr pass record ${stream.id} --head ${currentHead} --verdict <GO|CONDITIONAL_GO|NO_GO> --merge <0-100> --structural <0-100> --outcome-confidence <0-100> --necessity <clear|challenged|unjustified> --simpler-path <none_found|candidate|recommended> --scope-drift <none|low|material> --contract-integrity <sound|at_risk|broken> --evidence-quality <strong|partial|weak> --summary "<2-4 sentence rationale including the primary risk and next gate>"
-
-  Do not send a RATING, ASSESSMENT, STATUS, or other dashboard protocol message through AF. If the command cannot be run, reply to the requesting orchestrator with the completed values and the reason publication failed.`;
-}
-
-async function recordReviewPass(id, values) {
-  const head = String(values.head || "").trim();
-  if (!/^[0-9a-f]{40}$/i.test(head)) throw new Error("Review pass requires the exact 40-character git head SHA");
-  const verdict = String(values.verdict || "").toUpperCase();
-  if (!["GO", "CONDITIONAL_GO", "NO_GO"].includes(verdict)) throw new Error("Review pass requires GO, CONDITIONAL_GO, or NO_GO");
-  const mergeReadiness = Number(values.mergeReadiness);
-  const structuralRisk = Number(values.structuralRisk);
-  if (![mergeReadiness, structuralRisk].every((value) => Number.isFinite(value) && value >= 0 && value <= 100)) throw new Error("Review pass requires merge readiness and structural risk from 0 to 100");
-  return appendWorkstreamEvent(id, {
-    type: "review_pass",
-    actor: values.reviewer || values.actor || "reviewer",
-    text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`,
-    metadata: {
-      passId: values.passId || randomUUID(), head, verdict, reviewComplete: true,
-      reviewer: values.reviewer || values.actor || "reviewer",
-      model: values.model || "unknown",
-      reasoning: values.reasoning || null,
-      independent: values.independent !== false,
-      findings: Array.isArray(values.findings) ? values.findings : [],
-      unresolved: Array.isArray(values.unresolved) ? values.unresolved : [],
-      mergeReadiness,
-      structuralRisk,
-      outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null,
-      necessity: values.necessity || null,
-      simplerPath: values.simplerPath || null,
-      scopeDrift: values.scopeDrift || null,
-      contractIntegrity: values.contractIntegrity || null,
-      evidenceQuality: values.evidenceQuality || null
-    }
-  });
-}
-
-async function workflowContract(role = "shared") {
-  const markdown = await readFile(path.join(root, "docs", "fr-workflow.md"), "utf8");
-  if (role === "all") return markdown;
-  const sections = markdown.split(/^## /m).slice(1).map((part) => {
-    const newline = part.indexOf("\n");
-    return { title: part.slice(0, newline).trim(), body: part.slice(newline + 1).trim() };
-  });
-  const roleTitles = { "repo-coordinator": "Repository coordinator", "workstream-orchestrator": "Workstream orchestrator", executor: "Executor", reviewer: "Reviewer" };
-  const wanted = role === "shared" ? ["Shared contract"] : ["Shared contract", roleTitles[role]].filter(Boolean);
-  return sections.filter((section) => wanted.includes(section.title)).map((section) => `## ${section.title}\n\n${section.body}`).join("\n\n");
-}
-
-async function requestAssessments(ids) {
-  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 20) throw new Error("Select between 1 and 20 workstreams");
-  const uniqueIds = [...new Set(ids.map((id) => String(id)))];
-  const results = [];
-  for (const id of uniqueIds) {
-    const { stream } = await findWorkstream(id);
-    const current = await currentStream(id);
-    if (!current) throw new Error(`No collected state for ${id}`);
-    const { stream: live, project } = current;
-    const recipient = stream.orchestrator || stream.fableAgent || project?.coordinator;
-    if (!recipient) throw new Error(`No workstream orchestrator configured for ${id}`);
-    const subject = `[FR REVIEW ${id}] Evidence-backed judgment requested`;
-    let currentHead = live.assessment?.currentHead || live.prs?.find((pr) => pr.headRefName === live.branch)?.headRefOid || null;
-    if (!currentHead && project?.repoPath && live.branch) {
-      try {
-        const resolved = await exec("git", ["-C", project.repoPath, "rev-parse", live.branch], { timeout: 10_000, maxBuffer: 1024 * 1024 });
-        currentHead = resolved.stdout.trim();
-      } catch { currentHead = "replace-with-current-sha"; }
-    }
-    if (!/^[0-9a-f]{40}$/i.test(currentHead || "")) throw new Error(`Could not resolve an exact current head for ${id}`);
-    const body = assessmentPrompt(live, currentHead);
-    await exec("af", ["inbox", "send", recipient, subject, "--body", body], { cwd: root, timeout: 30_000, maxBuffer: 1024 * 1024 });
-    await appendWorkstreamEvent(id, { type: "assessment_requested", actor: "fr", text: `Fresh review requested from ${recipient}`, metadata: { recipient, head: currentHead } });
-    results.push({ id, recipient });
-  }
-  return results;
-}
-
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url, "http://127.0.0.1");
   const pathname = requestUrl.pathname;
@@ -402,7 +74,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const { workstreamIds } = await readJsonBody(req);
       const operation = mutationPromise.then(async () => {
-        const requested = await requestAssessments(workstreamIds);
+        const requested = await store.requestAssessments(workstreamIds);
         await runCollect();
         return requested;
       });
@@ -418,7 +90,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const id = decodeURIComponent(passRoute[1]);
         const values = await readJsonBody(req);
-        const operation = mutationPromise.then(async () => { await findWorkstream(id); const event = await recordReviewPass(id, values); await runCollect(); return event; });
+        const operation = mutationPromise.then(async () => { await store.findWorkstream(id); const event = await store.recordReviewPass(id, values); await runCollect(); return event; });
         mutationPromise = operation.catch(() => {});
         return send(res, 200, JSON.stringify({ ok: true, event: await operation }), "application/json; charset=utf-8");
       } catch (error) { return send(res, 400, JSON.stringify({ ok: false, error: error.message }), "application/json; charset=utf-8"); }
@@ -426,7 +98,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && pathname === "/api/workstreams") {
     try {
       const values = await readJsonBody(req);
-      const operation = mutationPromise.then(() => createWorkstream(values));
+      const operation = mutationPromise.then(() => store.createWorkstream(values));
       mutationPromise = operation.catch(() => {});
       const stream = await operation;
       runCollect().catch(() => {});
@@ -440,7 +112,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const id = decodeURIComponent(workstreamRoute[1]);
       const patch = await readJsonBody(req);
-      const operation = mutationPromise.then(() => updateWorkstream(id, patch, patch.eventType || "updated"));
+      const operation = mutationPromise.then(() => store.updateWorkstream(id, patch, patch.eventType || "updated"));
       mutationPromise = operation.catch(() => {});
       const stream = await operation;
       runCollect().catch(() => {});
@@ -456,8 +128,8 @@ const server = http.createServer(async (req, res) => {
       const kind = eventRoute[2];
       const values = await readJsonBody(req);
       const operation = mutationPromise.then(async () => {
-        await findWorkstream(id);
-        const result = kind === "questions" ? await recordQuestion(id, values) : kind === "decisions" ? await recordDecision(id, values) : await appendWorkstreamEvent(id, values);
+        await store.findWorkstream(id);
+        const result = kind === "questions" ? await store.recordQuestion(id, values) : kind === "decisions" ? await store.recordDecision(id, values) : await store.appendWorkstreamEvent(id, values);
         return result;
       });
       mutationPromise = operation.catch(() => {});
@@ -474,7 +146,7 @@ const server = http.createServer(async (req, res) => {
       const workstreamId = decodeURIComponent(sessionRoute[1]);
       const values = await readJsonBody(req);
       const operation = mutationPromise.then(async () => {
-        await updateSessions(workstreamId, values);
+        await store.updateSessions(workstreamId, values);
         await runCollect();
       });
       mutationPromise = operation.catch(() => {});
@@ -487,16 +159,16 @@ const server = http.createServer(async (req, res) => {
   if (req.method !== "GET") return send(res, 405, "Method not allowed");
   if (pathname === "/api/workflow") {
     const role = requestUrl.searchParams.get("role") || "shared";
-    return send(res, 200, JSON.stringify({ role, markdown: await workflowContract(role) }), "application/json; charset=utf-8");
+    return send(res, 200, JSON.stringify({ role, markdown: await store.workflowContract(role) }), "application/json; charset=utf-8");
   }
-  if (pathname === "/api/workstreams") return send(res, 200, JSON.stringify({ workstreams: await listCanonicalWorkstreams() }), "application/json; charset=utf-8");
+  if (pathname === "/api/workstreams") return send(res, 200, JSON.stringify({ workstreams: await store.listCanonicalWorkstreams() }), "application/json; charset=utf-8");
   const mrrRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/mrr$/);
   if (mrrRoute) {
-    try { return send(res, 200, JSON.stringify(await mrrStatus(decodeURIComponent(mrrRoute[1]))), "application/json; charset=utf-8"); }
+    try { return send(res, 200, JSON.stringify(await store.mrrStatus(decodeURIComponent(mrrRoute[1]))), "application/json; charset=utf-8"); }
     catch (error) { return send(res, 400, JSON.stringify({ error: error.message }), "application/json; charset=utf-8"); }
   }
   if (workstreamRoute) {
-    try { return send(res, 200, JSON.stringify((await findWorkstream(decodeURIComponent(workstreamRoute[1]))).stream), "application/json; charset=utf-8"); }
+    try { return send(res, 200, JSON.stringify((await store.findWorkstream(decodeURIComponent(workstreamRoute[1]))).stream), "application/json; charset=utf-8"); }
     catch { return send(res, 404, JSON.stringify({ error: "Unknown workstream" }), "application/json; charset=utf-8"); }
   }
   if (pathname === "/" || pathname === "/index.html") return serveFile(res, "public/index.html");

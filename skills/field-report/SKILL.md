@@ -6,6 +6,7 @@ description: Maintain Field Report workstreams with the fr CLI. Use when the use
 # Field Report
 
 Use `fr` instead of editing Field Report JSON or composing AF protocol messages manually.
+The CLI writes through the local shared core and does not require the dashboard server. If the dashboard is offline, continue recording canonical state normally; external AF, GitHub, and repository facts appear after the next source refresh.
 
 ## Start
 
@@ -31,8 +32,8 @@ Use `fr watch start` when the user wants autonomous, rate-limited Field Report n
 - Execution evidence: `fr link issue <issue-id>` and `fr link commit <sha> --chunk <milestone-id>`.
 - Governing git context: `fr reference --path <repo-relative-path> --kind plan|contract|decision|review --quote "<short exact excerpt>"`.
 - Request fresh reviewer judgment: `fr assess` or `fr delegate review <id>`.
-- Publish completed judgment: `fr pass record <id> --head <full-40-char-sha> --verdict <GO|CONDITIONAL_GO|NO_GO> --model <model> [--reasoning high] --merge <0-100> --structural <0-100> ...`.
-- Verify the PR-level completion gate: `fr mrr [id]`. Code work is not complete until current-head `gpt-5.6-sol` and Fable/`claude-aws` passes are both recorded and reconciled.
+- Publish completed judgment: `fr pass record <id> --head <full-40-char-sha> --verdict <GO|CONDITIONAL_GO|NO_GO> --role deep-code-review|structural-challenge --model <model> [--reasoning high] --merge <0-100> --structural <0-100> ...`.
+- Verify the PR-level completion gate: `fr mrr [id]`. The default `full` policy requires current-head deep-code and structural-challenge passes. The user or repository coordinator may set a reasoned exception with `fr policy`; a workstream orchestrator may not downgrade its own gate.
 - End of assignment: reconcile material changes, then `fr disarm`.
 
 Use `fr show --json` before a broad reconciliation. Keep summaries to the outcome, current phase or gate, and next milestone or blocker. Keep milestones commit-sized or independently verifiable, not micro-task-sized.

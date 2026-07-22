@@ -8,3 +8,4 @@ snapshots/*.json
 # Atomic-write scratch files.
 data/*.next
 snapshots/*.next
+.field-report-write.lock/

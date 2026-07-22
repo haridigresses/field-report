@@ -1,0 +1,60 @@
+{
+  "id": "arrusted-agent-evals-and-lifecycle-design",
+  "project": "arrusted",
+  "title": "Agent evals and lifecycle design",
+  "summary": "PR #355 exact head 8f6e9cde is green and carries the design/spec deliverables. The deterministic CI harness implementation is separate follow-on work; lifecycle reopening and terminal-boundary questions remain design decisions, not implicit implementation.",
+  "status": "active",
+  "branch": "adb/evals-research-mockups-docs",
+  "reviewState": "exact-head review/reconciliation required before readiness",
+  "chunks": [
+    {
+      "id": "design-spec",
+      "title": "Land eval, lifecycle, research, and review-doctrine authority",
+      "status": "active",
+      "issueIds": [
+        "ad.40.1",
+        "ad.40.2",
+        "ad.40.4",
+        "ad.40.5",
+        "ad.40.6"
+      ]
+    },
+    {
+      "id": "ci-harness",
+      "title": "Implement deterministic golden-flow CI harness",
+      "status": "planned"
+    }
+  ],
+  "questions": [
+    {
+      "id": "Q1",
+      "text": "What reopening mechanism should the lifecycle contract adopt: explicit clear operation, lifecycle segments, or off-identity replacement?",
+      "status": "open",
+      "askedAt": "2026-07-10T20:50:49.521Z"
+    },
+    {
+      "id": "Q2",
+      "text": "Does a record become terminal on its end_date or on the following day?",
+      "status": "open",
+      "askedAt": "2026-07-10T20:50:49.804Z"
+    }
+  ],
+  "prs": [
+    {
+      "number": 355,
+      "chunks": [
+        "design-spec"
+      ]
+    }
+  ],
+  "issuePrefixes": [
+    "ad.40"
+  ],
+  "references": [],
+  "fableAgent": "adb",
+  "reviewerAgent": "ada",
+  "codexExecutor": null,
+  "assessment": null,
+  "updatedAt": "2026-07-10T20:50:49.804Z",
+  "updatedBy": "019f4dc6-c8ca-7173-9a82-f9574c7cec7b"
+}

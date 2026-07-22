@@ -2,15 +2,15 @@
   "id": "arrusted-record-details",
   "project": "arrusted",
   "title": "Record-details tool hardening",
-  "status": "blocked",
+  "status": "active",
   "branch": "ada/record-details-hardening",
   "fableAgent": "adb",
-  "reviewerAgent": "adb",
+  "reviewerAgent": "ada",
   "codexExecutor": "ada",
-  "summary": "PR #354 exact head 76866474 is conditional-merge-ready but not merge-ready. Two substantive blockers remain: truncated history emits a false first structured delta, and the custom-field output schema hand-mirrors the generated Rust wire union. Exact clamp docs are incomplete, and Quality Workspace is red on formatting.",
-  "reviewState": "conditional-merge-ready at 76866474; rating 4/5; blocked on history semantics, generated wire-schema authority, docs precision, and workspace formatting",
-  "updatedAt": "2026-07-10T08:02:24.820Z",
-  "updatedBy": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+  "summary": "PR #354 is code-review and CI clean at exact head 1ba55ad4; all identified blockers are resolved and no review threads remain open.",
+  "reviewState": "Await the requested ADB/Fable exact-SHA response or user direction; merge is not authorized.",
+  "updatedAt": "2026-07-10T22:04:50.953Z",
+  "updatedBy": "019f4dd1-f188-7360-a660-8cf9493163a7",
   "issuePrefixes": [
     "ad.36"
   ],
@@ -24,7 +24,8 @@
         "ad.36.3"
       ],
       "commits": [
-        "5bc11d09"
+        "5bc11d09",
+        "def610914995142b8ff1c0abd02a6e5d78f20768"
       ]
     },
     {
@@ -60,12 +61,20 @@
       "status": "blocked",
       "issueIds": [
         "ad.36.4"
+      ],
+      "commits": [
+        "8eb1d83aedabca6f7f50d262b8e8b0a5cac4fbc3",
+        "5057a4601eeaecd50598b1b41e0e6ddd341b77f9"
       ]
     },
     {
       "id": "quality-regate",
       "title": "Format the exact head and rerun workspace quality and exact-head review",
-      "status": "planned"
+      "status": "planned",
+      "commits": [
+        "95c52a52e20b7cc315d74f67e2201bb7bf01ed22",
+        "1ba55ad4819fc442bf49aa9de40cfae4d723b0b1"
+      ]
     }
   ],
   "questions": [

@@ -4,6 +4,8 @@ A local portfolio field report for Codex executors, Fable/Claude agents, Agent F
 
 Agents and users interact through the `fr` CLI. Field Report owns curated outcome state and the exact-SHA review ledger; AF transports requests and owns issues, sessions, lineage, and messaging.
 
+The CLI is local-first and does not require the dashboard server. Canonical workstream updates, event appends, questions, decisions, review passes, policies, and assessment requests go through the same filesystem-backed core used by the HTTP server. A short cross-process lock prevents agents from overwriting one another. Run the server only to view or operate the browser dashboard; use **Refresh sources** when you want it to collect the latest canonical, AF, GitHub, and repository state.
+
 ## Install
 
 ```bash
@@ -19,6 +21,7 @@ fr create --repo aon --title "Document-zone cutover" --outcome "Move document wr
 fr coordinate aon
 fr catchup
 fr mrr aon-document-zone-cutover
+fr policy aon-document-zone-cutover --mode full
 fr onboard aon-document-zone-cutover --role workstream-orchestrator
 fr workflow
 fr ask "Does attachment history belong in this slice?"
@@ -26,7 +29,7 @@ fr checkpoint --summary "Implementation complete; exact-SHA review is next" --st
 fr reconcile --data '{"summary":"...","chunks":[...]}'
 fr assess
 fr delegate review aon-document-zone-cutover
-fr pass record aon-document-zone-cutover --head 4ad570c2e81ac141fa18cc0893465264b533f637 --verdict CONDITIONAL_GO --reviewer codex-sol-high --model gpt-5.6-sol --reasoning high --merge 82 --structural 8 --summary "Contracts hold; one evidence gap remains."
+fr pass record aon-document-zone-cutover --head 4ad570c2e81ac141fa18cc0893465264b533f637 --verdict CONDITIONAL_GO --role deep-code-review --reviewer codex-sol-high --model gpt-5.6-sol --reasoning high --merge 82 --structural 8 --summary "Contracts hold; one evidence gap remains."
 fr link issue ad.41
 fr link commit 4ad570c2 --chunk kernel-timeout
 fr reference --path docs/import-principles.md --kind contract --quote "Ambiguity and contradiction surface as reviewable, actionable issues at compile time."
@@ -34,7 +37,9 @@ fr watch start
 fr watch stop
 ```
 
-Field Report writes canonical updates immediately and refreshes external GitHub/AF facts in a debounced background pass.
+Field Report writes canonical updates immediately. Dashboard-originated writes trigger a debounced external refresh; CLI writes remain local and are incorporated on the next manual source refresh.
+
+CLI updates do not automatically launch the dashboard or collect external sources. This keeps agent writes available when the UI is offline. The next dashboard refresh incorporates them.
 
 AF issues remain the execution ledger; Field Report links issue trees to durable outcomes and milestones. Commit SHAs are delivery evidence, not narrative status. Git plans and contracts remain authoritative in their repositories: Field Report stores only pointed references (path, revision, optional section, and a short exact excerpt) when they materially constrain a workstream. Avoid attaching general documentation or duplicating entire plans.
 
@@ -55,7 +60,9 @@ Repository coordinators own routine orientation. `fr coordinate` runs an initial
 
 Review passes record reviewer, model, verdict, exact head SHA, readiness/risk judgments, findings, and unresolved considerations. When the branch advances, prior passes remain in history but are counted as superseded rather than current-head evidence.
 
-For code outcomes, completion is guarded by the exact-head MRR panel. One independent `gpt-5.6-sol` high-reasoning pass and one independent Fable pass through `claude-aws` must both be recorded and reconciled; `fr mrr <id>` reports the missing lane or READY. Field Report rejects the first transition to `complete` while this gate is unsatisfied. Non-code outcomes without a branch, PR, or commits are exempt.
+For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles; today those are normally filled by `gpt-5.6-sol` at high reasoning and Fable through `claude-aws`, but the durable contract is the role, not the vendor. Existing passes from those models are inferred for backward compatibility; new passes should record `--role` explicitly. `fr mrr <id>` reports the policy, missing role, or READY.
+
+The user or repository coordinator may choose `single-independent`, `delta`, or `none` with `fr policy`, but every non-full policy requires an explicit reason. Delta passes must record `--scope delta --base-head <full-sha>`. Workstream orchestrators cannot silently weaken their own completion gate. Field Report rejects the first transition to `complete` while the selected policy is unsatisfied. Non-code outcomes without a branch, PR, or commits are exempt.
 
 ## Start
 

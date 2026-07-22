@@ -5,8 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { createFieldReportStore } from "../src/store.mjs";
 
 const exec = promisify(execFile);
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const store = createFieldReportStore(process.env.FIELD_REPORT_ROOT || root);
 const baseUrl = process.env.FIELD_REPORT_URL || "http://127.0.0.1:4177";
 const stateDir = process.env.FIELD_REPORT_STATE_DIR || path.join(os.homedir(), ".local", "state", "field-report");
 const stateFile = path.join(stateDir, "state.json");
@@ -19,6 +22,7 @@ Usage:
     fr coordinate <repo-id>
     fr catchup [repo-id] [--peek] [--since <iso-time>]
     fr mrr [workstream-id]
+    fr policy [workstream-id] --mode full|single-independent|delta|none [--reason <text>]
     fr workflow [repo-coordinator|workstream-orchestrator|executor|reviewer|all]
   fr auto-onboard
   fr status
@@ -30,7 +34,7 @@ Usage:
   fr checkpoint [workstream-id] [--summary <text>] [--status <state>] [--gate <text>] [--data <json>]
   fr reconcile [workstream-id] [--data <json>]
     fr assess [workstream-id]
-    fr pass record [workstream-id] --head <sha> --verdict <GO|CONDITIONAL_GO|NO_GO> [--reviewer <name>] [--model <model>] [--summary <text>]
+    fr pass record [workstream-id] --head <sha> --verdict <GO|CONDITIONAL_GO|NO_GO> [--role deep-code-review|structural-challenge] [--scope full|delta] [--base-head <sha>] [--reviewer <name>] [--model <model>] [--summary <text>]
     fr delegate review [workstream-id]
   fr link issue|commit [workstream-id] <value> [--chunk <milestone-id>]
   fr reference [workstream-id] --path <repo-path> [--label <label>] [--kind plan|contract|decision|review] [--section <anchor>] [--quote <short context>]
@@ -57,6 +61,7 @@ function parse(argv) {
 }
 
 async function api(method, pathname, body) {
+  if (!process.env.FIELD_REPORT_URL) return localApi(method, pathname, body);
   let response;
   try {
     response = await fetch(`${baseUrl}${pathname}`, { method, headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -67,6 +72,32 @@ async function api(method, pathname, body) {
   const result = text ? JSON.parse(text) : {};
   if (!response.ok) throw new Error(result.error || `Field Report returned ${response.status}`);
   return result;
+}
+
+async function localApi(method, pathname, body) {
+  if (method === "GET" && pathname === "/data/current.json") {
+    try { return JSON.parse(await readFile(path.join(process.env.FIELD_REPORT_ROOT || root, "data", "current.json"), "utf8")); }
+    catch { throw new Error("No collected Field Report projection exists. Run npm run refresh from the Field Report repo."); }
+  }
+  if (method === "GET" && pathname.startsWith("/api/workflow")) {
+    const role = new URL(pathname, "http://local").searchParams.get("role") || "shared";
+    return { role, markdown: await store.workflowContract(role) };
+  }
+  if (method === "GET" && pathname === "/api/workstreams") return { workstreams: await store.listCanonicalWorkstreams() };
+  if (method === "POST" && pathname === "/api/workstreams") return { workstream: await store.createWorkstream(body) };
+  if (method === "POST" && pathname === "/api/assessments/request") return { requested: await store.requestAssessments(body.workstreamIds) };
+  const match = pathname.match(/^\/api\/workstreams\/([^/]+)(?:\/(events|questions|decisions|passes|mrr))?$/);
+  if (!match) throw new Error(`Unsupported local Field Report operation: ${method} ${pathname}`);
+  const id = decodeURIComponent(match[1]);
+  const action = match[2];
+  if (method === "GET" && action === "mrr") return store.mrrStatus(id);
+  if (method === "GET" && !action) return (await store.findWorkstream(id)).stream;
+  if (method === "PATCH" && !action) return { workstream: await store.updateWorkstream(id, body, body.eventType || "updated") };
+  if (method === "POST" && action === "events") return { result: await store.appendWorkstreamEvent(id, body) };
+  if (method === "POST" && action === "questions") return { result: await store.recordQuestion(id, body) };
+  if (method === "POST" && action === "decisions") return { result: await store.recordDecision(id, body) };
+  if (method === "POST" && action === "passes") return { event: await store.recordReviewPass(id, body) };
+  throw new Error(`Unsupported local Field Report operation: ${method} ${pathname}`);
 }
 
 async function readState() {
@@ -353,6 +384,9 @@ async function main() {
       reviewer: flags.reviewer || context.who.actor,
       model: flags.model,
       reasoning: flags.reasoning,
+      reviewRole: flags.role,
+      reviewScope: flags.scope,
+      baseHead: flags["base-head"],
       summary: flags.summary,
       mergeReadiness: flags.merge,
       structuralRisk: flags.structural,
@@ -376,9 +410,17 @@ async function main() {
     const result = await api("GET", `/api/workstreams/${encodeURIComponent(id)}/mrr`);
     if (!result.required) return process.stdout.write(`${id}: MRR panel is not required for this non-code outcome.\n`);
     const lane = (name, pass) => `${name}: ${pass ? `${pass.verdict} · ${pass.model || pass.reviewer}${pass.reasoning ? ` · ${pass.reasoning}` : ""}` : "MISSING"}`;
-    const lines = [`${id} MRR gate at ${result.head ? result.head.slice(0, 8) : "unresolved head"}: ${result.ready ? "READY" : "NOT READY"}`, lane("Codex gpt-5.6-sol", result.lanes.codexSol), lane("Fable via claude-aws", result.lanes.fable)];
+    const lines = [`${id} MRR gate at ${result.head ? result.head.slice(0, 8) : "unresolved head"}: ${result.ready ? "READY" : "NOT READY"}`, `Policy: ${result.policy?.mode || "full"}${result.policy?.reason ? ` — ${result.policy.reason}` : ""}`, lane("Deep code review", result.lanes.deepCode), lane("Structural challenge", result.lanes.structuralChallenge)];
     if (result.reasons?.length) lines.push(...result.reasons.map((reason) => `- ${reason}`));
     return process.stdout.write(`${lines.join("\n")}\n`);
+  }
+  if (command === "policy") {
+    if (!id) throw new Error("Specify a workstream ID or arm this session");
+    if (context.binding && context.binding.role !== "repo-coordinator") throw new Error("Only the user or an armed repository coordinator may change review policy");
+    const mode = flags.mode;
+    if (!mode) throw new Error("Specify --mode full|single-independent|delta|none");
+    const result = await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { reviewPolicy: { mode, reason: flags.reason || null }, updatedBy: context.who.actor, eventType: "review_policy", eventText: `Review policy set to ${mode}${flags.reason ? `: ${flags.reason}` : ""}` });
+    return process.stdout.write(`Set ${result.workstream.id} review policy to ${mode}${flags.reason ? ` — ${flags.reason}` : ""}.\n`);
   }
   if (command === "disarm") {
     if (!context.binding) return process.stdout.write("This session is not armed.\n");

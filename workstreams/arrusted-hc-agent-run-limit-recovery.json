@@ -1,0 +1,41 @@
+{
+  "id": "arrusted-hc-agent-run-limit-recovery",
+  "project": "arrusted",
+  "title": "HC agent run-limit recovery",
+  "summary": "PR #439 is ready at exact head dcabab91: bounded HC run-limit terminals now expose an explicit Continue action that starts a fresh run with frozen in-memory history.",
+  "status": "complete",
+  "branch": "codex/hc-agent-run-limit-continue",
+  "reviewState": "MRR READY; all branch-relevant CI and async review complete. Vercel preview remains an inherited external resource-provisioning failure also present on the exact base.",
+  "chunks": [],
+  "questions": [],
+  "prs": [
+    {
+      "number": 439,
+      "chunks": []
+    }
+  ],
+  "issuePrefixes": [
+    "ad.38.2"
+  ],
+  "references": [
+    {
+      "path": "docs/plans/2026-06-30-hc-agent-de-live-agent-spec.md",
+      "label": "docs/plans/2026-06-30-hc-agent-de-live-agent-spec.md",
+      "kind": "contract",
+      "quote": "Conversations stay ephemeral/local React state"
+    },
+    {
+      "path": "docs/plans/2026-07-07-agent-streaming-transport.md",
+      "label": "docs/plans/2026-07-07-agent-streaming-transport.md",
+      "kind": "contract",
+      "quote": "Retry = a NEW run (new runId); we do not resume streams in v1"
+    }
+  ],
+  "orchestrator": "019f6fa4-4d82-7cc1-bf35-70956bb8d3e8",
+  "assessment": null,
+  "updatedAt": "2026-07-17T11:30:38.034Z",
+  "updatedBy": "019f6fa4-4d82-7cc1-bf35-70956bb8d3e8",
+  "commits": [
+    "dcabab91ba7f0449134ab8c9d44f612a44ff2750"
+  ]
+}

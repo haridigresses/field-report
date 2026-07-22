@@ -1,79 +1,113 @@
 {
   "id": "arrusted-csv-kernel",
   "project": "arrusted",
-  "title": "CSV import kernel-validation authority",
-  "status": "blocked",
-  "branch": "ad-41-csv-kernel-validate",
+  "title": "CSV Agent Foundations parity port + kernel-authoritative validation",
+  "status": "active",
+  "branch": "codex/csv-foundation-integration",
   "fableAgent": "adc",
-  "reviewerAgent": "adb",
+  "reviewerAgent": "ada",
   "codexExecutor": null,
-  "summary": "PR #342 exact head 4ad570c2 fixes the prior null-map and budget-terminal blockers and all current checks pass. Exact-head re-review found one remaining bounded blocker: kernel validation runs outside the wall-time budget and can stall indefinitely or report runtime_failed instead of budget_exhausted.",
-  "reviewState": "conditional-merge-ready at 4ad570c2; rating 4/5; blocked on kernel-validation deadline propagation",
-  "updatedAt": "2026-07-10T08:02:25.439Z",
-  "updatedBy": "019f4918-4b84-7650-8d7f-e8e8c0180165",
+  "summary": "Second pre-commit panel confirms prior P1 protocol flaws are closed, but holds commit for bounded hardening: release acquired claim on reconciliation failure/cancel, DB CHECK claim-column invariants, remove dead claim APIs, unique IDs for all claim-backed DB tests, and direct cancellation/timeout/token regressions.",
+  "reviewState": "Apply final panel fixes; rerun focused and canonical checks; rerun both precommit lanes to GO before commit.",
+  "updatedAt": "2026-07-13T20:44:06.393Z",
+  "updatedBy": "arrusted-csv-kernel",
   "issuePrefixes": [
-    "ad.41"
+    "ad.41",
+    "ad.41.6",
+    "ad.41.7",
+    "ad.41.9",
+    "ad.41.10",
+    "ad.41.11",
+    "ad.41.12",
+    "ad.41.18",
+    "ad.41.2",
+    "ad.41.3"
   ],
   "chunks": [
     {
-      "id": "kernel-authority",
-      "title": "Delegate value validity to the kernel without silent compiler drops",
+      "id": "characterization",
+      "title": "Current-flow characterization and differential parity oracle",
       "status": "complete",
       "issueIds": [
-        "ad.41.1",
-        "ad.41.2"
+        "ad.41.9"
       ],
       "commits": [
-        "ba2852fc",
-        "985e10ff"
+        "f096662f"
       ]
     },
     {
-      "id": "null-map",
-      "title": "Emit issues for map decisions with null model or field targets",
+      "id": "kernel-substrate-v2",
+      "title": "Durable data_import atomic dry-run and structured error substrate",
       "status": "complete",
       "issueIds": [
         "ad.41.1"
       ],
       "commits": [
-        "4ad570c2"
+        "def3b562",
+        "fc8d3307"
       ]
     },
     {
-      "id": "budget-terminal",
-      "title": "Preserve budget_exhausted as the terminal repair-loop state",
+      "id": "foundation-port",
+      "title": "Port CSV execution to Agent Foundations behind existing UI",
       "status": "complete",
       "issueIds": [
+        "ad.41.10",
         "ad.41.3"
       ],
       "commits": [
-        "4ddfc40a",
-        "4ad570c2"
+        "d62e434b",
+        "d3c1d951",
+        "ebbf672b",
+        "0eebba2a"
       ]
     },
     {
-      "id": "remrr",
-      "title": "Re-run cross-family merge-ready review on the fixed SHA",
-      "status": "complete"
+      "id": "kernel-verdict-host",
+      "title": "Kernel verdict repair loop on the final CSV host",
+      "status": "complete",
+      "issueIds": [
+        "ad.41.11",
+        "ad.41.2"
+      ],
+      "commits": [
+        "fc8d3307",
+        "0eebba2a",
+        "bfe70100"
+      ]
     },
     {
-      "id": "kernel-timeout",
-      "title": "Bound kernel validation by remaining wall-time and preserve budget terminal state",
-      "status": "blocked",
+      "id": "final-parity-review",
+      "title": "Differential parity, visual proof, and exact-SHA dual MRR",
+      "status": "active",
       "issueIds": [
-        "ad.41.1"
+        "ad.41.12",
+        "ad.41.18"
+      ],
+      "commits": [
+        "49a0f0fc",
+        "d333d118",
+        "b239df20",
+        "2b4cf271c33550cda6cb6392a963d6326dd05c42",
+        "aaa6342ce20833a395a40dbf19c4e737639b24e1",
+        "3c4496a39c6f7845aa4ce2c63220a2b136b19bad"
       ]
     }
   ],
   "questions": [],
   "prs": [
     {
-      "number": 342,
+      "number": 367,
+      "chunks": []
+    },
+    {
+      "number": 369,
       "chunks": [
-        "kernel-authority",
-        "null-map",
-        "budget-terminal",
-        "remrr"
+        "characterization",
+        "kernel-substrate-v2",
+        "foundation-port",
+        "kernel-verdict-host",
+        "final-parity-review"
       ]
     }
   ],
@@ -95,12 +129,28 @@
       "label": "Merge-ready review contract",
       "kind": "review",
       "quote": "DRYness and removal of dead code."
+    },
+    {
+      "path": "docs/agent-foundation.md",
+      "label": "Agent Foundation target architecture and CSV flavor",
+      "kind": "contract",
+      "section": "8a-csv-import-agent-first-flavor",
+      "quote": "The app compiler turns the accepted plan into staged rows; the kernel validates and applies."
+    },
+    {
+      "path": "docs/plans/2026-06-11-import-substrate-extraction.md",
+      "label": "Behavior-identical import substrate extraction",
+      "kind": "plan",
+      "quote": "BEHAVIOR-IDENTICAL extraction bar (new behavior belongs to the later feature slices, never the extraction)."
     }
   ],
   "commits": [
     "ba2852fc",
     "985e10ff",
     "4ddfc40a",
-    "4ad570c2"
+    "4ad570c2",
+    "0f154a91764211783985f9301ae846b47776b69d",
+    "e47507f4ffdf9087c5d2d33e75862a04fe23bdc0",
+    "34ec690f7d52977b26b6e547f0e4948162c01d91"
   ]
 }

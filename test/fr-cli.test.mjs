@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -43,7 +43,9 @@ async function fixture() {
           }]
         }));
       } else if (req.url === "/api/workstreams/sample-stream/mrr") {
-        res.end(JSON.stringify({ required: true, ready: false, head: "abcdef1234567890abcdef1234567890abcdef12", reasons: ["missing completed Fable review via claude-aws on the exact head"], lanes: { codexSol: { verdict: "GO", model: "gpt-5.6-sol" }, fable: null } }));
+        res.end(JSON.stringify({ required: true, ready: false, head: "abcdef1234567890abcdef1234567890abcdef12", policy: { mode: "full", reason: null }, reasons: ["missing completed structural-challenge exact-head pass"], lanes: { deepCode: { verdict: "GO", model: "gpt-5.6-sol" }, structuralChallenge: null } }));
+      } else if (req.url === "/api/workstreams/sample-stream" && req.method === "PATCH") {
+        res.end(JSON.stringify({ workstream: { id: "sample-stream", ...requests.at(-1).body } }));
       } else {
         res.statusCode = 404;
         res.end(JSON.stringify({ error: "not found" }));
@@ -60,6 +62,21 @@ async function fixture() {
       await new Promise((resolve) => server.close(resolve));
       await rm(stateDir, { recursive: true, force: true });
     }
+  };
+}
+
+async function localFixture() {
+  const localRoot = await mkdtemp(path.join(os.tmpdir(), "field-report-local-"));
+  await Promise.all(["config", "data", "docs", "events", "workstreams"].map((directory) => mkdir(path.join(localRoot, directory))));
+  await writeFile(path.join(localRoot, "config", "projects.json"), JSON.stringify({ projects: [{ id: "sample", label: "Sample", repoPath: localRoot, coordinator: "sample-coordinator" }] }));
+  await writeFile(path.join(localRoot, "docs", "fr-workflow.md"), "# Contract\n\n## Shared contract\n\n- Keep it durable.\n");
+  await writeFile(path.join(localRoot, "workstreams", "sample-stream.json"), JSON.stringify({ id: "sample-stream", project: "sample", title: "Sample stream", summary: "Initial state", status: "active", branch: null, reviewState: "Build", chunks: [], questions: [], prs: [], issuePrefixes: [], references: [], orchestrator: "sample-agent", updatedAt: "2026-07-12T00:00:00.000Z" }, null, 2));
+  const env = { ...process.env, FIELD_REPORT_ROOT: localRoot, FIELD_REPORT_STATE_DIR: path.join(localRoot, "state") };
+  delete env.FIELD_REPORT_URL;
+  return {
+    root: localRoot,
+    env,
+    async close() { await rm(localRoot, { recursive: true, force: true }); }
   };
 }
 
@@ -106,8 +123,49 @@ test("fr mrr reports the missing review lane", async () => {
   try {
     const result = await exec(process.execPath, [cli, "mrr", "sample-stream"], { env: mock.env });
     assert.match(result.stdout, /MRR gate at abcdef12: NOT READY/);
-    assert.match(result.stdout, /Codex gpt-5\.6-sol: GO/);
-    assert.match(result.stdout, /Fable via claude-aws: MISSING/);
+    assert.match(result.stdout, /Policy: full/);
+    assert.match(result.stdout, /Deep code review: GO/);
+    assert.match(result.stdout, /Structural challenge: MISSING/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr policy records a reasoned review exception", async () => {
+  const mock = await fixture();
+  try {
+    const result = await exec(process.execPath, [cli, "policy", "sample-stream", "--mode", "delta", "--reason", "Only a bounded fix changed"], { env: mock.env });
+    assert.match(result.stdout, /review policy to delta/);
+    assert.deepEqual(mock.requests[0].body.reviewPolicy, { mode: "delta", reason: "Only a bounded fix changed" });
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr checkpoint writes canonical state while the HTTP service is offline", async () => {
+  const mock = await localFixture();
+  try {
+    const result = await exec(process.execPath, [cli, "checkpoint", "sample-stream", "--summary", "Offline update persisted", "--gate", "Independent review"], { env: mock.env });
+    assert.match(result.stdout, /Updated sample-stream/);
+    const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-stream.json"), "utf8"));
+    assert.equal(stream.summary, "Offline update persisted");
+    assert.equal(stream.reviewState, "Independent review");
+    const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(events.at(-1).type, "checkpoint");
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr pass record writes exact-head review evidence while offline", async () => {
+  const mock = await localFixture();
+  try {
+    const sha = "abcdef1234567890abcdef1234567890abcdef12";
+    const result = await exec(process.execPath, [cli, "pass", "record", "sample-stream", "--head", sha, "--verdict", "GO", "--role", "deep-code-review", "--merge", "90", "--structural", "4"], { env: mock.env });
+    assert.match(result.stdout, /Recorded review pass/);
+    const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(events.at(-1).metadata.reviewRole, "deep-code-review");
+    assert.equal(events.at(-1).metadata.head, sha);
   } finally {
     await mock.close();
   }

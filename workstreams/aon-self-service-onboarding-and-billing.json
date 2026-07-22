@@ -1,0 +1,74 @@
+{
+  "id": "aon-self-service-onboarding-and-billing",
+  "project": "aon",
+  "title": "Self-service onboarding and billing",
+  "summary": "Self-service onboarding and billing is published as PR #279 at 7ee3a799912ea61eed1e5bed772474c704ea5334. Database Contract, Vercel, and external review checks are green, but check:ci fails in verify-production-rpc-inventory because provision_payment_ready_onboarding_intent is listed in the production RPC allowlist without a positive production invocation count.",
+  "status": "active",
+  "branch": "codex/self-service-onboarding-billing",
+  "reviewState": "PR #279 requires an onboarding-branch fix for production RPC inventory drift: provision_payment_ready_onboarding_intent allowlist entry has no production .rpc call count. After fixing, rerun CI/MRR as needed; approval/merge remains user-gated.",
+  "chunks": [
+    {
+      "id": "onboarding-entry",
+      "title": "Route authenticated users into minimal company and plan intake",
+      "status": "complete"
+    },
+    {
+      "id": "stripe-embed",
+      "title": "Create embedded subscription Checkout from a durable onboarding intent",
+      "status": "complete"
+    },
+    {
+      "id": "provisioning",
+      "title": "Provision exactly one client, company, and admin membership after confirmed payment",
+      "status": "complete"
+    },
+    {
+      "id": "billing-reconcile",
+      "title": "Reconcile subscription status and tier from signed Stripe webhooks",
+      "status": "complete"
+    },
+    {
+      "id": "fix-rpc-inventory",
+      "title": "Fix PR #279 production RPC inventory drift for onboarding provisioner",
+      "status": "active"
+    },
+    {
+      "id": "merge",
+      "title": "Obtain required approval and user merge authorization for PR #279",
+      "status": "planned"
+    }
+  ],
+  "questions": [],
+  "prs": [
+    {
+      "number": 279,
+      "chunks": [
+        "onboarding-entry",
+        "stripe-embed",
+        "provisioning",
+        "billing-reconcile"
+      ]
+    }
+  ],
+  "issuePrefixes": [
+    "aon.50.3.1",
+    "aon.50.3.2"
+  ],
+  "references": [
+    {
+      "path": "docs/product-roadmap.md",
+      "label": "Self-service launch contract",
+      "kind": "decision",
+      "quote": "Self-service magic-link signup, one legal entity per tenant, embedded Stripe checkout, then guided state onboarding."
+    }
+  ],
+  "orchestrator": "onboarder",
+  "assessment": null,
+  "updatedAt": "2026-07-17T10:37:22.520Z",
+  "updatedBy": "aon",
+  "commits": [
+    "b2a7785ff0c2bb4677b19170ddd2c822746bc018",
+    "521b2c217cf47a4a719c9ab4eab540f407c81d43",
+    "df626afaa1ba8bb8e358f36012e86088de3a7295"
+  ]
+}

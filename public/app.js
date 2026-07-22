@@ -4,11 +4,12 @@ const repoNav = document.querySelector("#repo-nav");
 const freshness = document.querySelector("#freshness");
 const health = document.querySelector("#health");
 const refreshButton = document.querySelector("#refresh");
-const totalStreams = document.querySelector("#total-streams");
+const portfolioSort = document.querySelector("#portfolio-sort");
 const portfolioSignal = document.querySelector("#portfolio-signal");
 const selectionCount = document.querySelector("#selection-count");
 const requestAssessmentButton = document.querySelector("#request-assessment");
 const newWorkstreamButton = document.querySelector("#new-workstream");
+const issuesOpenButton = document.querySelector("#issues-open");
 const newWorkstreamDialog = document.querySelector("#new-workstream-dialog");
 const newWorkstreamForm = document.querySelector("#new-workstream-form");
 const issuesDrawer = document.querySelector("#issues-drawer");
@@ -17,6 +18,7 @@ const issuesRepoTabs = document.querySelector("#issues-repo-tabs");
 const issuesFilter = document.querySelector("#issues-filter");
 const issuesSummary = document.querySelector("#issues-summary");
 const issuesList = document.querySelector("#issues-list");
+const workstreamDrawer = document.querySelector("#workstream-drawer");
 const evidenceDrawer = document.querySelector("#evidence-drawer");
 const evidenceTitle = document.querySelector("#evidence-title");
 const evidenceSummary = document.querySelector("#evidence-summary");
@@ -26,7 +28,15 @@ let dashboard = null;
 let activeRepo = "all";
 let activeStream = null;
 let issueRepo = null;
+let sortMode = "attention";
 const selectedStreams = new Set();
+
+function openWorkstream(streamId) {
+  activeStream = streamId;
+  renderPortfolio();
+  renderBrief();
+  if (!workstreamDrawer.open) workstreamDrawer.showModal();
+}
 
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
@@ -39,14 +49,17 @@ function relativeTime(value) {
   }
 }
 
-function prHealth(pr) {
+  function prHealth(pr) {
   const checks = pr.statusCheckRollup || [];
   const failed = checks.filter((check) => check.conclusion === "FAILURE" || check.state === "FAILURE").length;
   const pending = checks.filter((check) => ["IN_PROGRESS", "QUEUED", "PENDING"].includes(check.status || check.state)).length;
   if (failed) return { level: "critical", label: `${failed} checks failing` };
   if (pending) return { level: "watch", label: `${pending} checks pending` };
-  if (pr.mergeStateStatus === "CLEAN") return { level: "steady", label: "green" };
-  if (pr.mergeStateStatus === "BLOCKED") return { level: "critical", label: "merge blocked" };
+    if (["past", "superseded"].includes(pr.relation) || pr.state !== "OPEN") return { level: "neutral", label: pr.relation === "superseded" ? "superseded" : String(pr.state || "past").toLowerCase() };
+    if (pr.reviewDecision === "CHANGES_REQUESTED") return { level: "critical", label: "changes requested" };
+    if (pr.reviewDecision === "REVIEW_REQUIRED") return { level: "watch", label: "review required" };
+    if (pr.mergeStateStatus === "CLEAN") return { level: "steady", label: "green" };
+    if (pr.mergeStateStatus === "BLOCKED") return { level: "watch", label: "merge blocked" };
   return { level: "neutral", label: String(pr.mergeStateStatus || pr.state || "unknown").toLowerCase() };
 }
 
@@ -68,29 +81,46 @@ function confidence(stream) {
   return rating == null ? { value: "Pending", level: "neutral" } : { value: `${rating}%`, level: rating < 60 ? "critical" : rating < 80 ? "watch" : "steady" };
 }
 
-function attention(stream) {
-  const failingDelivery = (stream.prs || []).some((pr) => prHealth(pr).level === "critical");
-  if (stream.status === "blocked") return { label: "Blocked", level: "critical" };
-  if (failingDelivery) return { label: "Delivery failing", level: "critical" };
-  if (stream.assessment?.stale) return { label: "Review stale", level: "critical" };
-  if (openQuestions(stream).length) return { label: `${openQuestions(stream).length} open question${openQuestions(stream).length === 1 ? "" : "s"}`, level: "watch" };
-  if (stream.assessmentRequest?.pending) return { label: "Review requested", level: "watch" };
-  if (/authori[sz]ation|user decision|hold/i.test(stream.reviewState || "")) return { label: "Decision needed", level: "watch" };
-  if (/exact[- ]head review|review.*pending|pending.*review/i.test(stream.reviewState || "")) return { label: "Review due", level: "watch" };
+  function attention(stream) {
+    if (stream.status === "complete") return { label: "Complete", level: "steady" };
+    const activePrs = (stream.prs || []).filter((pr) => !["past", "superseded"].includes(pr.relation) && pr.state === "OPEN");
+    const failedChecks = activePrs.some((pr) => (pr.statusCheckRollup || []).some((check) => check.conclusion === "FAILURE" || check.state === "FAILURE"));
+    const changesRequested = activePrs.some((pr) => pr.reviewDecision === "CHANGES_REQUESTED");
+    const reviewRequired = activePrs.some((pr) => pr.reviewDecision === "REVIEW_REQUIRED" || pr.mergeStateStatus === "BLOCKED");
+    if (stream.status === "blocked") return { label: "Blocked", level: "critical" };
+    if (failedChecks) return { label: "Checks failing", level: "critical" };
+    if (changesRequested) return { label: "Changes requested", level: "critical" };
+    if (stream.assessment?.stale) return { label: "Review stale", level: "critical" };
+    if (openQuestions(stream).length) return { label: `${openQuestions(stream).length} open question${openQuestions(stream).length === 1 ? "" : "s"}`, level: "watch" };
+    if (stream.assessmentRequest?.pending) return { label: "Review requested", level: "watch" };
+    if (/authori[sz]ation|user decision|hold/i.test(stream.reviewState || "")) return { label: "Decision needed", level: "watch" };
+    if (reviewRequired) return { label: "Review required", level: "watch" };
+    if (/exact[- ]head review|review.*pending|pending.*review/i.test(stream.reviewState || "")) return { label: "Review due", level: "watch" };
+    if (/\b(required|remains?|blocked|waiting|awaiting)\b/i.test(stream.reviewState || "")) return { label: "Gate pending", level: "watch" };
   return { label: "Clear", level: "steady" };
 }
 
-function delivery(stream) {
-  const prs = stream.prs || [];
+  function delivery(stream) {
+    const prs = stream.prs || [];
   if (!prs.length) {
     const completed = (stream.chunks || []).filter((chunk) => chunk.status === "complete").length;
     return `<span class="delivery-main">Pre-PR</span><span class="delivery-sub">${completed}/${(stream.chunks || []).length} milestones complete</span>`;
   }
-  return prs.map((pr) => {
-    const health = prHealth(pr);
-    return `<span class="delivery-main">PR ${pr.number}</span><span class="delivery-sub signal-${health.level}">${escapeHtml(health.label)}</span>`;
-  }).join("");
-}
+    const live = prs.filter((pr) => !["past", "superseded"].includes(pr.relation) && pr.state === "OPEN");
+    const past = prs.filter((pr) => !live.includes(pr));
+    const liveHtml = live.map((pr) => {
+      const health = prHealth(pr);
+      return `<span class="delivery-main">PR ${pr.number}${pr.current ? " · current" : ""}</span><span class="delivery-sub signal-${health.level}">${escapeHtml(health.label)}</span>`;
+    }).join("");
+    const pastHtml = past.length ? `<span class="delivery-history">${past.length} past PR${past.length === 1 ? "" : "s"}: ${past.map((pr) => `#${pr.number}`).join(", ")}</span>` : "";
+    return liveHtml || pastHtml ? `${liveHtml}${pastHtml}` : `<span class="delivery-main">No active PR</span>`;
+  }
+
+  function portfolioOwner(stream) {
+    const orchestrator = stream.orchestrator || stream.fableAgent;
+    const agent = (stream.agents || []).find((candidate) => candidate.name === orchestrator);
+    return `<span class="portfolio-owner" data-label="Agent"><i class="agent-dot ${agent?.running ? "live" : ""}"></i><b>${escapeHtml(orchestrator || "Unassigned")}</b><small>${agent?.running ? "working" : "not currently running"}</small></span>`;
+  }
 
 function nextMilestone(stream) {
   return (stream.chunks || []).find((chunk) => ["blocked", "active", "planned"].includes(chunk.status))?.title || "Outcome delivered";
@@ -100,23 +130,24 @@ function projectFor(stream) {
   return dashboard.projects.find((project) => project.id === stream.project);
 }
 
-function renderRepoNav() {
+  function renderRepoNav() {
   const buttons = [{ id: "all", label: "All workstreams" }, ...dashboard.projects.map((project) => ({ id: project.id, label: project.label }))];
   const project = dashboard.projects.find((candidate) => candidate.id === activeRepo);
   const visibleProjects = project ? [project] : dashboard.projects;
   const activeIssues = visibleProjects.flatMap((item) => item.afIssues || []).filter((issue) => issue.status !== "closed").length;
-  repoNav.innerHTML = `${buttons.map((item) => `<button class="repo-filter ${activeRepo === item.id ? "selected" : ""}" data-repo="${escapeHtml(item.id)}" type="button">${escapeHtml(item.label)}</button>`).join("")}<span class="repo-spacer"></span><button class="issues-open" type="button">AF issues · ${activeIssues}</button>`;
+    repoNav.innerHTML = buttons.map((item) => `<button class="repo-filter ${activeRepo === item.id ? "selected" : ""}" data-repo="${escapeHtml(item.id)}" type="button">${escapeHtml(item.label)}</button>`).join("");
   repoNav.querySelectorAll(".repo-filter").forEach((button) => button.addEventListener("click", () => {
     activeRepo = button.dataset.repo;
     activeStream = null;
     selectedStreams.clear();
     renderDashboard();
   }));
-  repoNav.querySelector(".issues-open").addEventListener("click", () => {
-    issueRepo = activeRepo === "all" ? (issueRepo || dashboard.projects[0]?.id) : activeRepo;
-    renderIssueDrawer();
-    issuesDrawer.showModal();
-  });
+    issuesOpenButton.textContent = `AF issues · ${activeIssues}`;
+    issuesOpenButton.onclick = () => {
+      issueRepo = activeRepo === "all" ? (issueRepo || dashboard.projects[0]?.id) : activeRepo;
+      renderIssueDrawer();
+      issuesDrawer.showModal();
+    };
 }
 
 function commitLinks(commits = [], githubRepo = null) {
@@ -153,38 +184,47 @@ function renderIssueDrawer() {
   }).join("")}</section>`).join("") : `<p class="quiet">No parent issues match this status.</p>`;
   issuesRepoTabs.querySelectorAll("[data-issue-repo]").forEach((button) => button.addEventListener("click", () => { issueRepo = button.dataset.issueRepo; renderIssueDrawer(); }));
   issuesList.querySelectorAll("button[data-workstream]").forEach((button) => button.addEventListener("click", () => {
-    activeStream = button.dataset.workstream;
     issuesDrawer.close();
-    renderPortfolio();
-    renderBrief();
-    briefRoot.scrollIntoView({ block: "start" });
+    openWorkstream(button.dataset.workstream);
   }));
 }
 
-function renderPortfolio() {
-  const streams = dashboard.workstreams.filter((stream) => activeRepo === "all" || stream.project === activeRepo);
-  const sorted = [...streams].sort((a, b) => {
-    const weight = (stream) => stream.status === "complete" ? 4 : attention(stream).level === "critical" ? 0 : attention(stream).level === "watch" ? 1 : 2;
-    return weight(a) - weight(b) || new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
-  });
-  totalStreams.textContent = `${streams.length} outcomes`;
-  const needingAttention = streams.filter((stream) => attention(stream).level !== "steady" && stream.status !== "complete").length;
-  const active = streams.filter((stream) => ["active", "blocked"].includes(stream.status)).length;
-  portfolioSignal.textContent = `${needingAttention} need attention · ${active} active · ${streams.filter((stream) => stream.status === "complete").length} complete`;
+  function renderPortfolio() {
+    const streams = dashboard.workstreams.filter((stream) => activeRepo === "all" || stream.project === activeRepo);
+    const attentionOrder = (stream) => stream.status === "complete" ? 4 : attention(stream).level === "critical" ? 0 : attention(stream).level === "watch" ? 1 : 2;
+    const updatedOrder = (left, right) => new Date(right.updatedAt || 0) - new Date(left.updatedAt || 0);
+    const sorted = [...streams].sort((a, b) => {
+      if (sortMode === "updated") return updatedOrder(a, b);
+      if (sortMode === "agent") {
+        const leftAgent = a.orchestrator || a.fableAgent || "~unassigned";
+        const rightAgent = b.orchestrator || b.fableAgent || "~unassigned";
+        return leftAgent.localeCompare(rightAgent, undefined, { sensitivity: "base" }) || updatedOrder(a, b);
+      }
+      return attentionOrder(a) - attentionOrder(b) || updatedOrder(a, b);
+    });
+    const needingAttention = streams.filter((stream) => attention(stream).level !== "steady" && stream.status !== "complete").length;
+    const active = streams.filter((stream) => ["active", "blocked"].includes(stream.status)).length;
+    portfolioSignal.textContent = `${streams.length} outcomes · ${needingAttention} need attention · ${active} active · ${streams.filter((stream) => stream.status === "complete").length} complete`;
+    portfolioSort.querySelectorAll("button[data-sort]").forEach((button) => {
+      const selected = button.dataset.sort === sortMode;
+      button.classList.toggle("selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
   const selectionSize = selectedStreams.size;
   selectionCount.textContent = selectionSize ? `${selectionSize} outcome${selectionSize === 1 ? "" : "s"} selected for fresh judgment.` : "Select outcomes to request fresh reviewer judgment.";
   requestAssessmentButton.disabled = selectionSize === 0;
   requestAssessmentButton.textContent = selectionSize ? `Request assessment · ${selectionSize}` : "Request assessment";
 
   portfolioRoot.innerHTML = `<div class="portfolio-header" aria-hidden="true">
-    <span></span><span>Outcome</span><span>Needs attention</span><span>Current gate</span><span>Delivery</span><span>Updated</span>
+      <span></span><span>Outcome</span><span>Agent</span><span>Needs attention</span><span>Current gate</span><span>Delivery</span><span>Updated</span>
   </div>${sorted.map((stream) => {
     const attentionState = attention(stream);
     const selected = activeStream === stream.id;
     return `<div class="portfolio-row ${selected ? "selected" : ""} ${stream.status === "complete" ? "is-complete" : ""}" data-stream="${escapeHtml(stream.id)}">
       <input class="stream-select" type="checkbox" aria-label="Select ${escapeHtml(stream.title)} for assessment" ${selectedStreams.has(stream.id) ? "checked" : ""}>
       <button class="row-open" type="button" aria-pressed="${selected}">
-        <span class="outcome"><b>${escapeHtml(stream.title)}</b><small>${escapeHtml(phase(stream))} · ${escapeHtml(nextMilestone(stream))}</small></span>
+          <span class="outcome"><b>${escapeHtml(stream.title)}</b><small>${escapeHtml(phase(stream))} · ${escapeHtml(nextMilestone(stream))}</small></span>
+          ${portfolioOwner(stream)}
         <span data-label="Needs attention" class="signal-${attentionState.level}">${escapeHtml(attentionState.label)}</span>
         <span data-label="Current gate" class="current-gate">${escapeHtml(stream.reviewState || "No gate recorded")}</span>
         <span data-label="Delivery" class="delivery">${delivery(stream)}</span>
@@ -192,19 +232,20 @@ function renderPortfolio() {
       </button>
     </div>`;
   }).join("")}`;
-  portfolioRoot.querySelectorAll(".portfolio-row").forEach((row) => {
+    portfolioRoot.querySelectorAll(".portfolio-row").forEach((row) => {
     row.querySelector(".stream-select").addEventListener("change", (event) => {
       if (event.currentTarget.checked) selectedStreams.add(row.dataset.stream); else selectedStreams.delete(row.dataset.stream);
       renderPortfolio();
     });
     row.querySelector(".row-open").addEventListener("click", () => {
-      activeStream = activeStream === row.dataset.stream ? null : row.dataset.stream;
-      renderPortfolio();
-      renderBrief();
-      if (activeStream) briefRoot.scrollIntoView({ block: "start" });
+      openWorkstream(row.dataset.stream);
     });
-  });
-}
+    });
+    portfolioSort.querySelectorAll("button[data-sort]").forEach((button) => { button.onclick = () => {
+      sortMode = button.dataset.sort;
+      renderPortfolio();
+    }; });
+  }
 
 function renderLinkedEvidence(stream) {
   const project = projectFor(stream);
@@ -251,8 +292,8 @@ function reviewEvents(stream) {
   return stream.reviewPasses || [];
 }
 
-function primaryPr(stream) {
-  return (stream.prs || []).find((pr) => pr.state === "OPEN" && pr.headRefName === stream.branch) || (stream.prs || []).find((pr) => pr.state === "OPEN") || (stream.prs || [])[0] || null;
+  function primaryPr(stream) {
+    return (stream.prs || []).find((pr) => pr.current) || (stream.prs || []).find((pr) => pr.state === "OPEN") || null;
 }
 
 function renderReviewSummary(stream) {
@@ -302,7 +343,7 @@ function openEvidence(stream, mode) {
 function renderBrief() {
   const stream = dashboard.workstreams.find((candidate) => candidate.id === activeStream);
   if (!stream) {
-    briefRoot.innerHTML = `<p class="brief-placeholder">Select an outcome to inspect its situation, next gate, and exact-SHA evidence.</p>`;
+    briefRoot.innerHTML = "";
     return;
   }
   const project = projectFor(stream);
@@ -334,7 +375,7 @@ function renderBrief() {
       </form></details>
     </footer>
   </article>`;
-  briefRoot.querySelector(".close-brief").addEventListener("click", () => { activeStream = null; renderPortfolio(); renderBrief(); });
+  briefRoot.querySelector(".close-brief").addEventListener("click", () => workstreamDrawer.close());
   briefRoot.querySelector(".request-one").addEventListener("click", () => requestAssessments([stream.id]));
   briefRoot.querySelectorAll("[data-evidence]").forEach((button) => button.addEventListener("click", () => openEvidence(stream, button.dataset.evidence)));
   briefRoot.querySelector("form").addEventListener("submit", saveSessions);
@@ -405,6 +446,11 @@ newWorkstreamButton.addEventListener("click", () => newWorkstreamDialog.showModa
 newWorkstreamDialog.querySelector(".dialog-close").addEventListener("click", () => newWorkstreamDialog.close());
 issuesDrawer.querySelector(".issues-close").addEventListener("click", () => issuesDrawer.close());
 evidenceDrawer.querySelector(".evidence-close").addEventListener("click", () => evidenceDrawer.close());
+workstreamDrawer.addEventListener("close", () => {
+  activeStream = null;
+  briefRoot.innerHTML = "";
+  if (dashboard) renderPortfolio();
+});
 issuesFilter.addEventListener("change", renderIssueDrawer);
 newWorkstreamForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -421,8 +467,8 @@ newWorkstreamForm.addEventListener("submit", async (event) => {
     form.reset();
     newWorkstreamDialog.close();
     activeRepo = result.workstream.project;
-    activeStream = result.workstream.id;
     await load();
+    openWorkstream(result.workstream.id);
   } catch (error) { status.textContent = error.message; } finally { submit.disabled = false; }
 });
 
