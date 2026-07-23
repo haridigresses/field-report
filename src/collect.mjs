@@ -67,17 +67,6 @@ async function collectPullRequests(project, configuredNumbers) {
   }
 }
 
-async function collectAgentStatus() {
-  const result = await command("af", ["session", "ps", "--limit", "250"]);
-  if (!result.ok) return { items: [], error: result.error };
-  const items = [];
-  for (const line of result.value.split("\n")) {
-    const match = line.match(/^\[([^\]]+)\].*?#\d+\s+\[([^\]]+)\]/);
-    if (match) items.push({ name: match[1], kind: line.includes(" claude ") ? "claude" : line.includes(" codex ") ? "codex" : "unknown", idleFor: match[2], running: true });
-  }
-  return { items };
-}
-
 async function collectRepoState(project) {
   const worktrees = await command("git", ["worktree", "list", "--porcelain"], project.repoPath);
   const status = await command("git", ["status", "--porcelain=v1", "--branch"], project.repoPath);
@@ -194,15 +183,14 @@ function assessmentFromPasses(stream, passes, currentHead) {
 
 async function main() {
   const { projects } = await readJson(path.join(root, "config/projects.json"));
+  const sessionRegistry = await readJson(path.join(root, "config/sessions.json")).catch(() => ({ sessions: [] }));
   const files = (await readdir(path.join(root, "workstreams"))).filter((file) => file.endsWith(".json")).sort();
   const streams = await Promise.all(files.map((file) => readJson(path.join(root, "workstreams", file))));
   const localEventsByStream = Object.fromEntries(await Promise.all(streams.map(async (stream) => [stream.id, await readLocalEvents(stream.id)])));
-  const agents = [...new Set(projects.flatMap((project) => [project.coordinator]).concat(streams.map((stream) => stream.orchestrator || stream.fableAgent)).filter(Boolean))];
   const prNumbersByProject = Object.fromEntries(projects.map((project) => [project.id, [...new Set(streams.filter((stream) => stream.project === project.id).flatMap((stream) => (stream.prs || []).map((pr) => typeof pr === "number" ? pr : pr.number)))]]));
 
-  const [issues, agentStatus, ...remainingResults] = await Promise.all([
+  const [issues, ...remainingResults] = await Promise.all([
     collectIssues(),
-    collectAgentStatus(),
     ...projects.map((project) => collectPullRequests(project, prNumbersByProject[project.id])),
     ...projects.map(collectRepoState)
   ]);
@@ -211,7 +199,7 @@ async function main() {
   const repoResults = remainingResults.slice(projects.length);
   const prsByProject = Object.fromEntries(projects.map((project, index) => [project.id, pullRequestResults[index]]));
   const repoByProject = Object.fromEntries(projects.map((project, index) => [project.id, repoResults[index]]));
-  const agentsByName = Object.fromEntries(agentStatus.items.map((agent) => [agent.name, agent]));
+  const sessionsByReference = Object.fromEntries((sessionRegistry.sessions || []).flatMap((session) => [[session.id, session], [session.alias, session], ...(session.aliases || []).map((alias) => [alias, session])]));
   const enrichedStreams = await Promise.all(streams.map(async (stream) => {
     const livePrs = prsByProject[stream.project]?.items || [];
     const configuredPrs = classifyPullRequests((stream.prs || []).map((configured) => {
@@ -222,7 +210,6 @@ async function main() {
     const issuePrefixes = stream.issuePrefixes || [];
     const streamIssues = issues.items.filter((issue) => issuePrefixes.some((prefix) => issue.id === prefix || issue.id?.startsWith(`${prefix}.`)));
     const orchestrator = stream.orchestrator || stream.fableAgent || null;
-    const agentNames = [orchestrator].filter(Boolean);
     const localEvents = localEventsByStream[stream.id] || [];
     const reviewPasses = localEvents.filter((event) => event.type === "review_pass").sort((a, b) => new Date(a.at) - new Date(b.at));
     let currentHead = branchPr?.headRefOid || null;
@@ -248,7 +235,7 @@ async function main() {
       questions: stream.questions || [],
       prs: configuredPrs,
       afIssues: streamIssues,
-      agents: [...new Set(agentNames)].map((name) => agentsByName[name] || { name, running: false })
+      agents: orchestrator ? [{ id: orchestrator, taskId: sessionsByReference[orchestrator]?.id || orchestrator, name: sessionsByReference[orchestrator]?.alias || orchestrator, kind: sessionsByReference[orchestrator]?.kind || "codex" }] : []
     };
   }));
 
@@ -266,7 +253,7 @@ async function main() {
         openPrs: projectPrs.filter((pr) => pr.state === "OPEN").length,
         failingChecks: checks.filter((check) => check.conclusion === "FAILURE" || check.state === "FAILURE").length,
         pendingChecks: checks.filter((check) => check.status === "IN_PROGRESS" || check.status === "QUEUED" || check.state === "PENDING").length,
-        runningAgents: [...new Set(projectStreams.flatMap((stream) => stream.agents.filter((agent) => agent.running).map((agent) => agent.name)))].length,
+        assignedAgents: [...new Set(projectStreams.flatMap((stream) => stream.agents.map((agent) => agent.taskId)))].length,
         openIssues: projectStreams.flatMap((stream) => stream.afIssues).filter((issue) => issue.status !== "closed").length
       }
     };
@@ -280,7 +267,7 @@ async function main() {
     workstreams: enrichedStreams,
     health: {
       afIssues: issues.error || "ok",
-      afSessions: agentStatus.error || "ok",
+      codexSessions: "field-report",
       github: Object.fromEntries(projects.map((project) => [project.id, prsByProject[project.id]?.error || "ok"]))
     }
   };

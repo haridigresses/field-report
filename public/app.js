@@ -116,10 +116,10 @@ function confidence(stream) {
     return liveHtml || pastHtml ? `${liveHtml}${pastHtml}` : `<span class="delivery-main">No active PR</span>`;
   }
 
-  function portfolioOwner(stream) {
-    const orchestrator = stream.orchestrator || stream.fableAgent;
-    const agent = (stream.agents || []).find((candidate) => candidate.name === orchestrator);
-    return `<span class="portfolio-owner" data-label="Agent"><i class="agent-dot ${agent?.running ? "live" : ""}"></i><b>${escapeHtml(orchestrator || "Unassigned")}</b><small>${agent?.running ? "working" : "not currently running"}</small></span>`;
+function portfolioOwner(stream) {
+  const orchestrator = stream.orchestrator || stream.fableAgent;
+  const agent = (stream.agents || []).find((candidate) => candidate.id === orchestrator);
+  return `<span class="portfolio-owner" data-label="Codex task"><i class="agent-dot"></i><b>${escapeHtml(agent?.name || orchestrator || "Unassigned")}</b><small>${agent ? "assigned" : "not assigned"}</small></span>`;
   }
 
 function nextMilestone(stream) {
@@ -211,9 +211,9 @@ function renderIssueDrawer() {
       button.setAttribute("aria-pressed", String(selected));
     });
   const selectionSize = selectedStreams.size;
-  selectionCount.textContent = selectionSize ? `${selectionSize} outcome${selectionSize === 1 ? "" : "s"} selected for fresh judgment.` : "Select outcomes to request fresh reviewer judgment.";
+  selectionCount.textContent = selectionSize ? `${selectionSize} outcome${selectionSize === 1 ? "" : "s"} selected for a native Codex review brief.` : "Select outcomes to prepare native Codex review briefs.";
   requestAssessmentButton.disabled = selectionSize === 0;
-  requestAssessmentButton.textContent = selectionSize ? `Request assessment · ${selectionSize}` : "Request assessment";
+  requestAssessmentButton.textContent = selectionSize ? `Prepare review brief · ${selectionSize}` : "Prepare review brief";
 
   portfolioRoot.innerHTML = `<div class="portfolio-header" aria-hidden="true">
       <span></span><span>Outcome</span><span>Agent</span><span>Needs attention</span><span>Current gate</span><span>Delivery</span><span>Updated</span>
@@ -256,8 +256,8 @@ function renderLinkedEvidence(stream) {
 
 function renderAgents(stream) {
   const orchestrator = stream.orchestrator || stream.fableAgent;
-  const agent = (stream.agents || []).find((candidate) => candidate.name === orchestrator);
-  return `<span><i class="agent-dot ${agent?.running ? "live" : ""}"></i>Orchestrator: ${escapeHtml(orchestrator || "unassigned")}</span>`;
+  const agent = (stream.agents || []).find((candidate) => candidate.id === orchestrator);
+  return `<span><i class="agent-dot"></i>Orchestrator: ${escapeHtml(agent?.name || orchestrator || "unassigned")}</span>`;
 }
 
 function humanize(value) {
@@ -350,10 +350,11 @@ function renderBrief() {
   const attentionState = attention(stream);
   const issues = (stream.afIssues || []).filter((issue) => issue.status !== "closed");
   const orchestrator = stream.orchestrator || stream.fableAgent;
+  const agent = (stream.agents || []).find((candidate) => candidate.id === orchestrator);
   briefRoot.innerHTML = `<article class="brief">
     <header class="brief-head">
       <div><p class="kicker">${escapeHtml(project?.label || stream.project)} · ${phase(stream)}</p><h2>${escapeHtml(stream.title)}</h2></div>
-      <div class="brief-actions"><button class="request-one" type="button">Request assessment</button><button class="close-brief" type="button" aria-label="Close workstream brief">Close</button></div>
+      <div class="brief-actions"><button class="request-one" type="button">Prepare review brief</button><button class="close-brief" type="button" aria-label="Close workstream brief">Close</button></div>
     </header>
     <div class="situation">
       <p>${escapeHtml(stream.summary)}</p>
@@ -361,7 +362,7 @@ function renderBrief() {
         <div><dt>Current gate</dt><dd>${escapeHtml(stream.reviewState || "No gate recorded")}</dd></div>
         <div><dt>Next milestone</dt><dd>${escapeHtml(nextMilestone(stream))}</dd></div>
         <div><dt>Needs attention</dt><dd class="signal-${attentionState.level}">${escapeHtml(attentionState.label)}</dd></div>
-        <div><dt>Owner</dt><dd>${escapeHtml(orchestrator || "Unassigned")}</dd></div>
+        <div><dt>Owner</dt><dd>${escapeHtml(agent?.name || orchestrator || "Unassigned")}</dd></div>
       </dl>
     </div>
     ${renderReviewSummary(stream)}
@@ -370,7 +371,7 @@ function renderBrief() {
       <div><b>Evidence</b><span>${escapeHtml(stream.branch || "No branch")} · ${issues.length} open AF issue${issues.length === 1 ? "" : "s"} · ${(stream.references || []).length} governing reference${(stream.references || []).length === 1 ? "" : "s"} · updated ${relativeTime(stream.updatedAt)}</span>${stream.commits?.length ? `<span>${commitLinks(stream.commits, project?.githubRepo)}</span>` : ""}</div>
       <div class="agents">${renderAgents(stream)}</div>
       <details class="session-editor"><summary>Orchestrator binding</summary><form data-workstream-id="${escapeHtml(stream.id)}">
-        <label>AF session<input name="orchestrator" value="${escapeHtml(orchestrator || "")}"></label>
+      <label>Codex task alias or UUID<input name="orchestrator" value="${escapeHtml(agent?.name || orchestrator || "")}"></label>
         <button type="submit">Save</button><span class="save-status" aria-live="polite"></span>
       </form></details>
     </footer>
@@ -409,13 +410,16 @@ async function requestAssessments(workstreamIds) {
   requestAssessmentButton.disabled = true;
   const briefButton = briefRoot.querySelector(".request-one");
   if (briefButton) briefButton.disabled = true;
-  selectionCount.textContent = `Requesting judgment for ${workstreamIds.length} outcome${workstreamIds.length === 1 ? "" : "s"}…`;
+    selectionCount.textContent = `Preparing ${workstreamIds.length} native Codex review brief${workstreamIds.length === 1 ? "" : "s"}…`;
   try {
     const response = await fetch("/api/assessments/request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workstreamIds }) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Assessment request failed");
-    selectedStreams.clear();
-    await load();
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Assessment request failed");
+      const briefs = result.requested.map((brief) => `To: ${brief.alias} (${brief.recipient})\nWorkstream: ${brief.id}\nHead: ${brief.head}\n\n${brief.prompt}`).join("\n\n---\n\n");
+      await navigator.clipboard.writeText(briefs);
+      selectedStreams.clear();
+      selectionCount.textContent = `Copied ${result.requested.length} native Codex review brief${result.requested.length === 1 ? "" : "s"}.`;
+      requestAssessmentButton.disabled = true;
   } catch (error) {
     selectionCount.textContent = error.message;
     requestAssessmentButton.disabled = selectedStreams.size === 0;

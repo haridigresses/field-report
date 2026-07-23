@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -29,7 +29,10 @@ Usage:
   fr status
   fr list
   fr show [workstream-id]
-  fr create --repo <id> --title <title> --outcome <text> [--orchestrator <af>] [--reviewer <af>]
+  fr create --repo <id> --title <title> --outcome <text> [--orchestrator <codex-task-uuid>]
+  fr session alias <alias> [--id <codex-task-uuid>]
+  fr session list
+  fr assign [workstream-id] --session <alias-or-uuid>
   fr ask [workstream-id] <question>
   fr decide [workstream-id] <Qn> <decision>
   fr checkpoint [workstream-id] [--summary <text>] [--status <state>] [--gate <text>] [--data <json>]
@@ -37,15 +40,13 @@ Usage:
     fr assess [workstream-id]
     fr pass record [workstream-id] --head <sha> --verdict <GO|CONDITIONAL_GO|NO_GO> [--role deep-code-review|structural-challenge] [--scope full|delta] [--base-head <sha>] [--reviewer <name>] [--model <model>] [--summary <text>]
     fr pass import [workstream-id] --data <json> | --file <path>
-    fr delegate review [workstream-id]
   fr link issue|commit [workstream-id] <value> [--chunk <milestone-id>]
   fr reference [workstream-id] --path <repo-path> [--label <label>] [--kind plan|contract|decision|review] [--section <anchor>] [--quote <short context>]
   fr disarm
-  fr watch start|stop|status [--interval <seconds>]
-  fr watch --once [--send]
+  fr watch --once
   fr hook session-start|stop
 
-Natural-language agent workflows should call these commands; users should not need AF protocol syntax.`;
+  Natural-language agent workflows should use Codex-native delegation and messaging. AF is reserved for issue tracking.`;
 }
 
 function parse(argv) {
@@ -87,7 +88,9 @@ async function localApi(method, pathname, body) {
   }
   if (method === "GET" && pathname === "/api/workstreams") return { workstreams: await store.listCanonicalWorkstreams() };
   if (method === "POST" && pathname === "/api/workstreams") return { workstream: await store.createWorkstream(body) };
-  if (method === "POST" && pathname === "/api/assessments/request") return { requested: await store.requestAssessments(body.workstreamIds) };
+  if (method === "GET" && pathname === "/api/sessions") return { sessions: await store.listSessions() };
+  if (method === "POST" && pathname === "/api/sessions") return { session: await store.saveSessionAlias(body) };
+  if (method === "POST" && pathname === "/api/assessments/request") return { requested: await store.prepareAssessmentBriefs(body.workstreamIds) };
   const match = pathname.match(/^\/api\/workstreams\/([^/]+)(?:\/(events|questions|decisions|passes|mrr))?$/);
   if (!match) throw new Error(`Unsupported local Field Report operation: ${method} ${pathname}`);
   const id = decodeURIComponent(match[1]);
@@ -118,15 +121,11 @@ async function writeState(state) {
 }
 
 async function identity() {
-  try {
-    const { stdout } = await exec("af", ["whoami", "--json"], { timeout: 10_000 });
-    const parsed = JSON.parse(stdout);
-    const cwd = process.env.FIELD_REPORT_CWD || parsed.cwd || process.cwd();
-    return { key: parsed.session_id, actor: parsed.name || parsed.names?.[0] || parsed.session_id, kind: parsed.kind, cwd };
-  } catch {
-    const cwd = process.env.FIELD_REPORT_CWD || process.cwd();
-    return { key: `cwd:${cwd}`, actor: process.env.USER || "agent", kind: "unknown", cwd };
-  }
+  const cwd = process.env.FIELD_REPORT_CWD || process.cwd();
+  const sessionId = process.env.FIELD_REPORT_SESSION_ID || process.env.CODEX_THREAD_ID || null;
+  if (!sessionId) return { key: `cwd:${cwd}`, actor: process.env.USER || "agent", kind: "unknown", cwd };
+  const registered = await store.resolveSession(sessionId);
+  return { key: sessionId, actor: registered?.alias || sessionId, kind: registered?.kind || "codex", cwd };
 }
 
 async function armed() {
@@ -402,8 +401,8 @@ function patchFrom(flags) {
   return patch;
 }
 
-async function nudge(send) {
-  const [data, state] = await Promise.all([api("GET", "/data/current.json"), readState()]);
+async function nudge() {
+  const data = await api("GET", "/data/current.json");
   const now = Date.now();
   const candidates = data.workstreams.flatMap((stream) => {
     const reasons = [];
@@ -412,18 +411,11 @@ async function nudge(send) {
     const updated = new Date(stream.updatedAt || 0).getTime();
     if (["active", "blocked"].includes(stream.status) && now - updated > 12 * 3600_000) reasons.push("the canonical situation is older than 12 hours");
     return reasons.length && (stream.orchestrator || stream.fableAgent) ? [{ stream, reasons }] : [];
-  }).filter(({ stream }) => now - new Date(state.nudges[stream.id] || 0).getTime() > 2 * 3600_000);
+  });
   if (!candidates.length) { process.stdout.write("No Field Report nudges are due.\n"); return; }
   for (const { stream, reasons } of candidates) {
-    const subject = `[FR_NUDGE ${stream.id}] Reconciliation requested`;
-    const body = `Field Report detected: ${reasons.join("; ")}. Run fr onboard ${stream.id} if needed, reconcile current evidence, then publish only material changes with fr checkpoint or fr reconcile.`;
-    if (send) {
-      await exec("af", ["inbox", "send", stream.orchestrator || stream.fableAgent, subject, "--body", body], { timeout: 30_000 });
-      state.nudges[stream.id] = new Date().toISOString();
-    }
-    process.stdout.write(`${send ? "Sent" : "Due"}: ${stream.id} -> ${stream.orchestrator || stream.fableAgent}: ${reasons.join("; ")}\n`);
+    process.stdout.write(`Due: ${stream.id} -> ${stream.orchestrator || stream.fableAgent}: ${reasons.join("; ")}\n`);
   }
-  if (send) await writeState(state);
 }
 
 async function main() {
@@ -456,10 +448,29 @@ async function main() {
     const stream = await api("GET", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}`);
     return process.stdout.write(`Armed as ${context.binding.role} since ${context.binding.armedAt}.\n${describe(stream)}\n`);
   }
-    if (command === "show") {
+  if (command === "show") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
     const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
     return process.stdout.write(flags.json ? `${JSON.stringify(stream, null, 2)}\n` : `${describe(stream)}\n`);
+  }
+  if (command === "session" && positional[0] === "alias") {
+    const alias = positional[1];
+    const sessionId = flags.id || context.who.key;
+    if (!alias || !sessionId || sessionId.startsWith("cwd:")) throw new Error("Use fr session alias <alias> [--id <codex-task-uuid>]");
+    const result = await api("POST", "/api/sessions", { id: sessionId, alias, kind: "codex" });
+    return process.stdout.write(`Saved ${result.session.alias} for Codex task ${result.session.id}.\n`);
+  }
+  if (command === "session" && positional[0] === "list") {
+    const result = await api("GET", "/api/sessions");
+    if (!result.sessions.length) return process.stdout.write("No Codex session aliases recorded.\n");
+    return process.stdout.write(`${result.sessions.map((session) => `${session.alias}\t${session.id}`).join("\n")}\n`);
+  }
+  if (command === "assign") {
+    if (!id || !flags.session) throw new Error("Use fr assign [workstream-id] --session <alias-or-uuid>");
+    const session = await store.resolveSession(flags.session);
+    if (!session) throw new Error(`Unknown Codex session ${flags.session}; register it with fr session alias`);
+    const result = await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { orchestrator: session.id, updatedBy: context.who.actor, eventType: "checkpoint", eventText: `Assigned ${session.alias} (${session.id}) as orchestrator` });
+    return process.stdout.write(`Assigned ${session.alias} (${session.id}) to ${result.workstream.id}.\n`);
   }
   if (command === "create") {
     const result = await api("POST", "/api/workstreams", { project: flags.repo, id: flags.id, title: flags.title, outcome: flags.outcome, summary: flags.outcome, orchestrator: flags.orchestrator, reviewer: flags.reviewer, branch: flags.branch, updatedBy: context.who.actor });
@@ -496,9 +507,10 @@ async function main() {
     return process.stdout.write(`Updated ${result.workstream.id}.\n${describe(result.workstream)}\n`);
   }
     if (command === "assess") {
-    if (!id) throw new Error("Specify a workstream ID or arm this session");
-    const result = await api("POST", "/api/assessments/request", { workstreamIds: [id] });
-    return process.stdout.write(`Requested assessment from ${result.requested[0].recipient} for ${id}.\n`);
+      if (!id) throw new Error("Specify a workstream ID or arm this session");
+      const result = await api("POST", "/api/assessments/request", { workstreamIds: [id] });
+      const brief = result.requested[0];
+      return process.stdout.write(`Native Codex review brief for ${brief.alias} (${brief.recipient}) at ${brief.head}:\n\n${brief.prompt}\n`);
   }
   if (command === "link") {
     const kind = positional[0];
@@ -559,12 +571,6 @@ async function main() {
     const mrr = await api("GET", `/api/workstreams/${encodeURIComponent(targetId)}/mrr`);
     return process.stdout.write(`Imported ${events.length} review pass${events.length === 1 ? "" : "es"} for ${targetId}. MRR: ${mrr.ready ? "READY" : "NOT READY"}${mrr.reasons?.length ? ` — ${mrr.reasons.join("; ")}` : ""}.\n`);
   }
-  if (command === "delegate" && positional[0] === "review") {
-    const targetId = positional[1] || context.binding?.workstreamId;
-    if (!targetId) throw new Error("Specify a workstream ID or arm this session");
-    const result = await api("POST", "/api/assessments/request", { workstreamIds: [targetId] });
-    return process.stdout.write(`Requested delegated review from ${result.requested[0].recipient} for ${targetId}.\n`);
-  }
   if (command === "mrr") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
     const result = await api("GET", `/api/workstreams/${encodeURIComponent(id)}/mrr`);
@@ -591,34 +597,8 @@ async function main() {
     return process.stdout.write(`Disarmed ${target}.\n`);
   }
   if (command === "watch") {
-    const interval = Math.max(60, Number(flags.interval || 300));
-    if (positional[0] === "start") {
-      const state = await readState();
-      if (state.watch?.pid) {
-        try { process.kill(state.watch.pid, 0); return process.stdout.write(`Field Report watcher is already running (PID ${state.watch.pid}).\n`); } catch {}
-      }
-      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "watch", "--send", "--interval", String(interval), "--daemon"], { detached: true, stdio: "ignore", env: process.env });
-      child.unref();
-      state.watch = { pid: child.pid, interval, startedAt: new Date().toISOString() };
-      await writeState(state);
-      return process.stdout.write(`Started Field Report watcher (PID ${child.pid}, every ${interval}s).\n`);
-    }
-    if (positional[0] === "stop") {
-      const state = await readState();
-      if (!state.watch?.pid) return process.stdout.write("Field Report watcher is not running.\n");
-      try { process.kill(state.watch.pid, "SIGTERM"); } catch {}
-      delete state.watch;
-      await writeState(state);
-      return process.stdout.write("Stopped Field Report watcher.\n");
-    }
-    if (positional[0] === "status") {
-      const state = await readState();
-      if (!state.watch?.pid) return process.stdout.write("Field Report watcher is not running.\n");
-      try { process.kill(state.watch.pid, 0); return process.stdout.write(`Field Report watcher is running (PID ${state.watch.pid}, every ${state.watch.interval}s).\n`); }
-      catch { delete state.watch; await writeState(state); return process.stdout.write("Field Report watcher was stale and has been cleared.\n"); }
-    }
-    do { await nudge(Boolean(flags.send)); if (flags.once || !flags.interval) break; await new Promise((resolve) => setTimeout(resolve, interval * 1000)); } while (true);
-    return;
+    if (positional[0] !== "once" && !flags.once) throw new Error("Use fr watch --once; send actionable nudges through native Codex task messaging");
+    return nudge();
   }
   if (command === "hook") {
     if (positional[0] === "session-start") {

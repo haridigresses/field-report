@@ -74,15 +74,23 @@ const server = http.createServer(async (req, res) => {
     try {
       const { workstreamIds } = await readJsonBody(req);
       const operation = mutationPromise.then(async () => {
-        const requested = await store.requestAssessments(workstreamIds);
-        await runCollect();
-        return requested;
+        return store.prepareAssessmentBriefs(workstreamIds);
       });
       mutationPromise = operation.catch(() => {});
       const requested = await operation;
       return send(res, 200, JSON.stringify({ ok: true, requested }), "application/json; charset=utf-8");
     } catch (error) {
       return send(res, 400, JSON.stringify({ ok: false, error: error.stderr || error.message }), "application/json; charset=utf-8");
+    }
+  }
+  if (pathname === "/api/sessions" && req.method === "POST") {
+    try {
+      const values = await readJsonBody(req);
+      const session = await store.saveSessionAlias(values);
+      runCollect().catch(() => {});
+      return send(res, 200, JSON.stringify({ ok: true, session }), "application/json; charset=utf-8");
+    } catch (error) {
+      return send(res, 400, JSON.stringify({ ok: false, error: error.message }), "application/json; charset=utf-8");
     }
   }
     const passRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/passes$/);
@@ -159,6 +167,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (req.method !== "GET") return send(res, 405, "Method not allowed");
+  if (pathname === "/api/sessions") return send(res, 200, JSON.stringify({ sessions: await store.listSessions() }), "application/json; charset=utf-8");
   if (pathname === "/api/workflow") {
     const role = requestUrl.searchParams.get("role") || "shared";
     return send(res, 200, JSON.stringify({ role, markdown: await store.workflowContract(role) }), "application/json; charset=utf-8");

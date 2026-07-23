@@ -5,7 +5,7 @@
       "label": "AON",
       "repoPath": "/Users/graphy/aon",
       "githubRepo": "abstractops/aon",
-      "coordinator": "refrev",
+      "coordinator": "019f4dda-6bca-70d2-8d02-d71c0b471870",
       "issueNamespaces": ["aon", "aon-orch", "refrev", "aona", "aonb", "reforch"]
     },
     {

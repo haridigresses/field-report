@@ -10,6 +10,7 @@ const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mil
 
 export function createFieldReportStore(root) {
   const lockDir = path.join(root, ".field-report-write.lock");
+  const sessionsFile = path.join(root, "config", "sessions.json");
 
   async function withWriteLock(operation) {
     const deadline = Date.now() + 15_000;
@@ -42,6 +43,48 @@ export function createFieldReportStore(root) {
     const temp = `${file}.${process.pid}-${randomUUID()}.next`;
     await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`);
     await rename(temp, file);
+  }
+
+  async function listSessions() {
+    try {
+      const registry = JSON.parse(await readFile(sessionsFile, "utf8"));
+      return Array.isArray(registry.sessions) ? registry.sessions : [];
+    } catch (error) {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  async function resolveSession(value) {
+    const normalized = sessionValue(value);
+    if (!normalized) return null;
+    const sessions = await listSessions();
+    return sessions.find((session) => session.id === normalized || session.alias === normalized || session.aliases?.includes(normalized)) || null;
+  }
+
+  async function sessionIdFor(value) {
+    const normalized = sessionValue(value);
+    if (!normalized) return null;
+    const registered = await resolveSession(normalized);
+    if (registered) return registered.id;
+    if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(normalized)) return normalized;
+    throw new Error(`Unknown Codex session ${normalized}; register it with fr session alias`);
+  }
+
+  async function saveSessionAlias(values) {
+    return withWriteLock(async () => {
+      const id = sessionValue(values.id);
+      const alias = sessionValue(values.alias);
+      if (!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(id || "")) throw new Error("Session ID must be a Codex task UUID");
+      if (!/^[a-z0-9][a-z0-9/_-]{0,79}$/.test(alias || "")) throw new Error("Session aliases use lowercase letters, numbers, slash, underscore, or hyphen");
+      const sessions = await listSessions();
+      if (sessions.some((session) => (session.alias === alias || session.aliases?.includes(alias)) && session.id !== id)) throw new Error(`Session alias ${alias} is already assigned`);
+      const existing = sessions.find((session) => session.id === id);
+      const record = { id, alias, ...(existing?.aliases?.length ? { aliases: existing.aliases } : {}), kind: values.kind || existing?.kind || "codex", updatedAt: new Date().toISOString() };
+      const next = [...sessions.filter((session) => session.id !== id), record].sort((left, right) => left.alias.localeCompare(right.alias));
+      await writeJsonAtomic(sessionsFile, { sessions: next });
+      return record;
+    });
   }
 
   async function findWorkstream(workstreamId) {
@@ -212,7 +255,8 @@ export function createFieldReportStore(root) {
       const id = workstreamId(values.id || `${project.id}-${slug(values.title)}`);
       try { await findWorkstream(id); throw new Error("Workstream already exists"); } catch (error) { if (error.message !== "Unknown workstream") throw error; }
       const now = new Date().toISOString();
-      const stream = { id, project: project.id, title: shortText(values.title, "Title", 160), summary: shortText(values.summary || values.outcome, "Outcome", 1200), status: "planned", branch: values.branch ? sessionValue(values.branch) : null, reviewState: values.reviewState ? shortText(values.reviewState, "Current gate", 500) : "Workstream created; initial plan pending", chunks: Array.isArray(values.chunks) ? normalizeChunks(values.chunks) : [], questions: [], prs: [], issuePrefixes: [], references: Array.isArray(values.references) ? normalizeReferences(values.references) : [], orchestrator: sessionValue(values.orchestrator || project.coordinator), assessment: null, updatedAt: now, updatedBy: values.updatedBy ? sessionValue(values.updatedBy) : "fr" };
+      const orchestrator = await sessionIdFor(values.orchestrator || project.coordinator);
+      const stream = { id, project: project.id, title: shortText(values.title, "Title", 160), summary: shortText(values.summary || values.outcome, "Outcome", 1200), status: "planned", branch: values.branch ? sessionValue(values.branch) : null, reviewState: values.reviewState ? shortText(values.reviewState, "Current gate", 500) : "Workstream created; initial plan pending", chunks: Array.isArray(values.chunks) ? normalizeChunks(values.chunks) : [], questions: [], prs: [], issuePrefixes: [], references: Array.isArray(values.references) ? normalizeReferences(values.references) : [], orchestrator, assessment: null, updatedAt: now, updatedBy: values.updatedBy ? sessionValue(values.updatedBy) : "fr" };
       await writeJsonAtomic(path.join(root, "workstreams", `${id}.json`), stream);
       await appendEventUnlocked(id, { type: "created", text: `Created workstream: ${stream.summary}`, actor: stream.updatedBy });
       return stream;
@@ -265,7 +309,9 @@ export function createFieldReportStore(root) {
   }
 
   async function updateSessions(id, values) {
-    return updateWorkstream(id, { orchestrator: values.orchestrator, updatedBy: values.actor || "dashboard", eventText: `Orchestrator set to ${values.orchestrator || "unassigned"}` }, "checkpoint");
+    const session = values.orchestrator ? await resolveSession(values.orchestrator) : null;
+    if (values.orchestrator && !session) throw new Error(`Unknown Codex session ${values.orchestrator}; register it with fr session alias`);
+    return updateWorkstream(id, { orchestrator: session?.id || null, updatedBy: values.actor || "dashboard", eventText: `Orchestrator set to ${session ? `${session.alias} (${session.id})` : "unassigned"}` }, "checkpoint");
   }
 
   function reviewPassEvent(values) {
@@ -323,32 +369,32 @@ Branch: ${stream.branch || "none"}
 Current head: ${currentHead}
 Linked PRs: ${prs}
 
-First reconcile the dashboard orientation against the current branch head, PR state, AF issue history, prior plan, and prior reviewer decisions. When they disagree, use the current evidence and call out the drift explicitly.
+First reconcile the dashboard orientation against the current branch head, PR state, linked issue history, prior plan, and prior reviewer decisions. When they disagree, use the current evidence and call out the drift explicitly.
 
 Explicitly test necessity, simpler designs, scope drift, ownership and failure contracts, evidence quality, structural rot, and contradictions with prior plans or decisions.
 
 Publish the judgment directly with:
 fr pass record ${stream.id} --head ${currentHead} --verdict <GO|CONDITIONAL_GO|NO_GO> --merge <0-100> --structural <0-100> --outcome-confidence <0-100> --necessity <clear|challenged|unjustified> --simpler-path <none_found|candidate|recommended> --scope-drift <none|low|material> --contract-integrity <sound|at_risk|broken> --evidence-quality <strong|partial|weak> --summary "<2-4 sentence rationale including the primary risk and next gate>"
 
-AF is only the delivery channel. Do not send dashboard protocol messages through AF.`;
+Return the completed review through the native Codex task channel. Field Report is the durable review ledger; AF is reserved for issue tracking.`;
   }
 
-  async function requestAssessments(ids) {
+  async function prepareAssessmentBriefs(ids) {
     if (!Array.isArray(ids) || ids.length < 1 || ids.length > 20) throw new Error("Select between 1 and 20 workstreams");
     const results = [];
     for (const id of [...new Set(ids.map(String))]) {
       const { stream: canonical } = await findWorkstream(id);
       const { stream, project } = await currentStream(id);
-      const recipient = canonical.orchestrator || canonical.fableAgent || project?.coordinator;
-      if (!recipient) throw new Error(`No workstream orchestrator configured for ${id}`);
+      const recipientValue = canonical.orchestrator || project?.coordinator;
+      if (!recipientValue) throw new Error(`No Codex orchestrator configured for ${id}`);
+      const recipient = await resolveSession(recipientValue);
+      if (!recipient) throw new Error(`Unknown Codex session ${recipientValue}; register it with fr session alias`);
       const currentHead = stream.assessment?.currentHead;
       if (!/^[0-9a-f]{40}$/i.test(currentHead || "")) throw new Error(`Could not resolve an exact current head for ${id}`);
-      await exec("af", ["inbox", "send", recipient, `[FR REVIEW ${id}] Evidence-backed judgment requested`, "--body", assessmentPrompt(stream, currentHead)], { cwd: root, timeout: 30_000, maxBuffer: 1024 * 1024 });
-      await appendWorkstreamEvent(id, { type: "assessment_requested", actor: "fr", text: `Fresh review requested from ${recipient}`, metadata: { recipient, head: currentHead } });
-      results.push({ id, recipient });
+      results.push({ id, recipient: recipient.id, alias: recipient.alias, head: currentHead, prompt: assessmentPrompt(stream, currentHead) });
     }
     return results;
   }
 
-  return { appendWorkstreamEvent, createWorkstream, currentStream, findWorkstream, listCanonicalWorkstreams, mrrStatus, recordDecision, recordQuestion, recordReviewPass, recordReviewPasses, requestAssessments, updateSessions, updateWorkstream, workflowContract };
+  return { appendWorkstreamEvent, createWorkstream, currentStream, findWorkstream, listCanonicalWorkstreams, listSessions, mrrStatus, prepareAssessmentBriefs, recordDecision, recordQuestion, recordReviewPass, recordReviewPasses, resolveSession, saveSessionAlias, updateSessions, updateWorkstream, workflowContract };
 }

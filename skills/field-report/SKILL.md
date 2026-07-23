@@ -5,8 +5,7 @@ description: Maintain Field Report workstreams with the fr CLI. Use when the use
 
 # Field Report
 
-Use `fr` instead of editing Field Report JSON or composing AF protocol messages manually.
-The CLI writes through the local shared core and does not require the dashboard server. If the dashboard is offline, continue recording canonical state normally; external AF, GitHub, and repository facts appear after the next source refresh.
+Use `fr` instead of editing Field Report JSON. The CLI writes through the local shared core and does not require the dashboard server. If the dashboard is offline, continue recording canonical state normally; linked AF issues, GitHub, and repository facts appear after the next source refresh.
 
 ## Start
 
@@ -18,11 +17,12 @@ Run `fr status`. If unarmed:
 - Run `fr context` for one concise checkout-aware orientation before reaching for separate `status`, `list`, or `show` calls.
 - Run `fr onboard <id> --role workstream-orchestrator|reviewer|executor` when the workstream ID is known.
 - Run `fr create ...` when the user asks to track a new durable outcome.
+- Register a readable name with `fr session alias <alias> [--id <codex-task-uuid>]`, and assign responsibility with `fr assign <workstream-id> --session <alias-or-uuid>`. Aliases are labels; task UUIDs remain durable identity.
 
 After arming, speak normally with the user. Do not expose routing syntax unless debugging.
 Treat the role-specific workflow contract printed by `fr` as canonical. Use `fr workflow` to print it again after compaction.
 
-Use `fr watch start` when the user wants autonomous, rate-limited Field Report nudges while the service is running. Use `fr watch stop` to disable them.
+Use `fr watch --once` to identify outcomes that need a native Codex follow-up. Field Report does not run a background AF delivery loop.
 
 ## Record durable state
 
@@ -32,7 +32,7 @@ Use `fr watch start` when the user wants autonomous, rate-limited Field Report n
 - Decision: `fr decide Q1 "..."`
 - Execution evidence: `fr link issue <issue-id>` and `fr link commit <sha> --chunk <milestone-id>`.
 - Governing git context: `fr reference --path <repo-relative-path> --kind plan|contract|decision|review --quote "<short exact excerpt>"`.
-- Request fresh reviewer judgment: `fr assess` or `fr delegate review <id>`.
+- Prepare fresh reviewer judgment with `fr assess <id>`, then send its bounded brief through the native Codex delegation or task-messaging tool. Do not use AF inbox as a fallback.
 - Publish completed judgment: `fr pass record <id> --head <full-40-char-sha> --verdict <GO|CONDITIONAL_GO|NO_GO> --role deep-code-review|structural-challenge --model <model> [--reasoning high] --merge <0-100> --structural <0-100> ...`.
 - Publish a complete structured panel in one operation: `fr pass import <id> --file <review-envelope.json>` (or `--data '<json>'`). Each pass is validated independently and incomplete passes are rejected.
 - Verify the PR-level completion gate: `fr mrr [id]`. The default `full` policy requires current-head deep-code and structural-challenge passes. The user or repository coordinator may set a reasoned exception with `fr policy`; a workstream orchestrator may not downgrade its own gate.
@@ -50,7 +50,7 @@ Checkpoint at material gates: meaningful commit, push, PR creation, review verdi
 
 - Orchestrators may update situation, status, milestones, PR associations, questions, and next gate.
 - Reviewers own outcome confidence, merge readiness, necessity, simplification, and structural rebuild risk.
-- AF transports review requests; only a completed `fr pass record` entry is dashboard review authority. Do not publish semantic state with AF subject protocols.
+- Codex-native task channels transport delegation and review requests; only a completed `fr pass record` entry is dashboard review authority. AF is reserved for its issue list.
 - Never treat locally green, CI green, or one reviewer as PR-level completion. `fr mrr` must report READY before a code workstream is marked complete.
 - Never silently change the durable outcome or accept material scope expansion. Record it as a question or proposal for the user.
 - Preserve history; correct stale state with a new checkpoint rather than rewriting past events.
