@@ -1,0 +1,43 @@
+{
+  "id": "aon-post-refactor-repository-shoring",
+  "project": "aon",
+  "title": "Post-refactor repository shoring",
+  "summary": "Superseded coordination container for the completed repository-health sweep and the distinct PR #287-#290 deliveries. Its mixed-head review events are preserved as historical provenance only and are not MRR authority for any code outcome. Dedicated records now own PR 287 replacement, PR 288 replacement, merged PR 289, and blocked PR 290.",
+  "status": "complete",
+  "branch": null,
+  "reviewState": "SUPERSEDED: non-code coordination container only. Never use its mixed PR/head review events to claim code readiness; use each dedicated code workstream MRR gate.",
+  "chunks": [
+    {
+      "id": "pr-287-boundary",
+      "title": "Dedicated replacement outcome: aon-repository-contract-replacement-for-pr-287",
+      "status": "complete",
+      "commits": []
+    },
+    {
+      "id": "pr-288-boundary",
+      "title": "Dedicated replacement outcome: aon-company-data-boundary-replacement-for-pr-288",
+      "status": "complete",
+      "commits": []
+    },
+    {
+      "id": "pr-289-boundary",
+      "title": "Dedicated merged outcome: aon-workflow-form-contracts-pr-289",
+      "status": "complete",
+      "commits": []
+    },
+    {
+      "id": "pr-290-boundary",
+      "title": "Dedicated blocked outcome: aon-database-invariants-pr-290",
+      "status": "complete",
+      "commits": []
+    }
+  ],
+  "questions": [],
+  "prs": [],
+  "issuePrefixes": [],
+  "references": [],
+  "orchestrator": "audit-exec",
+  "assessment": null,
+  "updatedAt": "2026-07-23T20:08:44.428Z",
+  "updatedBy": "graphy"
+}

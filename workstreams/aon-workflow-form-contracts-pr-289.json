@@ -1,0 +1,41 @@
+{
+  "id": "aon-workflow-form-contracts-pr-289",
+  "project": "aon",
+  "title": "Workflow form contracts PR 289",
+  "summary": "PR #289 merged at exact head 8c9c46e1 and is materially sound. Dedicated historical record retains the independently evidenced Fable structural pass; the implementing-session deep pass remains provenance only and is not counted as independent authority.",
+  "status": "complete",
+  "branch": "codex/shore-ui-contracts",
+  "reviewState": "COMPLETE: merged historical delivery recorded under explicit single-independent review policy.",
+  "chunks": [
+    {
+      "id": "merged-delivery",
+      "title": "Merged workflow form contract corrections",
+      "status": "complete",
+      "commits": [
+        "8c9c46e178e90523eb666ccbf0e7a4ca23621d03"
+      ]
+    }
+  ],
+  "questions": [],
+  "prs": [
+    {
+      "number": 289,
+      "chunks": [
+        "merged-delivery"
+      ]
+    }
+  ],
+  "issuePrefixes": [],
+  "references": [],
+  "orchestrator": "refrev",
+  "assessment": null,
+  "updatedAt": "2026-07-23T20:08:27.068Z",
+  "updatedBy": "graphy",
+  "commits": [
+    "8c9c46e178e90523eb666ccbf0e7a4ca23621d03"
+  ],
+  "reviewPolicy": {
+    "mode": "single-independent",
+    "reason": "Historical merged PR: retain the exact-head Fable structural pass as the independently evidenced lane; do not count the implementing-session deep pass as independent authority."
+  }
+}
