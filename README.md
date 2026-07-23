@@ -19,6 +19,7 @@ Common operations:
 ```bash
 fr create --repo aon --title "Document-zone cutover" --outcome "Move document writes to the canonical audit boundary" --orchestrator refrev
 fr coordinate aon
+fr context
 fr catchup
 fr mrr aon-document-zone-cutover
 fr policy aon-document-zone-cutover --mode full
@@ -30,6 +31,7 @@ fr reconcile --data '{"summary":"...","chunks":[...]}'
 fr assess
 fr delegate review aon-document-zone-cutover
 fr pass record aon-document-zone-cutover --head 4ad570c2e81ac141fa18cc0893465264b533f637 --verdict CONDITIONAL_GO --role deep-code-review --reviewer codex-sol-high --model gpt-5.6-sol --reasoning high --merge 82 --structural 8 --summary "Contracts hold; one evidence gap remains."
+fr pass import aon-document-zone-cutover --file /tmp/review-envelope.json
 fr link issue ad.41
 fr link commit 4ad570c2 --chunk kernel-timeout
 fr reference --path docs/import-principles.md --kind contract --quote "Ambiguity and contradiction surface as reviewable, actionable issues at compile time."
@@ -52,9 +54,11 @@ AF issues remain the execution ledger; Field Report links issue trees to durable
 - Agent Fixes provides names, inbox coordination, issues, session visibility, and execution provenance.
 - GitHub remains authoritative for pull-request state.
 
-Repository coordinators own routine orientation. `fr coordinate` runs an initial catch-up; later `fr catchup` calls report semantic and delivery changes since the durable repository cursor plus all outcomes currently needing attention. Workstream orchestrators keep Field Report current and push AF messages only for consequential exceptions that require coordinator awareness or action.
+Repository coordinators own routine orientation. `fr context` infers the repository, workstream, branch, head, delivery artifact, next gate, and MRR state from the checkout in one concise view. `fr coordinate` and `fr catchup` also infer the repository when no ID is supplied and accept the configured ID or repository-directory name. `fr coordinate` runs an initial catch-up; later `fr catchup` calls report semantic and delivery changes since the durable repository cursor plus all outcomes currently needing attention. Workstream orchestrators keep Field Report current and push AF messages only for consequential exceptions that require coordinator awareness or action.
 
-`fr assess` and `fr delegate review` both send a bounded review request to the workstream orchestrator. The orchestrator may delegate to Fable through `claude-aws` or to Codex panels, but only an explicit `fr pass record` at a full 40-character SHA counts as completed review evidence.
+`fr assess` and `fr delegate review` both send a bounded review request to the workstream orchestrator. The orchestrator may delegate to Fable through `claude-aws` or to Codex panels, but only an explicit exact-head review pass counts as completed evidence. Use `fr pass record` for one lane or `fr pass import` to validate and record all lanes from one structured JSON envelope.
+
+`fr checkpoint` automatically records the current full commit and fills an unassigned branch when the checkout maps unambiguously to the workstream repository. It does not copy GitHub facts into canonical state, and a semantically identical checkpoint is skipped instead of adding timeline noise. Pass `--evidence false` only when the checkout must not contribute Git evidence.
 
 `docs/fr-workflow.md` is the canonical opt-in orchestration contract. It is not copied into repository `AGENTS.md` files used by other developers. `fr coordinate`, `fr onboard`, and `fr workflow` load the shared contract plus only the armed session's role section.
 

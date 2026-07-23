@@ -20,6 +20,7 @@ function usage() {
 Usage:
     fr onboard [workstream-id] [--role workstream-orchestrator|reviewer|executor]
     fr coordinate <repo-id>
+    fr context [workstream-id|repo-id]
     fr catchup [repo-id] [--peek] [--since <iso-time>]
     fr mrr [workstream-id]
     fr policy [workstream-id] --mode full|single-independent|delta|none [--reason <text>]
@@ -35,6 +36,7 @@ Usage:
   fr reconcile [workstream-id] [--data <json>]
     fr assess [workstream-id]
     fr pass record [workstream-id] --head <sha> --verdict <GO|CONDITIONAL_GO|NO_GO> [--role deep-code-review|structural-challenge] [--scope full|delta] [--base-head <sha>] [--reviewer <name>] [--model <model>] [--summary <text>]
+    fr pass import [workstream-id] --data <json> | --file <path>
     fr delegate review [workstream-id]
   fr link issue|commit [workstream-id] <value> [--chunk <milestone-id>]
   fr reference [workstream-id] --path <repo-path> [--label <label>] [--kind plan|contract|decision|review] [--section <anchor>] [--quote <short context>]
@@ -96,7 +98,10 @@ async function localApi(method, pathname, body) {
   if (method === "POST" && action === "events") return { result: await store.appendWorkstreamEvent(id, body) };
   if (method === "POST" && action === "questions") return { result: await store.recordQuestion(id, body) };
   if (method === "POST" && action === "decisions") return { result: await store.recordDecision(id, body) };
-  if (method === "POST" && action === "passes") return { event: await store.recordReviewPass(id, body) };
+  if (method === "POST" && action === "passes") {
+    if (Array.isArray(body.passes)) return { events: await store.recordReviewPasses(id, body.passes) };
+    return { event: await store.recordReviewPass(id, body) };
+  }
   throw new Error(`Unsupported local Field Report operation: ${method} ${pathname}`);
 }
 
@@ -116,8 +121,12 @@ async function identity() {
   try {
     const { stdout } = await exec("af", ["whoami", "--json"], { timeout: 10_000 });
     const parsed = JSON.parse(stdout);
-    return { key: parsed.session_id, actor: parsed.name || parsed.names?.[0] || parsed.session_id, kind: parsed.kind, cwd: parsed.cwd || process.cwd() };
-  } catch { return { key: `cwd:${process.cwd()}`, actor: process.env.USER || "agent", kind: "unknown", cwd: process.cwd() }; }
+    const cwd = process.env.FIELD_REPORT_CWD || parsed.cwd || process.cwd();
+    return { key: parsed.session_id, actor: parsed.name || parsed.names?.[0] || parsed.session_id, kind: parsed.kind, cwd };
+  } catch {
+    const cwd = process.env.FIELD_REPORT_CWD || process.cwd();
+    return { key: `cwd:${cwd}`, actor: process.env.USER || "agent", kind: "unknown", cwd };
+  }
 }
 
 async function armed() {
@@ -125,8 +134,50 @@ async function armed() {
   return { state, who, binding: state.sessions[who.key] || null };
 }
 
-function streamId(positional, binding) {
-  return positional[0]?.includes("-") ? positional[0] : binding?.workstreamId;
+async function checkoutContext(cwd) {
+  try {
+    const [rootResult, branchResult, headResult] = await Promise.all([
+      exec("git", ["rev-parse", "--show-toplevel"], { cwd, timeout: 10_000 }),
+      exec("git", ["branch", "--show-current"], { cwd, timeout: 10_000 }),
+      exec("git", ["rev-parse", "HEAD"], { cwd, timeout: 10_000 })
+    ]);
+    const repoRoot = rootResult.stdout.trim();
+    const branch = branchResult.stdout.trim() || "HEAD";
+    const head = headResult.stdout.trim();
+    return { repoRoot, branch, head };
+  } catch { return { repoRoot: null, branch: null, head: null }; }
+}
+
+function projectForCwd(data, cwd) {
+  return (data.projects || [])
+    .filter((project) => project.repoPath && (cwd === project.repoPath || cwd.startsWith(`${project.repoPath}${path.sep}`)))
+    .sort((left, right) => right.repoPath.length - left.repoPath.length)[0] || null;
+}
+
+function resolveProject(data, value, cwd) {
+  if (value) {
+    const normalized = String(value).toLowerCase();
+    const matches = (data.projects || []).filter((project) => [project.id, project.label, path.basename(project.repoPath || "")].filter(Boolean).some((candidate) => String(candidate).toLowerCase() === normalized));
+    if (matches.length === 1) return matches[0];
+    return null;
+  }
+  return projectForCwd(data, cwd);
+}
+
+async function inferredContext(context) {
+  const data = await api("GET", "/data/current.json");
+  const checkout = await checkoutContext(context.who.cwd);
+  const project = projectForCwd(data, context.who.cwd) || projectForCwd(data, checkout.repoRoot);
+  const matches = project && checkout.branch && checkout.branch !== "HEAD"
+    ? data.workstreams.filter((stream) => stream.project === project.id && stream.branch === checkout.branch)
+    : [];
+  return { data, checkout, project, stream: matches.length === 1 ? matches[0] : null, ambiguous: matches.length > 1 };
+}
+
+function streamId(positional, binding, position = 0) {
+  const candidate = positional[position];
+  if (!candidate) return binding?.workstreamId || null;
+  return /^[a-z0-9]+(?:-[a-z0-9]+)+$/i.test(candidate) ? candidate : binding?.workstreamId || null;
 }
 
 function describe(stream) {
@@ -151,10 +202,10 @@ async function onboard(id, role = "orchestrator") {
 }
 
 async function coordinate(projectId) {
-  if (!projectId) throw new Error("Specify a repository ID");
   const [data, context, workflow] = await Promise.all([api("GET", "/data/current.json"), armed(), api("GET", "/api/workflow?role=repo-coordinator")]);
-  const project = data.projects.find((candidate) => candidate.id === projectId);
+  const project = resolveProject(data, projectId, context.who.cwd);
   if (!project) throw new Error(`Unknown repository: ${projectId}`);
+  projectId = project.id;
   context.state.sessions[context.who.key] = { projectId, role: "repo-coordinator", actor: context.who.actor, cwd: context.who.cwd, armedAt: new Date().toISOString() };
   await writeState(context.state);
   const report = await catchup(projectId, { data, context });
@@ -214,9 +265,9 @@ async function catchup(projectId, options = {}) {
   const data = options.data || await api("GET", "/data/current.json");
   const context = options.context || await armed();
   projectId ||= context.binding?.projectId;
-  if (!projectId) throw new Error("Specify a repository ID or coordinate this session first");
-  const project = data.projects.find((candidate) => candidate.id === projectId);
-  if (!project) throw new Error(`Unknown repository: ${projectId}`);
+  const project = resolveProject(data, projectId, context.who.cwd);
+  if (!project) throw new Error(projectId ? `Unknown repository: ${projectId}` : "No Field Report repository matches this checkout; specify an exact ID");
+  projectId = project.id;
   context.state.coordinatorCursors ||= {};
   const sinceValue = options.since || context.state.coordinatorCursors[projectId] || null;
   const since = timestamp(sinceValue);
@@ -243,6 +294,85 @@ async function autoOnboard() {
   const matches = data.workstreams.filter((stream) => projectIds.includes(stream.project) && branch && stream.branch === branch);
   if (matches.length === 1) return onboard(matches[0].id, "workstream-orchestrator");
   process.stdout.write(matches.length > 1 ? "Multiple Field Report workstreams match this branch; run fr onboard <id>.\n" : "No exact Field Report workstream matches this session; not armed.\n");
+}
+
+async function contextReport(context, candidate) {
+  const inferred = await inferredContext(context);
+  const explicitStream = candidate && inferred.data.workstreams.find((stream) => stream.id === candidate);
+  const explicitProject = candidate && !explicitStream ? resolveProject(inferred.data, candidate, context.who.cwd) : null;
+  const boundStream = context.binding?.workstreamId && inferred.data.workstreams.find((stream) => stream.id === context.binding.workstreamId);
+  const boundProject = context.binding?.projectId && inferred.data.projects.find((project) => project.id === context.binding.projectId);
+  const stream = explicitStream || boundStream || inferred.stream;
+  const project = explicitProject || boundProject || (stream && inferred.data.projects.find((item) => item.id === stream.project)) || inferred.project;
+  if (!project && !stream) throw new Error("No Field Report repository or workstream matches this checkout; specify an exact ID");
+  const lines = [
+    `Repository: ${project?.label || project?.id || "unknown"}${project?.id ? ` (${project.id})` : ""}`,
+    `Checkout: ${inferred.checkout.branch || "detached/unknown"}${inferred.checkout.head ? ` @ ${inferred.checkout.head.slice(0, 8)}` : ""}`,
+    `Role: ${context.binding?.role || "not armed"}`
+  ];
+  if (stream) {
+    const mrr = await api("GET", `/api/workstreams/${encodeURIComponent(stream.id)}/mrr`);
+    const next = (stream.chunks || []).find((chunk) => ["blocked", "active", "planned"].includes(chunk.status))?.title || "Outcome delivered";
+    const reasons = attentionReasons(stream);
+    lines.push(
+      `Workstream: ${stream.id} — ${stream.title}`,
+      `State: ${stream.status}${reasons.length ? ` · ${reasons.join(", ")}` : ""}`,
+      `Gate: ${compact(stream.reviewState || "No gate recorded")}`,
+      `Next: ${compact(next, 140)}`,
+      `Delivery: ${deliverySummary(stream)}`,
+      `MRR: ${mrr.required ? (mrr.ready ? "READY" : `NOT READY — ${compact((mrr.reasons || []).join("; "), 180)}`) : "not required"}`
+    );
+  } else {
+    const active = inferred.data.workstreams.filter((item) => item.project === project.id && item.status !== "complete");
+    const attention = active.filter((item) => attentionReasons(item).length);
+    lines.push(`Portfolio: ${active.length} active · ${attention.length} need attention`, "Run `fr catchup` for the changed and attention queues.");
+    if (inferred.ambiguous) lines.push("Multiple workstreams match this branch; specify an exact workstream ID.");
+  }
+  return lines.join("\n");
+}
+
+async function reviewEnvelope(flags) {
+  if (flags.data && flags.file) throw new Error("Use either --data or --file for a review envelope");
+  if (!flags.data && !flags.file) throw new Error("Provide a review envelope with --data <json> or --file <path>");
+  const raw = flags.file ? await readFile(path.resolve(process.cwd(), flags.file), "utf8") : flags.data;
+  const envelope = JSON.parse(raw);
+  const passes = Array.isArray(envelope) ? envelope : Array.isArray(envelope.passes) ? envelope.passes : [envelope];
+  if (!passes.length) throw new Error("Review envelope contains no passes");
+  return { envelope, passes };
+}
+
+function reviewPassBody(pass, envelope, context) {
+  if (pass.reviewComplete === false || pass.review_complete === false) throw new Error("Cannot import an incomplete review pass");
+  return {
+    head: pass.head || envelope.head,
+    verdict: pass.verdict,
+    reviewer: pass.reviewer || envelope.reviewer || context.who.actor,
+    model: pass.model || envelope.model,
+    reasoning: pass.reasoning || envelope.reasoning,
+    reviewRole: pass.reviewRole || pass.review_role || pass.role,
+    reviewScope: pass.reviewScope || pass.review_scope || pass.scope,
+    baseHead: pass.baseHead || pass.base_head || envelope.baseHead || envelope.base_head,
+    summary: pass.summary,
+    mergeReadiness: pass.mergeReadiness ?? pass.merge_readiness ?? pass.merge,
+    structuralRisk: pass.structuralRisk ?? pass.structural_risk ?? pass.structural,
+    outcomeConfidence: pass.outcomeConfidence ?? pass.outcome_confidence,
+    necessity: pass.necessity,
+    simplerPath: pass.simplerPath || pass.simpler_path,
+    scopeDrift: pass.scopeDrift || pass.scope_drift,
+    contractIntegrity: pass.contractIntegrity || pass.contract_integrity,
+    evidenceQuality: pass.evidenceQuality || pass.evidence_quality,
+    findings: pass.findings,
+    unresolved: pass.unresolved
+  };
+}
+
+async function deterministicEvidence(stream, context) {
+  const inferred = await inferredContext(context);
+  if (!inferred.project || inferred.project.id !== stream.project) return {};
+  const { branch, head } = inferred.checkout;
+  if (!/^[0-9a-f]{40}$/i.test(head || "") || branch === "HEAD") return {};
+  if (stream.branch && stream.branch !== branch) return {};
+  return { ...(stream.branch ? {} : { branch }), commits: [...new Set([...(stream.commits || []), head])] };
 }
 
 function patchFrom(flags) {
@@ -293,6 +423,7 @@ async function main() {
   }
     if (command === "onboard") return onboard(positional[0], flags.role || "orchestrator");
     if (command === "coordinate") return coordinate(positional[0]);
+    if (command === "context") return process.stdout.write(`${await contextReport(context, positional[0])}\n`);
     if (command === "catchup") return process.stdout.write(`${await catchup(positional[0], { peek: Boolean(flags.peek), since: flags.since })}\n`);
     if (command === "workflow") {
       const role = positional[0] || context.binding?.role || "shared";
@@ -339,6 +470,10 @@ async function main() {
   if (["update", "checkpoint", "reconcile"].includes(command)) {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
     const patch = patchFrom(flags);
+    const current = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
+    if (command === "checkpoint" && flags.evidence !== "false") Object.assign(patch, await deterministicEvidence(current, context));
+    const changed = Object.entries(patch).some(([key, value]) => JSON.stringify(current[key]) !== JSON.stringify(value));
+    if (!changed) return process.stdout.write(`No material change for ${id}; checkpoint not recorded.\n`);
     patch.updatedBy = context.who.actor;
     patch.eventType = command === "update" ? "updated" : command;
     patch.eventText = flags.note || `${command} by ${context.who.actor}`;
@@ -352,7 +487,7 @@ async function main() {
   }
   if (command === "link") {
     const kind = positional[0];
-    const explicitId = positional[1]?.includes("-") ? positional[1] : null;
+    const explicitId = positional.length >= 3 ? positional[1] : null;
     const targetId = explicitId || context.binding?.workstreamId;
     const value = positional[explicitId ? 2 : 1];
     if (!targetId || !value || !["issue", "commit"].includes(kind)) throw new Error("Use fr link issue|commit [workstream-id] <value>");
@@ -398,6 +533,16 @@ async function main() {
       evidenceQuality: flags["evidence-quality"]
     });
     return process.stdout.write(`Recorded review pass ${result.event.metadata.passId} for ${targetId} at ${result.event.metadata.head.slice(0, 8)}.\n`);
+  }
+  if (command === "pass" && positional[0] === "import") {
+    const { envelope, passes } = await reviewEnvelope(flags);
+    const targetId = positional[1] || envelope.workstreamId || envelope.workstream_id || context.binding?.workstreamId;
+    if (!targetId) throw new Error("Specify a workstream ID in the command or review envelope");
+    const bodies = passes.map((pass) => reviewPassBody(pass, envelope, context));
+    const result = await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/passes`, { passes: bodies });
+    const events = result.events;
+    const mrr = await api("GET", `/api/workstreams/${encodeURIComponent(targetId)}/mrr`);
+    return process.stdout.write(`Imported ${events.length} review pass${events.length === 1 ? "" : "es"} for ${targetId}. MRR: ${mrr.ready ? "READY" : "NOT READY"}${mrr.reasons?.length ? ` — ${mrr.reasons.join("; ")}` : ""}.\n`);
   }
   if (command === "delegate" && positional[0] === "review") {
     const targetId = positional[1] || context.binding?.workstreamId;

@@ -90,9 +90,11 @@ const server = http.createServer(async (req, res) => {
       try {
         const id = decodeURIComponent(passRoute[1]);
         const values = await readJsonBody(req);
-        const operation = mutationPromise.then(async () => { await store.findWorkstream(id); const event = await store.recordReviewPass(id, values); await runCollect(); return event; });
+        const batch = Array.isArray(values.passes);
+        const operation = mutationPromise.then(async () => { await store.findWorkstream(id); const result = batch ? await store.recordReviewPasses(id, values.passes) : await store.recordReviewPass(id, values); await runCollect(); return result; });
         mutationPromise = operation.catch(() => {});
-        return send(res, 200, JSON.stringify({ ok: true, event: await operation }), "application/json; charset=utf-8");
+        const result = await operation;
+        return send(res, 200, JSON.stringify(batch ? { ok: true, events: result } : { ok: true, event: result }), "application/json; charset=utf-8");
       } catch (error) { return send(res, 400, JSON.stringify({ ok: false, error: error.message }), "application/json; charset=utf-8"); }
     }
   if (req.method === "POST" && pathname === "/api/workstreams") {

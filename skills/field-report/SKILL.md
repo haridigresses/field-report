@@ -15,6 +15,7 @@ Run `fr status`. If unarmed:
 - Run `fr auto-onboard` when the current branch already belongs to a workstream.
 - Run `fr coordinate <repo-id>` for a persistent repository coordinator.
 - Run `fr catchup` whenever a repository coordinator resumes or needs a fresh battlefield view.
+- Run `fr context` for one concise checkout-aware orientation before reaching for separate `status`, `list`, or `show` calls.
 - Run `fr onboard <id> --role workstream-orchestrator|reviewer|executor` when the workstream ID is known.
 - Run `fr create ...` when the user asks to track a new durable outcome.
 
@@ -33,6 +34,7 @@ Use `fr watch start` when the user wants autonomous, rate-limited Field Report n
 - Governing git context: `fr reference --path <repo-relative-path> --kind plan|contract|decision|review --quote "<short exact excerpt>"`.
 - Request fresh reviewer judgment: `fr assess` or `fr delegate review <id>`.
 - Publish completed judgment: `fr pass record <id> --head <full-40-char-sha> --verdict <GO|CONDITIONAL_GO|NO_GO> --role deep-code-review|structural-challenge --model <model> [--reasoning high] --merge <0-100> --structural <0-100> ...`.
+- Publish a complete structured panel in one operation: `fr pass import <id> --file <review-envelope.json>` (or `--data '<json>'`). Each pass is validated independently and incomplete passes are rejected.
 - Verify the PR-level completion gate: `fr mrr [id]`. The default `full` policy requires current-head deep-code and structural-challenge passes. The user or repository coordinator may set a reasoned exception with `fr policy`; a workstream orchestrator may not downgrade its own gate.
 - End of assignment: reconcile material changes, then `fr disarm`.
 
@@ -42,7 +44,7 @@ Link only git documents that constrain scope, architecture, contracts, or review
 
 ## Update autonomously
 
-Checkpoint at material gates: meaningful commit, push, PR creation, review verdict, blocker change, AF issue resolution, question resolution, or session end. Skip ordinary tool use and implementation chatter. When a Field Report nudge arrives, reconcile the delta against current evidence before publishing.
+Checkpoint at material gates: meaningful commit, push, PR creation, review verdict, blocker change, AF issue resolution, question resolution, or session end. `fr checkpoint` infers the current full commit and an unassigned matching branch; do not repeat that evidence with `fr link commit`. Identical checkpoints are skipped. Skip ordinary tool use and implementation chatter. When a Field Report nudge arrives, reconcile the delta against current evidence before publishing.
 
 ## Authority
 

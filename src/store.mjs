@@ -222,6 +222,9 @@ export function createFieldReportStore(root) {
   async function updateWorkstream(id, patch, eventType = "updated") {
     return withWriteLock(async () => {
       const { streamFile, stream } = await findWorkstream(id);
+      const semanticKeys = ["title", "summary", "status", "branch", "reviewState", "reviewPolicy", "chunks", "prs", "references", "issuePrefixes", "commits", "questions", "orchestrator"];
+      const requestedKeys = semanticKeys.filter((key) => patch[key] !== undefined);
+      if (!requestedKeys.some((key) => JSON.stringify(stream[key]) !== JSON.stringify(patch[key]))) return stream;
       const next = applyCanonicalPatch(stream, patch);
       if (stream.status !== "complete" && next.status === "complete" && (next.branch || (next.prs || []).length || (next.commits || []).length)) {
         const current = await currentStream(id);
@@ -265,7 +268,7 @@ export function createFieldReportStore(root) {
     return updateWorkstream(id, { orchestrator: values.orchestrator, updatedBy: values.actor || "dashboard", eventText: `Orchestrator set to ${values.orchestrator || "unassigned"}` }, "checkpoint");
   }
 
-  async function recordReviewPass(id, values) {
+  function reviewPassEvent(values) {
     const head = String(values.head || "").trim();
     if (!/^[0-9a-f]{40}$/i.test(head)) throw new Error("Review pass requires the exact 40-character git head SHA");
     const verdict = String(values.verdict || "").toUpperCase();
@@ -279,7 +282,22 @@ export function createFieldReportStore(root) {
     if (!["full", "delta"].includes(reviewScope)) throw new Error("Review scope must be full or delta");
     const baseHead = values.baseHead || null;
     if (reviewScope === "delta" && !/^[0-9a-f]{40}$/i.test(baseHead || "")) throw new Error("A delta review requires --base-head with an exact 40-character SHA");
-    return appendWorkstreamEvent(id, { type: "review_pass", actor: values.reviewer || values.actor || "reviewer", text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`, metadata: { passId: values.passId || randomUUID(), head, verdict, reviewComplete: true, reviewer: values.reviewer || values.actor || "reviewer", model: values.model || "unknown", reasoning: values.reasoning || null, reviewRole, reviewScope, baseHead, independent: values.independent !== false, findings: Array.isArray(values.findings) ? values.findings : [], unresolved: Array.isArray(values.unresolved) ? values.unresolved : [], mergeReadiness, structuralRisk, outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null, necessity: values.necessity || null, simplerPath: values.simplerPath || null, scopeDrift: values.scopeDrift || null, contractIntegrity: values.contractIntegrity || null, evidenceQuality: values.evidenceQuality || null } });
+    return { type: "review_pass", actor: values.reviewer || values.actor || "reviewer", text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`, metadata: { passId: values.passId || randomUUID(), head, verdict, reviewComplete: true, reviewer: values.reviewer || values.actor || "reviewer", model: values.model || "unknown", reasoning: values.reasoning || null, reviewRole, reviewScope, baseHead, independent: values.independent !== false, findings: Array.isArray(values.findings) ? values.findings : [], unresolved: Array.isArray(values.unresolved) ? values.unresolved : [], mergeReadiness, structuralRisk, outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null, necessity: values.necessity || null, simplerPath: values.simplerPath || null, scopeDrift: values.scopeDrift || null, contractIntegrity: values.contractIntegrity || null, evidenceQuality: values.evidenceQuality || null } };
+  }
+
+  async function recordReviewPasses(id, values) {
+    if (!Array.isArray(values) || !values.length) throw new Error("Review import requires at least one pass");
+    const events = values.map(reviewPassEvent);
+    return withWriteLock(async () => {
+      await findWorkstream(id);
+      const recorded = [];
+      for (const event of events) recorded.push(await appendEventUnlocked(id, event));
+      return recorded;
+    });
+  }
+
+  async function recordReviewPass(id, values) {
+    return (await recordReviewPasses(id, [values]))[0];
   }
 
   async function workflowContract(role = "shared") {
@@ -330,5 +348,5 @@ AF is only the delivery channel. Do not send dashboard protocol messages through
     return results;
   }
 
-  return { appendWorkstreamEvent, createWorkstream, currentStream, findWorkstream, listCanonicalWorkstreams, mrrStatus, recordDecision, recordQuestion, recordReviewPass, requestAssessments, updateSessions, updateWorkstream, workflowContract };
+  return { appendWorkstreamEvent, createWorkstream, currentStream, findWorkstream, listCanonicalWorkstreams, mrrStatus, recordDecision, recordQuestion, recordReviewPass, recordReviewPasses, requestAssessments, updateSessions, updateWorkstream, workflowContract };
 }

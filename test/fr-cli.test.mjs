@@ -70,8 +70,18 @@ async function localFixture() {
   await Promise.all(["config", "data", "docs", "events", "workstreams"].map((directory) => mkdir(path.join(localRoot, directory))));
   await writeFile(path.join(localRoot, "config", "projects.json"), JSON.stringify({ projects: [{ id: "sample", label: "Sample", repoPath: localRoot, coordinator: "sample-coordinator" }] }));
   await writeFile(path.join(localRoot, "docs", "fr-workflow.md"), "# Contract\n\n## Shared contract\n\n- Keep it durable.\n");
-  await writeFile(path.join(localRoot, "workstreams", "sample-stream.json"), JSON.stringify({ id: "sample-stream", project: "sample", title: "Sample stream", summary: "Initial state", status: "active", branch: null, reviewState: "Build", chunks: [], questions: [], prs: [], issuePrefixes: [], references: [], orchestrator: "sample-agent", updatedAt: "2026-07-12T00:00:00.000Z" }, null, 2));
-  const env = { ...process.env, FIELD_REPORT_ROOT: localRoot, FIELD_REPORT_STATE_DIR: path.join(localRoot, "state") };
+  const stream = { id: "sample-stream", project: "sample", title: "Sample stream", summary: "Initial state", status: "active", branch: "sample/import-authority", reviewState: "Build", chunks: [], questions: [], prs: [], issuePrefixes: [], references: [], orchestrator: "sample-agent", updatedAt: "2026-07-12T00:00:00.000Z" };
+  await writeFile(path.join(localRoot, "workstreams", "sample-stream.json"), JSON.stringify(stream, null, 2));
+  await exec("git", ["init", "-b", "sample/import-authority"], { cwd: localRoot });
+  await exec("git", ["add", "."], { cwd: localRoot });
+  await exec("git", ["-c", "user.name=Field Report Test", "-c", "user.email=field-report@example.invalid", "commit", "-m", "fixture"], { cwd: localRoot });
+  const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: localRoot })).stdout.trim();
+  await writeFile(path.join(localRoot, "data", "current.json"), JSON.stringify({
+    generatedAt: "2026-07-12T15:00:00.000Z",
+    projects: [{ id: "sample", label: "Sample", repoPath: localRoot }],
+    workstreams: [{ ...stream, assessment: { currentHead: head }, prs: [{ number: 42, state: "OPEN", headRefName: stream.branch, headRefOid: head }], timeline: [] }]
+  }));
+  const env = { ...process.env, FIELD_REPORT_ROOT: localRoot, FIELD_REPORT_STATE_DIR: path.join(localRoot, "state"), FIELD_REPORT_CWD: localRoot };
   delete env.FIELD_REPORT_URL;
   return {
     root: localRoot,
@@ -166,6 +176,92 @@ test("fr pass record writes exact-head review evidence while offline", async () 
     const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
     assert.equal(events.at(-1).metadata.reviewRole, "deep-code-review");
     assert.equal(events.at(-1).metadata.head, sha);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr context infers checkout, workstream, gate, delivery, and MRR", async () => {
+  const mock = await localFixture();
+  try {
+    const result = await exec(process.execPath, [cli, "context"], { env: mock.env });
+    assert.match(result.stdout, /Repository: Sample \(sample\)/);
+    assert.match(result.stdout, /Checkout: sample\/import-authority @ [0-9a-f]{8}/);
+    assert.match(result.stdout, /Workstream: sample-stream/);
+    assert.match(result.stdout, /Gate: Build/);
+    assert.match(result.stdout, /Delivery: PR #42 open/);
+    assert.match(result.stdout, /MRR: NOT READY/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr catchup infers the repository and accepts its checkout directory name", async () => {
+  const mock = await localFixture();
+  try {
+    const inferred = await exec(process.execPath, [cli, "catchup", "--peek"], { env: mock.env });
+    assert.match(inferred.stdout, /Catch-up for Sample/);
+    const aliased = await exec(process.execPath, [cli, "catchup", path.basename(mock.root), "--peek"], { env: mock.env });
+    assert.match(aliased.stdout, /Catch-up for Sample/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr checkpoint infers the exact checkout head and suppresses duplicate checkpoints", async () => {
+  const mock = await localFixture();
+  try {
+    const first = await exec(process.execPath, [cli, "checkpoint", "sample-stream", "--summary", "Committed implementation"], { env: mock.env });
+    assert.match(first.stdout, /Updated sample-stream/);
+    const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-stream.json"), "utf8"));
+    const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    assert.deepEqual(stream.commits, [head]);
+    const before = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").length;
+    const second = await exec(process.execPath, [cli, "checkpoint", "sample-stream", "--summary", "Committed implementation"], { env: mock.env });
+    assert.match(second.stdout, /No material change/);
+    const after = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").length;
+    assert.equal(after, before);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr pass import records a two-lane structured review envelope in one command", async () => {
+  const mock = await localFixture();
+  try {
+    const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    const envelope = {
+      workstream_id: "sample-stream",
+      head,
+      passes: [
+        { role: "deep-code-review", verdict: "GO", model: "gpt-5.6-sol", merge: 95, structural: 5, summary: "Code lane clear" },
+        { review_role: "structural-challenge", verdict: "GO", model: "claude", merge_readiness: 92, structural_risk: 8, summary: "Structure lane clear" }
+      ]
+    };
+    const result = await exec(process.execPath, [cli, "pass", "import", "--data", JSON.stringify(envelope)], { env: mock.env });
+    assert.match(result.stdout, /Imported 2 review passes/);
+    assert.match(result.stdout, /MRR: READY/);
+    const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.deepEqual(events.slice(-2).map((event) => event.metadata.reviewRole), ["deep-code-review", "structural-challenge"]);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr pass import validates the entire envelope before recording any lane", async () => {
+  const mock = await localFixture();
+  try {
+    const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    const envelope = {
+      workstreamId: "sample-stream",
+      head,
+      passes: [
+        { role: "deep-code-review", verdict: "GO", merge: 95, structural: 5 },
+        { role: "structural-challenge", verdict: "MAYBE", merge: 90, structural: 10 }
+      ]
+    };
+    await assert.rejects(exec(process.execPath, [cli, "pass", "import", "--data", JSON.stringify(envelope)], { env: mock.env }), /GO, CONDITIONAL_GO, or NO_GO/);
+    await assert.rejects(readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8"), { code: "ENOENT" });
   } finally {
     await mock.close();
   }
