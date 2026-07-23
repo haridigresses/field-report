@@ -208,6 +208,30 @@ test("fr catchup infers the repository and accepts its checkout directory name",
   }
 });
 
+test("fr context associates external git worktrees through the common repository", async () => {
+  const mock = await localFixture();
+  const external = await mkdtemp(path.join(os.tmpdir(), "field-report-worktree-"));
+  try {
+    await rm(external, { recursive: true, force: true });
+    await exec("git", ["worktree", "add", "-b", "sample/external-worktree", external, "HEAD"], { cwd: mock.root });
+    const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-stream.json"), "utf8"));
+    stream.branch = "sample/external-worktree";
+    await writeFile(path.join(mock.root, "workstreams", "sample-stream.json"), JSON.stringify(stream, null, 2));
+    const projection = JSON.parse(await readFile(path.join(mock.root, "data", "current.json"), "utf8"));
+    projection.workstreams[0].branch = stream.branch;
+    projection.workstreams[0].prs[0].headRefName = stream.branch;
+    await writeFile(path.join(mock.root, "data", "current.json"), JSON.stringify(projection));
+    const result = await exec(process.execPath, [cli, "context"], { env: { ...mock.env, FIELD_REPORT_CWD: external } });
+    assert.match(result.stdout, /Repository: Sample \(sample\)/);
+    assert.match(result.stdout, /Checkout: sample\/external-worktree/);
+    assert.match(result.stdout, /Workstream: sample-stream/);
+  } finally {
+    await exec("git", ["worktree", "remove", "--force", external], { cwd: mock.root }).catch(() => {});
+    await rm(external, { recursive: true, force: true });
+    await mock.close();
+  }
+});
+
 test("fr checkpoint infers the exact checkout head and suppresses duplicate checkpoints", async () => {
   const mock = await localFixture();
   try {
@@ -262,6 +286,22 @@ test("fr pass import validates the entire envelope before recording any lane", a
     };
     await assert.rejects(exec(process.execPath, [cli, "pass", "import", "--data", JSON.stringify(envelope)], { env: mock.env }), /GO, CONDITIONAL_GO, or NO_GO/);
     await assert.rejects(readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8"), { code: "ENOENT" });
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr pass refuses review evidence on an outcome without a code anchor", async () => {
+  const mock = await localFixture();
+  try {
+    const streamPath = path.join(mock.root, "workstreams", "sample-stream.json");
+    const stream = JSON.parse(await readFile(streamPath, "utf8"));
+    stream.branch = null;
+    stream.commits = [];
+    stream.prs = [];
+    await writeFile(streamPath, JSON.stringify(stream, null, 2));
+    const result = await exec(process.execPath, [cli, "pass", "record", "sample-stream", "--head", "a".repeat(40), "--verdict", "GO", "--reviewer", "reviewer", "--model", "test", "--merge", "90", "--structural", "10"], { env: mock.env }).catch((error) => error);
+    assert.match(`${result.stderr || ""}${result.stdout || ""}`, /Review passes require a code workstream/);
   } finally {
     await mock.close();
   }

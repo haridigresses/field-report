@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFile, spawn } from "node:child_process";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -136,22 +136,37 @@ async function armed() {
 
 async function checkoutContext(cwd) {
   try {
-    const [rootResult, branchResult, headResult] = await Promise.all([
+    const [rootResult, branchResult, headResult, commonResult] = await Promise.all([
       exec("git", ["rev-parse", "--show-toplevel"], { cwd, timeout: 10_000 }),
       exec("git", ["branch", "--show-current"], { cwd, timeout: 10_000 }),
-      exec("git", ["rev-parse", "HEAD"], { cwd, timeout: 10_000 })
+      exec("git", ["rev-parse", "HEAD"], { cwd, timeout: 10_000 }),
+      exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, timeout: 10_000 })
     ]);
     const repoRoot = rootResult.stdout.trim();
     const branch = branchResult.stdout.trim() || "HEAD";
     const head = headResult.stdout.trim();
-    return { repoRoot, branch, head };
-  } catch { return { repoRoot: null, branch: null, head: null }; }
+    const gitCommonDir = commonResult.stdout.trim();
+    return { repoRoot, branch, head, gitCommonDir };
+  } catch { return { repoRoot: null, branch: null, head: null, gitCommonDir: null }; }
 }
 
 function projectForCwd(data, cwd) {
   return (data.projects || [])
     .filter((project) => project.repoPath && (cwd === project.repoPath || cwd.startsWith(`${project.repoPath}${path.sep}`)))
     .sort((left, right) => right.repoPath.length - left.repoPath.length)[0] || null;
+}
+
+async function projectForGitCommonDir(data, gitCommonDir) {
+  if (!gitCommonDir) return null;
+  let normalized;
+  try { normalized = await realpath(gitCommonDir); } catch { normalized = path.resolve(gitCommonDir); }
+  for (const project of data.projects || []) {
+    if (!project.repoPath) continue;
+    let projectGit;
+    try { projectGit = await realpath(path.resolve(project.repoPath, ".git")); } catch { projectGit = path.resolve(project.repoPath, ".git"); }
+    if (projectGit === normalized) return project;
+  }
+  return null;
 }
 
 function resolveProject(data, value, cwd) {
@@ -167,7 +182,7 @@ function resolveProject(data, value, cwd) {
 async function inferredContext(context) {
   const data = await api("GET", "/data/current.json");
   const checkout = await checkoutContext(context.who.cwd);
-  const project = projectForCwd(data, context.who.cwd) || projectForCwd(data, checkout.repoRoot);
+  const project = projectForCwd(data, context.who.cwd) || projectForCwd(data, checkout.repoRoot) || await projectForGitCommonDir(data, checkout.gitCommonDir);
   const matches = project && checkout.branch && checkout.branch !== "HEAD"
     ? data.workstreams.filter((stream) => stream.project === project.id && stream.branch === checkout.branch)
     : [];

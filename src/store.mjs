@@ -289,7 +289,9 @@ export function createFieldReportStore(root) {
     if (!Array.isArray(values) || !values.length) throw new Error("Review import requires at least one pass");
     const events = values.map(reviewPassEvent);
     return withWriteLock(async () => {
-      await findWorkstream(id);
+      const { stream } = await findWorkstream(id);
+      const hasCodeAnchor = Boolean(stream.branch || stream.commits?.length || stream.prs?.length);
+      if (!hasCodeAnchor) throw new Error("Review passes require a code workstream anchored by a branch, commit, or PR");
       const recorded = [];
       for (const event of events) recorded.push(await appendEventUnlocked(id, event));
       return recorded;
