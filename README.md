@@ -1,10 +1,12 @@
 # Field Report
 
-A local portfolio field report for Codex executors, Fable/Claude agents, Agent Fixes coordination, and GitHub pull requests.
+A local portfolio field report for Codex task coordination, linked Agent Fixes issues, and GitHub pull requests.
 
-Agents and users interact through the `fr` CLI. Field Report owns curated outcome state and the exact-SHA review ledger; AF transports requests and owns issues, sessions, lineage, and messaging.
+Agents and users interact through the `fr` CLI. Field Report owns curated outcome state, readable aliases for exact Codex task UUIDs, and the exact-SHA review ledger. Native Codex task channels carry delegation and messaging; AF supplies only the issue list.
 
 The CLI is local-first and does not require the dashboard server. Canonical workstream updates, event appends, questions, decisions, review passes, policies, and assessment requests go through the same filesystem-backed core used by the HTTP server. A short cross-process lock prevents agents from overwriting one another. Run the server only to view or operate the browser dashboard; use **Refresh sources** when you want it to collect the latest canonical, AF, GitHub, and repository state.
+
+Field Report stores durable Codex task UUIDs separately from their human-readable aliases. Use `fr session alias <alias> [--id <uuid>]` to name a task and `fr assign <workstream-id> --session <alias-or-uuid>` to assign it. Native Codex delegation and messaging carry live coordination; AF is collected only as the linked issue ledger.
 
 ## Install
 
@@ -17,7 +19,9 @@ This installs `fr` in `~/.local/bin`, the shared Field Report and coordination-r
 Common operations:
 
 ```bash
-fr create --repo aon --title "Document-zone cutover" --outcome "Move document writes to the canonical audit boundary" --orchestrator refrev
+fr session alias aon-document-zone --id 019f0000-0000-7000-8000-000000000001
+fr create --repo aon --title "Document-zone cutover" --outcome "Move document writes to the canonical audit boundary" --orchestrator 019f0000-0000-7000-8000-000000000001
+fr assign aon-document-zone-cutover --session aon-document-zone
 fr coordinate aon
 fr context
 fr catchup
@@ -29,14 +33,12 @@ fr ask "Does attachment history belong in this slice?"
 fr checkpoint --summary "Implementation complete; exact-SHA review is next" --status active --gate "Exact-SHA review"
 fr reconcile --data '{"summary":"...","chunks":[...]}'
 fr assess
-fr delegate review aon-document-zone-cutover
 fr pass record aon-document-zone-cutover --head 4ad570c2e81ac141fa18cc0893465264b533f637 --verdict CONDITIONAL_GO --role deep-code-review --reviewer codex-sol-high --model gpt-5.6-sol --reasoning high --merge 82 --structural 8 --summary "Contracts hold; one evidence gap remains."
 fr pass import aon-document-zone-cutover --file /tmp/review-envelope.json
 fr link issue ad.41
 fr link commit 4ad570c2 --chunk kernel-timeout
 fr reference --path docs/import-principles.md --kind contract --quote "Ambiguity and contradiction surface as reviewable, actionable issues at compile time."
-fr watch start
-fr watch stop
+fr watch --once
 ```
 
 Field Report writes canonical updates immediately. Dashboard-originated writes trigger a debounced external refresh; CLI writes remain local and are incorporated on the next manual source refresh.
@@ -49,14 +51,14 @@ AF issues remain the execution ledger; Field Report links issue trees to durable
 
 - One persistent Codex repository coordinator owns portfolio orientation, workstream creation, sequencing, and cross-workstream conflicts.
 - One persistent Codex workstream orchestrator owns each durable outcome but normally delegates implementation to Codex workers in isolated worktrees.
-- Claude/Fable is an on-demand primary independent reviewer or architecture challenger, invoked through `fr delegate review` and the required `claude-aws` Mantle path.
+- Independent Codex review tasks are delegated through native task channels and publish exact-head evidence through Field Report.
 - Field Report is the durable control plane; sleeping agent sessions never own the only copy of pending work or review evidence.
-- Agent Fixes provides names, inbox coordination, issues, session visibility, and execution provenance.
+- Agent Fixes provides the linked issue list only.
 - GitHub remains authoritative for pull-request state.
 
-Repository coordinators own routine orientation. `fr context` infers the repository, workstream, branch, head, delivery artifact, next gate, and MRR state from the checkout in one concise view. External Git worktrees, including Codex-managed worktrees outside the configured checkout path, resolve through their shared Git common directory. `fr coordinate` and `fr catchup` also infer the repository when no ID is supplied and accept the configured ID or repository-directory name. `fr coordinate` runs an initial catch-up; later `fr catchup` calls report semantic and delivery changes since the durable repository cursor plus all outcomes currently needing attention. Workstream orchestrators keep Field Report current and push AF messages only for consequential exceptions that require coordinator awareness or action.
+Repository coordinators own routine orientation. `fr context` infers the repository, workstream, branch, head, delivery artifact, next gate, and MRR state from the checkout in one concise view. External Git worktrees, including Codex-managed worktrees outside the configured checkout path, resolve through their shared Git common directory. `fr coordinate` and `fr catchup` also infer the repository when no ID is supplied and accept the configured ID or repository-directory name. `fr coordinate` runs an initial catch-up; later `fr catchup` calls report semantic and delivery changes since the durable repository cursor plus all outcomes currently needing attention. Workstream orchestrators keep Field Report current and send consequential exceptions through native Codex task messaging.
 
-`fr assess` and `fr delegate review` both send a bounded review request to the workstream orchestrator. The orchestrator may delegate to Fable through `claude-aws` or to Codex panels, but only an explicit exact-head review pass counts as completed evidence. Use `fr pass record` for one lane or `fr pass import` to validate and record all lanes from one structured JSON envelope. Review passes require a code anchor on the outcome—a branch, commit, or PR—so audit-only outcomes cannot accumulate code-readiness evidence.
+`fr assess` prepares a bounded, target-specific review brief for native Codex delegation; it does not send through AF. Only an explicit exact-head review pass counts as completed evidence. Use `fr pass record` for one lane or `fr pass import` to validate and record all lanes from one structured JSON envelope. Review passes require a code anchor on the outcome—a branch, commit, or PR—so audit-only outcomes cannot accumulate code-readiness evidence.
 
 `fr checkpoint` automatically records the current full commit and fills an unassigned branch when the checkout maps unambiguously to the workstream repository. It does not copy GitHub facts into canonical state, and a semantically identical checkpoint is skipped instead of adding timeline noise. Pass `--evidence false` only when the checkout must not contribute Git evidence.
 
@@ -84,20 +86,20 @@ npm run refresh
 
 No background timer is used.
 
-Select an outcome and expand **Orchestrator binding** to update its persistent AF session. Executors and reviewers are delegated runs recorded on semantic events rather than permanent workstream roles.
+Select an outcome and expand **Orchestrator binding** to update its persistent Codex task assignment. Executors and reviewers are delegated native Codex tasks recorded on semantic events rather than permanent workstream roles.
 
 Each workstream displays two reviewer-owned, evidence-backed percentages:
 
 - **Merge readiness:** probability that the branch can merge without material changes beyond normal review and release gates. This is not merge authorization.
 - **Structural rebuild risk:** probability that architectural or contract rot makes a bounded rebuild safer or cheaper than continuing to patch the current branch.
 
-Select one or more outcomes and use **Request assessment** when fresh judgment is needed. The request is delivered through AF to the workstream orchestrator and recorded as a semantic request event. The reviewer publishes directly with `fr pass record`; AF subjects never mutate outcome status, questions, or assessment fields.
+Select one or more outcomes and use **Prepare review brief** when fresh judgment is needed. The brief is copied for delivery through a native Codex task channel. The reviewer publishes directly with `fr pass record`.
 
 The dashboard is attention-first: each row reports whether the outcome needs the user, its current gate, delivery artifact, and freshness. The deep dive keeps the 2–3 line situation, remaining milestones, exact-SHA review ledger, governing git references, linked AF issues, and semantic timeline.
 
 ## Configure the pilot
 
-1. `config/projects.json` contains the real AON and Arrusted repositories and their repository coordinator AF names.
+1. `config/projects.json` contains the real AON and Arrusted repositories; `config/sessions.json` maps exact Codex task UUIDs to readable aliases.
 2. Edit the files under `workstreams/`; each file represents a durable outcome that may span several PRs and agent sessions.
 3. Keep each summary to two or three lines: intended outcome, current position, and next action or blocker.
 4. Keep each checklist item commit-sized or independently verifiable. Group related chunks into a review-worthy PR rather than defaulting to micro-PRs.
@@ -109,7 +111,7 @@ The dashboard is attention-first: each row reports whether the outcome needs the
 
 ## Questions and decisions
 
-Use `fr ask` and `fr decide` for durable uncertainty. AF can notify or wake the orchestrator, but inbox subject lines are not parsed into canonical Field Report state.
+Use `fr ask` and `fr decide` for durable uncertainty. Native task messages may notify or wake the orchestrator, but message text is not parsed into canonical Field Report state.
 
 ## Storage and history
 
@@ -122,8 +124,9 @@ Use `fr ask` and `fr decide` for durable uncertainty. AF can notify or wake the 
 ## Authority boundaries
 
 - Field Report: curated outcome, gate, next action, questions, decisions, milestones, and completed exact-SHA review passes.
-- AF: issues, sessions, delegation, lineage, waking, and message transport.
+- Native Codex task channels: delegation, follow-up, waiting, waking, and message transport.
+- AF: linked issues only.
 - Git: implementation plus authoritative plans and contracts at a named revision.
 - GitHub: pull-request head, checks, review state, and merge state.
 
-The deep-dive timeline is derived only from semantic Field Report events and is capped to the 20 most recent entries. Ordinary AF activity and child-agent transcripts stay out of the portfolio.
+The deep-dive timeline is derived only from semantic Field Report events and is capped to the 20 most recent entries. Ordinary native task messages and child-agent transcripts stay out of the portfolio.

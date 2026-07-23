@@ -4,9 +4,9 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 
 ## Shared contract
 
-- Treat Field Report as durable outcome state and AF as durable execution, lineage, and messaging state. Do not make a live transcript the only source of a decision, blocker, or review verdict.
+- Treat Field Report as durable outcome, assignment, and review state. Native Codex task channels carry live execution and messaging; AF supplies linked issues only. Do not make a live transcript the only source of a decision, blocker, or review verdict.
 - Keep workstreams outcome-sized and milestones commit-sized or independently verifiable. Avoid micro-PRs and unrelated scope bundles.
-- Bind every implementation and review claim to an exact repository, worktree, branch, and head SHA.
+- Bind every implementation and review claim to an exact Codex task UUID, repository, worktree, branch, and head SHA. Field Report session aliases are human-readable labels; the UUID remains authority.
 - A substantive commit invalidates earlier merge-ready verdicts until a fresh or explicit delta review covers the new head.
 - A code workstream or PR-level delivery chunk is not done merely because implementation and repository checks pass. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles on the exact head. Today these are normally staffed by `gpt-5.6-sol` at high reasoning and Fable through `claude-aws`, but the policy is role-based. Reconcile both, record both with `fr pass record --role ...`, and confirm `fr mrr` reports READY.
 - Only the user or repository coordinator may select a reasoned `single-independent`, `delta`, or `none` exception with `fr policy`. A workstream orchestrator must not weaken its own gate. Delta evidence records both the current head and exact base head.
@@ -22,7 +22,7 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 
 - Stay long-running and repository-scoped. Own portfolio ordering, workstream creation, cross-workstream conflicts, shared contract decisions, and Field Report hygiene.
 - Delegate each active outcome to one persistent workstream orchestrator. Do not become its routine implementer or duplicate reviewer.
-- Wake or resume orchestrators through AF, track their exact session identities, and require concise semantic updates at material gates.
+- Delegate, wake, and steer orchestrators through Codex-native task channels. Assign their exact task UUIDs in Field Report and register readable aliases with `fr session alias`; do not duplicate live messaging through AF.
 - Run `fr catchup` when starting, resuming, before battlefield reporting, and before sequencing or merge-order decisions. Routine orientation is the coordinator's responsibility; do not require busy workstreams to narrate state already recorded in Field Report.
 - Keep the repository battlefield current: active outcomes, blockers, open questions, PRs, merge order, and structural risks.
 - Intervene when workstreams collide, stall, drift in scope, or depend on inconsistent contracts. Otherwise let the workstream orchestrator reconcile its own workers and reviewers.
@@ -36,7 +36,7 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Verify worker claims before publishing them. Confirm the actual diff, head, push, checks, and review scope.
 - Reconcile all findings and publish one concise workstream status. Escalate only unresolved product direction, material scope expansion, or genuine architectural alternatives.
 - Keep implementation chatter out of Field Report. Publish the current phase, next gate, blocker/question state, delivery evidence, and exact-SHA review ledger.
-- Push an AF exception to the repository coordinator only when coordinator awareness or action is genuinely needed: user/product decision, cross-workstream collision, shared-contract change, material schedule blocker, merge-order change, merge readiness, structural-risk change, or parking/completion. Do not send routine checkpoint mail.
+- Push a native Codex task message to the repository coordinator only when coordinator awareness or action is genuinely needed: user/product decision, cross-workstream collision, shared-contract change, material schedule blocker, merge-order change, merge readiness, structural-risk change, or parking/completion. Do not send routine checkpoint mail.
 - Treat delegated review as incomplete until an explicit `review_complete: true` result is reconciled and recorded at the exact 40-character SHA. Use `fr pass record` for one lane or one `fr pass import` envelope for multiple completed lanes.
 - Do not mark a PR-level chunk or code workstream complete until its selected review policy is satisfied, no required pass is NO-GO, and no required current-head findings remain unresolved. Under the default `full` policy, both reviewer roles must cover the current head. Locally green, CI green, or one 5/5 review is insufficient.
 - Before launching Fable, verify that the requested Mantle/Bedrock route is enabled and use an explicit read-only reviewer profile: allow Read, Grep, Glob, and narrowly constrained read-only git commands; deny editing and mutation tools. Do not rely on plan mode's default permissions.

@@ -1,5 +1,7 @@
 # Multi-agent visibility research and operating model
 
+> Historical pilot research. The current operating decision supersedes AF session and inbox coordination: Field Report stores Codex task UUID aliases, native Codex task channels carry messaging, and AF remains only as the issue list.
+
 ## Recommendation
 
 Keep Codex Desktop + Agent Fixes as the control plane for the pilot. No reviewed product provides the same combination of local Bedrock/Mantle Claude sessions, Codex tasks, AF inbox/issues, exact SHA-scoped review gates, and cross-repository program visibility.

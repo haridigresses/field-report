@@ -22,8 +22,8 @@ async function fixture() {
       res.setHeader("content-type", "application/json");
       if (req.url.endsWith("/passes")) {
         res.end(JSON.stringify({ event: { metadata: { passId: "pass-1", head: "abcdef1234567890" } } }));
-      } else if (req.url === "/api/assessments/request") {
-        res.end(JSON.stringify({ requested: [{ recipient: "repo/orchestrator" }] }));
+    } else if (req.url === "/api/assessments/request") {
+      res.end(JSON.stringify({ requested: [{ id: "sample-stream", recipient: "019f0000-0000-7000-8000-000000000001", alias: "repo-orchestrator", head: "a".repeat(40), prompt: "Review this head" }] }));
       } else if (req.url === "/data/current.json") {
         res.end(JSON.stringify({
           generatedAt: "2026-07-12T15:00:00.000Z",
@@ -102,12 +102,31 @@ test("fr pass record dispatches as a top-level command", async () => {
   }
 });
 
-test("fr delegate review dispatches as a top-level command", async () => {
+test("fr assess prepares a native Codex review brief", async () => {
   const mock = await fixture();
   try {
-    const { stdout } = await exec(process.execPath, [cli, "delegate", "review", "sample-stream"], { env: mock.env });
-    assert.match(stdout, /Requested delegated review from repo\/orchestrator/);
+    const { stdout } = await exec(process.execPath, [cli, "assess", "sample-stream"], { env: mock.env });
+    assert.match(stdout, /Native Codex review brief for repo-orchestrator/);
+    assert.match(stdout, /Review this head/);
     assert.equal(mock.requests[0].url, "/api/assessments/request");
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr stores a readable alias and assigns the exact Codex task UUID", async () => {
+  const mock = await localFixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000002";
+  const env = { ...mock.env, FIELD_REPORT_SESSION_ID: sessionId };
+  try {
+    const saved = await exec(process.execPath, [cli, "session", "alias", "sample-orchestrator"], { env });
+    assert.match(saved.stdout, new RegExp(`Saved sample-orchestrator for Codex task ${sessionId}`));
+    const assigned = await exec(process.execPath, [cli, "assign", "sample-stream", "--session", "sample-orchestrator"], { env });
+    assert.match(assigned.stdout, /Assigned sample-orchestrator/);
+    const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-stream.json"), "utf8"));
+    assert.equal(stream.orchestrator, sessionId);
+    const registry = JSON.parse(await readFile(path.join(mock.root, "config", "sessions.json"), "utf8"));
+    assert.deepEqual(registry.sessions.map(({ id, alias }) => ({ id, alias })), [{ id: sessionId, alias: "sample-orchestrator" }]);
   } finally {
     await mock.close();
   }
