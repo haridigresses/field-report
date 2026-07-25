@@ -6,7 +6,7 @@ Agents and users interact through the `fr` CLI. Field Report owns curated outcom
 
 The CLI is local-first and does not require the dashboard server. Canonical workstream updates, event appends, questions, decisions, review passes, policies, and assessment requests go through the same filesystem-backed core used by the HTTP server. A short cross-process lock prevents agents from overwriting one another. Run the server only to view or operate the browser dashboard; use **Refresh sources** when you want it to collect the latest canonical, AF, GitHub, and repository state.
 
-Field Report stores durable Codex task UUIDs separately from their human-readable aliases. Use `fr session alias <alias> [--id <uuid>]` to name a task and `fr assign <workstream-id> --session <alias-or-uuid>` to assign it. On Codex surfaces that expose task-title management, agents should mirror the alias into the sidebar title for readability; the title is not routing authority. Native Codex delegation and messaging carry live coordination; AF is collected only as the linked issue ledger.
+Field Report stores durable Codex task UUIDs separately from their human-readable aliases. Use short, globally unique names and add a repository prefix only to resolve a real collision. `fr session alias <alias> [--id <uuid>]` makes a new primary name while retaining the prior name as a fallback; `fr assign <workstream-id> --session <alias-or-uuid>` accepts either. On Codex surfaces that expose task-title management, agents should mirror the primary alias into the sidebar title for readability; the title is not routing authority. Native Codex delegation and messaging carry live coordination; AF is collected only as the linked issue ledger.
 
 ## Install
 

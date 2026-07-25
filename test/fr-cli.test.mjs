@@ -121,12 +121,14 @@ test("fr stores a readable alias and assigns the exact Codex task UUID", async (
   try {
     const saved = await exec(process.execPath, [cli, "session", "alias", "sample-orchestrator"], { env });
     assert.match(saved.stdout, new RegExp(`Saved sample-orchestrator for Codex task ${sessionId}`));
+    const renamed = await exec(process.execPath, [cli, "session", "alias", "sample"], { env });
+    assert.match(renamed.stdout, new RegExp(`Saved sample for Codex task ${sessionId}`));
     const assigned = await exec(process.execPath, [cli, "assign", "sample-stream", "--session", "sample-orchestrator"], { env });
-    assert.match(assigned.stdout, /Assigned sample-orchestrator/);
+    assert.match(assigned.stdout, /Assigned sample \(/);
     const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-stream.json"), "utf8"));
     assert.equal(stream.orchestrator, sessionId);
     const registry = JSON.parse(await readFile(path.join(mock.root, "config", "sessions.json"), "utf8"));
-    assert.deepEqual(registry.sessions.map(({ id, alias }) => ({ id, alias })), [{ id: sessionId, alias: "sample-orchestrator" }]);
+    assert.deepEqual(registry.sessions.map(({ id, alias, aliases }) => ({ id, alias, aliases })), [{ id: sessionId, alias: "sample", aliases: ["sample-orchestrator"] }]);
   } finally {
     await mock.close();
   }

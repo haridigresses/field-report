@@ -17,7 +17,7 @@ Run `fr status`. If unarmed:
 - Run `fr context` for one concise checkout-aware orientation before reaching for separate `status`, `list`, or `show` calls.
 - Run `fr onboard <id> --role workstream-orchestrator|reviewer|executor` when the workstream ID is known.
 - Run `fr create ...` when the user asks to track a new durable outcome.
-- Register a readable name with `fr session alias <alias> [--id <codex-task-uuid>]`, and assign responsibility with `fr assign <workstream-id> --session <alias-or-uuid>`. When the Codex surface exposes task-title management, also rename that task to the same human-readable label. The Field Report alias is durable coordination state; the sidebar title is a best-effort UI mirror, and the task UUID remains identity.
+- Register a short, globally unique name with `fr session alias <alias> [--id <codex-task-uuid>]`; use a repository prefix only for a real collision. Renaming preserves the previous alias as a fallback. Assign responsibility with `fr assign <workstream-id> --session <alias-or-uuid>`. When the Codex surface exposes task-title management, also rename that task to the same primary label. The Field Report alias is durable coordination state; the sidebar title is a best-effort UI mirror, and the task UUID remains identity.
 
 After arming, speak normally with the user. Do not expose routing syntax unless debugging.
 Treat the role-specific workflow contract printed by `fr` as canonical. Use `fr workflow` to print it again after compaction.

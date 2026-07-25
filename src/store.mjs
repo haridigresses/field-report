@@ -80,7 +80,8 @@ export function createFieldReportStore(root) {
       const sessions = await listSessions();
       if (sessions.some((session) => (session.alias === alias || session.aliases?.includes(alias)) && session.id !== id)) throw new Error(`Session alias ${alias} is already assigned`);
       const existing = sessions.find((session) => session.id === id);
-      const record = { id, alias, ...(existing?.aliases?.length ? { aliases: existing.aliases } : {}), kind: values.kind || existing?.kind || "codex", updatedAt: new Date().toISOString() };
+      const aliases = [...new Set([...(existing?.aliases || []), ...(existing?.alias && existing.alias !== alias ? [existing.alias] : [])])].filter((value) => value !== alias);
+      const record = { id, alias, ...(aliases.length ? { aliases } : {}), kind: values.kind || existing?.kind || "codex", updatedAt: new Date().toISOString() };
       const next = [...sessions.filter((session) => session.id !== id), record].sort((left, right) => left.alias.localeCompare(right.alias));
       await writeJsonAtomic(sessionsFile, { sessions: next });
       return record;
