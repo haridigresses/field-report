@@ -371,7 +371,7 @@ Linked PRs: ${prs}
 
 First reconcile the dashboard orientation against the current branch head, PR state, linked issue history, prior plan, and prior reviewer decisions. When they disagree, use the current evidence and call out the drift explicitly.
 
-Explicitly test necessity, simpler designs, scope drift, ownership and failure contracts, evidence quality, structural rot, and contradictions with prior plans or decisions.
+Explicitly test necessity, simpler designs, scope drift, ownership and failure contracts, evidence quality, structural rot, and contradictions with prior plans or decisions. Judge the accumulated mechanism rather than only the latest repair, and answer whether you would select this mechanism from scratch given the current evidence.
 
 Publish the judgment directly with:
 fr pass record ${stream.id} --head ${currentHead} --verdict <GO|CONDITIONAL_GO|NO_GO> --merge <0-100> --structural <0-100> --outcome-confidence <0-100> --necessity <clear|challenged|unjustified> --simpler-path <none_found|candidate|recommended> --scope-drift <none|low|material> --contract-integrity <sound|at_risk|broken> --evidence-quality <strong|partial|weak> --summary "<2-4 sentence rationale including the primary risk and next gate>"

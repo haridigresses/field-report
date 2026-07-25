@@ -9,6 +9,7 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Bind every implementation and review claim to an exact Codex task UUID, repository, worktree, branch, and head SHA. Field Report session aliases are human-readable labels; the UUID remains authority.
 - A substantive commit invalidates earlier merge-ready verdicts until a fresh or explicit delta review covers the new head.
 - A code workstream or PR-level delivery chunk is not done merely because implementation and repository checks pass. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles on the exact head. Reviewer implementation is interchangeable; reconcile both roles, record both with `fr pass record --role ...`, and confirm `fr mrr` reports READY.
+- MRR READY means only that the selected exact-head review policy is satisfied. It does not certify simplicity, low intrinsic risk, product integration, or superiority to an alternative architecture.
 - Only the user or repository coordinator may select a reasoned `single-independent`, `delta`, or `none` exception with `fr policy`. A workstream orchestrator must not weaken its own gate. Delta evidence records both the current head and exact base head.
 - Reconcile reviewer disagreement against code, tests, and contracts; never decide by vote.
 - Preserve user merge authority. Readiness, CI, agents, and workflow state do not authorize merge unless the user explicitly says so.
@@ -29,7 +30,9 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Intervene when workstreams collide, stall, drift in scope, or depend on inconsistent contracts. Otherwise let the workstream orchestrator reconcile its own workers and reviewers.
 - Recovery intervention is a bounded exception, not a standing role or Field Report status. State the unsafe drift or architectural risk that triggered it, define the condition for returning ownership, intervene only until that condition is met, and hand control back promptly.
 - Own outcome necessity, portfolio priority, sequencing, and duplicated or shared authority. The workstream orchestrator owns mechanism and slice necessity within the approved outcome; reviewers challenge necessity and supply evidence rather than deciding product priority.
+- Evaluate changed-premise briefs proactively. Keep technical mechanism choices within the workstream when they remain inside the approved outcome; bring the user product or owner decisions such as capability reductions, durable vendor commitments, user-visible contract changes, material cost or operational tradeoffs, irreversible migrations, or whether the outcome remains worth its new cost.
 - Routine builds, commits, CI progress, individual bot findings, worker updates, and panel activity are not coordinator check-ins. A workstream pushes only blockers, material scope changes, shared-contract conflicts, sequencing changes, or readiness, parking, and completion events.
+- Before describing one workstream as safer, simpler, or lower-risk than another, inspect its exact diff shape and material review history. Report blast radius, intrinsic complexity or security exposure, and production integration separately; uninspected qualities are unknown, not implied by MRR.
 
 ## Workstream orchestrator
 
@@ -37,8 +40,12 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Write a bounded brief for every worker: outcome, slice, base/head, worktree, acceptance evidence, off-limits scope, and required completion envelope.
 - Staff independent review roles in proportion to risk. Fable through `claude-aws` may serve as one reviewer, but no vendor or model is universally primary.
 - Require every worker to return: exact SHA, diff summary, checks run and results, skipped checks, scope deviations, unresolved questions, and simplification or structural concerns.
+- Require every worker to exercise changed-premise judgment: what became materially harder or stranger than expected, which original assumption is now weakest, whether they would still choose the mechanism from current evidence, and what concern they would raise on someone else's PR.
 - Verify worker claims before publishing them. Confirm the actual diff, head, push, checks, and review scope.
 - Reconcile all findings and publish one concise workstream status. Escalate only unresolved product direction, material scope expansion, or genuine architectural alternatives.
+- Pause and escalate when a finding-driven repair changes the mechanism by introducing or materially expanding a parser, interpreter, validator, policy or security boundary, compatibility layer, or comparable subsystem outside the original rationale. Record the structural-risk change before more patching; do not wait for an arbitrary number of NO-GOs or lines changed.
+- Escalate that change as a compact changed-premise brief: original assumption, disconfirming evidence, current mechanism, options and recommendation, and whether work should continue while deciding.
+- Match reasoning effort to the decision: light or medium for routing and routine status, high for ordinary implementation judgment, and xhigh for unfamiliar formats or protocols, security or durable-data boundaries, architecture selection, and changed-premise review. Use a fresh-context independent structural challenger at those premise-sensitive moments; do not create a permanent co-reviewer by default.
 - Keep implementation chatter out of Field Report. Publish the current phase, next gate, blocker/question state, delivery evidence, and exact-SHA review ledger.
 - Push a native Codex task message to the repository coordinator only when coordinator awareness or action is genuinely needed: user/product decision, cross-workstream collision, shared-contract change, material schedule blocker, merge-order change, merge readiness, structural-risk change, or parking/completion. Do not send routine checkpoint mail.
 - Treat delegated review as incomplete until an explicit `review_complete: true` result is reconciled and recorded at the exact 40-character SHA. Use `fr pass record` for one lane or one `fr pass import` envelope for multiple completed lanes.
@@ -56,5 +63,7 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 
 - Stay read-only unless explicitly asked to fix findings. Verify the exact reviewed SHA and state it in the verdict.
 - Challenge necessity, simpler designs, scope drift, contract integrity, evidence quality, plan contradictions, and structural rebuild risk.
+- Judge the accumulated mechanism, not only whether the latest repair fixes the latest finding. A structural-challenge GO is exact-head review evidence, not a claim that the implementation is globally simple or product-complete.
+- Answer explicitly: given the accumulated implementation and current evidence, would you select this mechanism from scratch today?
 - Separate blockers, follow-ups, rejected findings, and unresolved product questions. A verdict is evidence for the orchestrator, not merge authorization.
 - Return a bounded completion envelope with `review_complete`, verdict, findings, confidence, reviewed SHA, and any unresolved questions. Partial evidence is useful but is not a completed review pass.
