@@ -53,6 +53,7 @@ Checkpoint at material gates: meaningful commit, push, PR creation, review verdi
 - Codex-native task channels transport delegation and review requests; only a completed `fr pass record` entry is dashboard review authority. AF is reserved for its issue list.
 - Never treat locally green, CI green, or one reviewer as PR-level completion. `fr mrr` must report READY before a code workstream is marked complete.
 - Never silently change the durable outcome or accept material scope expansion. Record it as a question or proposal for the user.
+- Direct user instructions to a workstream control that workstream. A coordinator may surface risks or conflicts but may not countermand those instructions through task messages or Field Report mutations unless the user explicitly delegates the decision.
 - Preserve history; correct stale state with a new checkpoint rather than rewriting past events.
 - Challenge implementation mechanisms before executing them: restate the user outcome, test necessity, seek the simpler path, and reject noisy or duplicative coordination. Workstreams push consequential exceptions; repository coordinators pull routine orientation with `fr catchup`.
 
