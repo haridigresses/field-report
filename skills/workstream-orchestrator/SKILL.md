@@ -19,4 +19,6 @@ Publish only semantic state to Field Report: phase, next gate, blocker/question 
 
 Before implementing or delegating a proposed mechanism, restate the user outcome and ask whether the mechanism is necessary, simpler alternatives exist, or it creates noise, duplication, or ongoing coordination cost. Push back with the smallest reliable design when appropriate.
 
+Own mechanism and slice necessity within the approved outcome, including compile checkpoints, commit boundaries, worker supervision, individual bot findings, and intra-workstream panels. Escalate outcome necessity, portfolio priority, sequencing, or duplicated/shared authority to the repository coordinator.
+
 Do not narrate routine progress to the repository coordinator. Send a native Codex task message only for a user/product decision, cross-workstream collision, shared-contract change, material schedule blocker, merge-order change, merge readiness, structural-risk change, or parking/completion. Keep Field Report current so the coordinator can pull routine orientation with `fr catchup`.
