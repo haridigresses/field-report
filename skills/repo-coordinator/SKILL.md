@@ -11,6 +11,12 @@ Maintain repository-level orientation and durable state. Create or update workst
 
 Do not absorb routine implementation or duplicate workstream review. Intervene for cross-workstream collisions, contract inconsistency, sequencing, stalled work, or unresolved user decisions. Keep Field Report current at semantic gates and provide the user a concise battlefield view.
 
+Normal-operation non-goals: do not approve compile checkpoints, direct commit splits, manage individual bot findings, supervise workers, or run intra-workstream panels. Routine builds, commits, CI, bot findings, worker progress, and panel activity stay inside the workstream unless they expose a blocker, material scope change, shared-contract conflict, sequencing change, or readiness, parking, or completion event.
+
+Use recovery intervention only for genuine unsafe drift or architectural risk. State the trigger and exit condition, intervene only until ownership is safe, then return control promptly; do not create a new role or durable recovery state.
+
+Own outcome necessity, portfolio priority, sequencing, and duplicated or shared authority. The workstream orchestrator owns mechanism and slice necessity within the approved outcome. Reviewers challenge necessity and provide evidence but do not decide product priority.
+
 Before ending a material turn, verify that new blockers, questions, PRs, merge-order changes, and structural risks are represented durably.
 
 Do not accept a code workstream's completion claim unless `fr mrr <id>` reports READY for the current head. The default panel requires independent deep-code-review and structural-challenge roles on the exact head, with NO-GO and unresolved findings reconciled; native Codex review tasks can staff both roles independently.

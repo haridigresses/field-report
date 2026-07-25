@@ -49,7 +49,7 @@ Checkpoint at material gates: meaningful commit, push, PR creation, review verdi
 ## Authority
 
 - Orchestrators may update situation, status, milestones, PR associations, questions, and next gate.
-- Reviewers own outcome confidence, merge readiness, necessity, simplification, and structural rebuild risk.
+- Reviewers own evidence-backed outcome confidence, merge readiness, simplification, structural rebuild risk, and challenges to necessity. Workstream orchestrators decide mechanism and slice necessity within the approved outcome; repository coordinators decide outcome necessity and portfolio priority.
 - Codex-native task channels transport delegation and review requests; only a completed `fr pass record` entry is dashboard review authority. AF is reserved for its issue list.
 - Never treat locally green, CI green, or one reviewer as PR-level completion. `fr mrr` must report READY before a code workstream is marked complete.
 - Never silently change the durable outcome or accept material scope expansion. Record it as a question or proposal for the user.

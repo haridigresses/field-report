@@ -45,7 +45,7 @@ Field Report writes canonical updates immediately. Dashboard-originated writes t
 
 CLI updates do not automatically launch the dashboard or collect external sources. This keeps agent writes available when the UI is offline. The next dashboard refresh incorporates them.
 
-AF issues remain the execution ledger; Field Report links issue trees to durable outcomes and milestones. Commit SHAs are delivery evidence, not narrative status. Git plans and contracts remain authoritative in their repositories: Field Report stores only pointed references (path, revision, optional section, and a short exact excerpt) when they materially constrain a workstream. Avoid attaching general documentation or duplicating entire plans.
+AF remains the linked issue ledger; Field Report links issue trees to durable outcomes and milestones. Commit SHAs are delivery evidence, not narrative status. Git plans and contracts remain authoritative in their repositories: Field Report stores only pointed references (path, revision, optional section, and a short exact excerpt) when they materially constrain a workstream. Avoid attaching general documentation or duplicating entire plans.
 
 ## Operating topology
 
@@ -66,7 +66,7 @@ Repository coordinators own routine orientation. `fr context` infers the reposit
 
 Review passes record reviewer, model, verdict, exact head SHA, readiness/risk judgments, findings, and unresolved considerations. When the branch advances, prior passes remain in history but are counted as superseded rather than current-head evidence.
 
-For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles; today those are normally filled by `gpt-5.6-sol` at high reasoning and Fable through `claude-aws`, but the durable contract is the role, not the vendor. Existing passes from those models are inferred for backward compatibility; new passes should record `--role` explicitly. `fr mrr <id>` reports the policy, missing role, or READY.
+For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles; the durable contract is the role, not the vendor or model. Existing passes retain backward-compatible role inference; new passes should record `--role` explicitly. `fr mrr <id>` reports the policy, missing role, or READY.
 
 The user or repository coordinator may choose `single-independent`, `delta`, or `none` with `fr policy`, but every non-full policy requires an explicit reason. Delta passes must record `--scope delta --base-head <full-sha>`. Workstream orchestrators cannot silently weaken their own completion gate. Field Report rejects the first transition to `complete` while the selected policy is unsatisfied. Non-code outcomes without a branch, PR, or commits are exempt.
 
