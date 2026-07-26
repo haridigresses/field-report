@@ -80,12 +80,14 @@ async function api(method, pathname, body) {
 }
 
 async function localApi(method, pathname, body) {
+  const requestUrl = new URL(pathname, "http://local");
+  pathname = requestUrl.pathname;
   if (method === "GET" && pathname === "/data/current.json") {
     try { return JSON.parse(await readFile(path.join(process.env.FIELD_REPORT_ROOT || root, "data", "current.json"), "utf8")); }
     catch { throw new Error("No collected Field Report projection exists. Run npm run refresh from the Field Report repo."); }
   }
   if (method === "GET" && pathname.startsWith("/api/workflow")) {
-    const role = new URL(pathname, "http://local").searchParams.get("role") || "shared";
+    const role = requestUrl.searchParams.get("role") || "shared";
     return { role, markdown: await store.workflowContract(role) };
   }
   if (method === "GET" && pathname === "/api/workstreams") return { workstreams: await store.listCanonicalWorkstreams() };
@@ -97,7 +99,7 @@ async function localApi(method, pathname, body) {
   if (!match) throw new Error(`Unsupported local Field Report operation: ${method} ${pathname}`);
   const id = decodeURIComponent(match[1]);
   const action = match[2];
-  if (method === "GET" && action === "mrr") return store.mrrStatus(id);
+  if (method === "GET" && action === "mrr") return store.mrrStatus(id, requestUrl.searchParams.get("head"));
   if (method === "GET" && !action) return (await store.findWorkstream(id)).stream;
   if (method === "PATCH" && !action) return { workstream: await store.updateWorkstream(id, body, body.eventType || "updated") };
   if (method === "POST" && action === "events") return { result: await store.appendWorkstreamEvent(id, body) };
@@ -608,11 +610,9 @@ async function main() {
   }
   if (command === "release-check") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
-    const [stream, mrr] = await Promise.all([
-      api("GET", `/api/workstreams/${encodeURIComponent(id)}`),
-      api("GET", `/api/workstreams/${encodeURIComponent(id)}/mrr`)
-    ]);
+    const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
     const evidence = await liveReleaseEvidence(stream, context);
+    const mrr = await api("GET", `/api/workstreams/${encodeURIComponent(id)}/mrr?head=${encodeURIComponent(evidence.remoteHead || "")}`);
     const result = evaluateRelease({ stream, mrr, ...evidence });
     const lines = [`${id} release gate at ${result.head ? result.head.slice(0, 8) : "unresolved head"}: ${result.ready ? "READY" : "BLOCKED"}`];
     if (result.pr) lines.push(`PR #${result.pr.number}: ${String(result.pr.state).toLowerCase()}${result.pr.isDraft ? " draft" : " non-draft"}`);

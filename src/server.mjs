@@ -175,7 +175,7 @@ const server = http.createServer(async (req, res) => {
   if (pathname === "/api/workstreams") return send(res, 200, JSON.stringify({ workstreams: await store.listCanonicalWorkstreams() }), "application/json; charset=utf-8");
   const mrrRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/mrr$/);
   if (mrrRoute) {
-    try { return send(res, 200, JSON.stringify(await store.mrrStatus(decodeURIComponent(mrrRoute[1]))), "application/json; charset=utf-8"); }
+    try { return send(res, 200, JSON.stringify(await store.mrrStatus(decodeURIComponent(mrrRoute[1]), requestUrl.searchParams.get("head"))), "application/json; charset=utf-8"); }
     catch (error) { return send(res, 400, JSON.stringify({ error: error.message }), "application/json; charset=utf-8"); }
   }
   if (workstreamRoute) {

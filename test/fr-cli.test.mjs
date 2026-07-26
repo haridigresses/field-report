@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
+import { createFieldReportStore } from "../src/store.mjs";
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,7 +43,7 @@ async function fixture() {
             timeline: []
           }]
         }));
-      } else if (req.url === "/api/workstreams/sample-stream/mrr") {
+      } else if (req.url.startsWith("/api/workstreams/sample-stream/mrr")) {
         res.end(JSON.stringify({ required: true, ready: false, head: "abcdef1234567890abcdef1234567890abcdef12", policy: { mode: "full", reason: null }, reasons: ["missing completed structural-challenge exact-head pass"], lanes: { deepCode: { verdict: "GO", model: "gpt-5.6-sol" }, structuralChallenge: null } }));
       } else if (req.url === "/api/workstreams/sample-stream" && req.method === "PATCH") {
         res.end(JSON.stringify({ workstream: { id: "sample-stream", ...requests.at(-1).body } }));
@@ -157,6 +158,23 @@ test("fr mrr reports the missing review lane", async () => {
     assert.match(result.stdout, /Policy: full/);
     assert.match(result.stdout, /Deep code review: GO/);
     assert.match(result.stdout, /Structural challenge: MISSING/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("MRR can evaluate an explicit live release head instead of a stale local ref", async () => {
+  const mock = await localFixture();
+  const liveHead = "abcdef1234567890abcdef1234567890abcdef12";
+  const store = createFieldReportStore(mock.root);
+  try {
+    await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "deep-code-review", reviewer: "deep", independent: true, mergeReadiness: 95, structuralRisk: 5 });
+    await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "structural-challenge", reviewer: "structural", independent: true, mergeReadiness: 95, structuralRisk: 5 });
+    const stale = await store.mrrStatus("sample-stream");
+    const live = await store.mrrStatus("sample-stream", liveHead);
+    assert.equal(stale.ready, false);
+    assert.equal(live.ready, true);
+    assert.equal(live.head, liveHead);
   } finally {
     await mock.close();
   }
