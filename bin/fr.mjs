@@ -45,7 +45,7 @@ Usage:
   fr checkpoint [workstream-id] [--summary <text>] [--status <state>] [--gate <text>] [--data <json>]
   fr reconcile [workstream-id] [--data <json>]
     fr assess [workstream-id]
-    fr pass record [workstream-id] --head <sha> --verdict <GO|CONDITIONAL_GO|NO_GO> [--role deep-code-review|structural-challenge] [--scope full|delta] [--base-head <sha>] [--reviewer <name>] [--model <model>] [--summary <text>]
+    fr pass record [workstream-id] --head <sha> --verdict <GO|CONDITIONAL_GO|NO_GO> [--role deep-code-review|structural-challenge] [--scope full|delta] [--base-head <sha>] [--reviewer <name>] [--model <model>] [--route <provider-route>] [--summary <text>]
     fr pass import [workstream-id] --data <json> | --file <path>
   fr link issue|commit [workstream-id] <value> [--chunk <milestone-id>]
   fr reference [workstream-id] --path <repo-path> [--label <label>] [--kind plan|contract|decision|review] [--section <anchor>] [--quote <short context>]
@@ -368,12 +368,21 @@ async function reviewEnvelope(flags) {
 }
 
 function reviewPassBody(pass, envelope, context) {
-  if (pass.reviewComplete === false || pass.review_complete === false) throw new Error("Cannot import an incomplete review pass");
+  const complete = pass.reviewComplete ?? pass.review_complete ?? envelope.reviewComplete ?? envelope.review_complete;
+  if (complete !== true) throw new Error("Review import requires explicit review_complete: true");
+  const independent = pass.independent ?? envelope.independent;
+  if (independent !== true) throw new Error("Review import requires explicit independent: true");
+  const route = pass.route || envelope.route;
+  const evidenceDigest = pass.evidenceDigest || pass.evidence_digest || envelope.evidenceDigest || envelope.evidence_digest;
+  const provider = pass.provider || envelope.provider;
+  const model = pass.model || envelope.model;
+  const fableImport = ["anthropic.claude-fable-5", "claude-fable-5"].includes(model);
+  if (fableImport && !(provider === "anthropic" && route === "claude-aws" && /^[0-9a-f]{64}$/i.test(evidenceDigest || ""))) throw new Error("Fable import requires provider anthropic, route claude-aws, and a SHA-256 raw-evidence digest");
   return {
     head: pass.head || envelope.head,
     verdict: pass.verdict,
     reviewer: pass.reviewer || envelope.reviewer || context.who.actor,
-    model: pass.model || envelope.model,
+    model,
     reasoning: pass.reasoning || envelope.reasoning,
     reviewRole: pass.reviewRole || pass.review_role || pass.role,
     reviewScope: pass.reviewScope || pass.review_scope || pass.scope,
@@ -388,7 +397,11 @@ function reviewPassBody(pass, envelope, context) {
     contractIntegrity: pass.contractIntegrity || pass.contract_integrity,
     evidenceQuality: pass.evidenceQuality || pass.evidence_quality,
     reviewerId: pass.reviewerId || pass.reviewer_id || envelope.reviewerId || envelope.reviewer_id,
-    provider: pass.provider || envelope.provider,
+    provider,
+    route,
+    provenanceVerified: fableImport,
+    evidenceDigest,
+    independent,
     findings: pass.findings,
     unresolved: pass.unresolved
   };
@@ -599,6 +612,8 @@ async function main() {
       evidenceQuality: flags["evidence-quality"]
       ,reviewerId: context.who.key,
       provider: flags.provider
+      ,route: flags.route
+      ,independent: true
     });
     return process.stdout.write(`Recorded review pass ${result.event.metadata.passId} for ${targetId} at ${result.event.metadata.head.slice(0, 8)}.\n`);
   }
@@ -638,7 +653,7 @@ async function main() {
     const result = await api("GET", `/api/workstreams/${encodeURIComponent(id)}/mrr`);
     if (!result.required) return process.stdout.write(`${id}: MRR panel is not required for this non-code outcome.\n`);
     const lane = (name, pass) => `${name}: ${pass ? `${pass.verdict} · ${pass.model || pass.reviewer}${pass.reasoning ? ` · ${pass.reasoning}` : ""}` : "MISSING"}`;
-    const lines = [`${id} MRR gate at ${result.head ? result.head.slice(0, 8) : "unresolved head"}: ${result.ready ? "READY" : "NOT READY"}`, `Policy: ${result.policy?.mode || "full"}${result.policy?.reason ? ` — ${result.policy.reason}` : ""}`, lane("Deep code review", result.lanes.deepCode), lane("Structural challenge", result.lanes.structuralChallenge)];
+    const lines = [`${id} MRR gate at ${result.head ? result.head.slice(0, 8) : "unresolved head"}: ${result.ready ? "READY" : "NOT READY"}`, `Policy: ${result.policy?.mode || "full"}${result.policy?.reason ? ` — ${result.policy.reason}` : ""}`, lane("Deep code review", result.lanes.deepCode), lane("Structural challenge", result.lanes.structuralChallenge), ...(result.fleet ? [`Fleet: ${result.fleet.solReviewers} Sol · Fable via claude-aws ${result.fleet.fableViaClaudeAws ? "present" : "missing"}`] : [])];
     if (result.reasons?.length) lines.push(...result.reasons.map((reason) => `- ${reason}`));
     return process.stdout.write(`${lines.join("\n")}\n`);
   }

@@ -73,9 +73,11 @@ AF remains the linked issue ledger; Field Report links issue trees to durable ou
 
 Review passes record reviewer, model, verdict, exact head SHA, readiness/risk judgments, findings, and unresolved considerations. When the branch advances, prior passes remain in history but are counted as superseded rather than current-head evidence.
 
-For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles. A project may additionally require distinct durable reviewer IDs and provider families; AON and Arrusted require both. Only `GO` satisfies readiness.
+Fable envelopes must explicitly record `review_complete: true`, `independent: true`, the canonical Fable model, `provider: "anthropic"`, `route: "claude-aws"`, and the SHA-256 digest of persisted raw evidence. A provider label alone is insufficient. This deliberately invalidates legacy Fable evidence lacking route/digest provenance; rerun it on the exact head.
 
-Every commit has a separate local staged-tree gate. Two distinct reviewer tasks inspect the exact `{base HEAD, staged tree}` candidate and publish their own records. Agents commit through `fr commit`; changing the index or base invalidates the panel. `fr commit-check` is available for inspection, but does not replace the checked commit path. Final exact-head MRR is still required before declaring a PR ready.
+For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles. AON and Arrusted require a full exact-head fleet containing at least two distinct Sol reviewers and one Fable reviewer verified through `claude-aws`; another Anthropic model is not a substitute. Only `GO` satisfies readiness.
+
+Every commit has a separate local staged-tree gate. Two distinct Sol reviewer tasks inspect the exact `{base HEAD, staged tree}` candidate and publish their own records. Agents commit through `fr commit`; changing the index or base invalidates the panel. Final fleet MRR, including verified Fable, is still required before declaring a PR ready.
 
 Remote publication before MRR is draft-only review infrastructure. `fr release-check <id>` compares the checkout, live origin branch, GitHub PR, and MRR-reviewed head and exits nonzero unless the PR may be marked ready. It does not authorize merge.
 
