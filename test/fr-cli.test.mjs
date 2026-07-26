@@ -109,7 +109,7 @@ test("fr assess prepares a native Codex review brief", async () => {
   const mock = await fixture();
   try {
     const { stdout } = await exec(process.execPath, [cli, "assess", "sample-stream"], { env: mock.env });
-    assert.match(stdout, /Native Codex review brief for repo-orchestrator/);
+    assert.match(stdout, /Native Codex independent-review brief/);
     assert.match(stdout, /Review this head/);
     assert.equal(mock.requests[0].url, "/api/assessments/request");
   } finally {
@@ -281,7 +281,9 @@ test("ordinary local creation remains unassigned without an explicit orchestrato
     const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-user-created-outcome.json"), "utf8"));
     assert.equal(stream.orchestrator, null);
     const store = createFieldReportStore(mock.root);
-    await assert.rejects(store.prepareAssessmentBriefs([stream.id]), /No Codex orchestrator configured/);
+    const [brief] = await store.prepareAssessmentBriefs(["sample-stream"]);
+    assert.equal(brief.recipient, undefined);
+    assert.match(brief.prompt, /independent reviewer/);
   } finally {
     await mock.close();
   }

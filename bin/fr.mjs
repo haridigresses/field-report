@@ -606,7 +606,7 @@ async function main() {
       if (!id) throw new Error("Specify a workstream ID or arm this session");
       const result = await api("POST", "/api/assessments/request", { workstreamIds: [id] });
       const brief = result.requested[0];
-      return process.stdout.write(`Native Codex review brief for ${brief.alias} (${brief.recipient}) at ${brief.head}:\n\n${brief.prompt}\n`);
+      return process.stdout.write(`Native Codex independent-review brief at ${brief.head}:\n\n${brief.prompt}\n`);
   }
   if (command === "link") {
     const kind = positional[0];

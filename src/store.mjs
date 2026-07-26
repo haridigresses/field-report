@@ -412,7 +412,7 @@ export function createFieldReportStore(root) {
 
   function assessmentPrompt(stream, currentHead) {
     const prs = (stream.prs || []).map((pr) => `#${pr.number} (${pr.state || "unknown"}; head ${pr.headRefOid || "unknown"})`).join(", ") || "none yet";
-    return `You are the authoritative orchestrator/reviewer for workstream ${stream.id}. Give an honest, evidence-backed assessment using what you have observed in this workstream, the repository's merge-ready-review rules, the current branch, and linked AF issues. Inspect current evidence if needed; do not merely repeat the dashboard summary.
+    return `You are an independent reviewer for workstream ${stream.id}. Give an honest, evidence-backed assessment using the repository's merge-ready-review rules, the current branch, linked Field Report evidence, and linked AF issues. Inspect current evidence if needed; do not merely repeat the dashboard summary.
 
 This request authorizes a read-only review and publication of the assessment. Do not wait for separate user confirmation unless completing the review would require a state-changing action outside that scope.
 
@@ -436,15 +436,10 @@ Return the completed review through the native Codex task channel. Field Report 
     if (!Array.isArray(ids) || ids.length < 1 || ids.length > 20) throw new Error("Select between 1 and 20 workstreams");
     const results = [];
     for (const id of [...new Set(ids.map(String))]) {
-      const { stream: canonical } = await findWorkstream(id);
       const { stream } = await currentStream(id);
-      const recipientValue = canonical.orchestrator;
-      if (!recipientValue) throw new Error(`No Codex orchestrator configured for ${id}`);
-      const recipient = await resolveSession(recipientValue);
-      if (!recipient) throw new Error(`Unknown Codex session ${recipientValue}; register it with fr session alias`);
       const currentHead = stream.assessment?.currentHead;
       if (!/^[0-9a-f]{40}$/i.test(currentHead || "")) throw new Error(`Could not resolve an exact current head for ${id}`);
-      results.push({ id, recipient: recipient.id, alias: recipient.alias, head: currentHead, prompt: assessmentPrompt(stream, currentHead) });
+      results.push({ id, head: currentHead, prompt: assessmentPrompt(stream, currentHead) });
     }
     return results;
   }
