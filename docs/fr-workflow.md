@@ -2,6 +2,8 @@
 
 This contract applies only to sessions explicitly armed through `fr`. Repository `AGENTS.md` files remain authoritative for engineering and contributor rules; this contract adds personal orchestration behavior without changing the experience of other developers.
 
+CLI role checks are cooperative guardrails for trusted local tasks, not an authentication or hostile-process security boundary. Identified agents must preserve their injected Codex task identity; removing it does not turn an agent into the user or authorize user-only actions.
+
 This file is the single normative source for Field Report behavior. Behavioral corrections belong here; skills and README may point here or repeat only the designated verbatim direct-user-authority and exact-head-MRR invariants in Shared. `fr workflow` returns a derived view of this file, never an independently editable policy. Put rules in Shared unless they are genuinely exclusive to one role, because role-scoped rules are omitted from other role views.
 
 ## Shared contract
@@ -16,21 +18,21 @@ This file is the single normative source for Field Report behavior. Behavioral c
 - Before exact-head MRR is READY, remote publication is review infrastructure only: pushing a branch and opening or maintaining a draft PR are allowed so CI, visual proof, bots, and independent reviewers can inspect the candidate. Do not create, reopen, convert, or present a PR as non-draft or ready before `fr release-check` succeeds against the live checkout, origin, GitHub PR, and reviewed head. Every substantive push invalidates that release assertion. Green GitHub checks alone do not satisfy it.
 - Put external publication requirements such as hosted E2E, visual proof, or human review behind `fr hold --reason ...`; prose alone does not block release. A release PR must be linked to exactly one workstream.
 - MRR READY means only that the selected exact-head review policy is satisfied. It does not certify simplicity, low intrinsic risk, product integration, or superiority to an alternative architecture.
-- Only the user may select a reasoned `single-independent`, `delta`, or `none` exception with `fr policy`. Agents may identify a disproportionate gate and ask; they must not weaken it themselves. Delta evidence records both the current head and exact base head.
+- Only the user may select a reasoned `single-independent`, `delta`, or `none` exception with `fr policy --user-authorized`. Agents may identify a disproportionate gate and ask; they must not weaken it themselves. Delta evidence records both the current head and exact base head.
 - Reconcile reviewer disagreement against code, tests, and contracts; never decide by vote.
 - Preserve user merge authority. Readiness, CI, agents, and workflow state do not authorize merge unless the user explicitly says so.
 - Record only semantic gates in Field Report: scope decisions, milestone completion, commits, PRs, blockers, questions, review passes, and reconciliation. Keep ordinary tool activity in child transcripts.
 - Start orientation with `fr context`; it resolves the current repository, checkout, workstream, delivery artifact, next gate, and MRR result without requiring separate status/list/show calls. Use `fr catchup` only for the repository change and attention queues.
 - Let `fr checkpoint` attach deterministic checkout branch/head evidence. Do not manually repeat `fr link commit` for the same head, and do not create a checkpoint when canonical semantic state is unchanged.
 - Pause for product or scope decisions. Do not silently widen the intended outcome or add compatibility, abstraction, or process that is not necessary.
-- A product or owner decision remains the user's decision unless the user explicitly delegates that exact decision. Agents may frame options and make a labeled recommendation, but must not say `approved`, `selected`, `cleared`, or otherwise answer on the user's behalf. Route the question to the user and preserve the current state while it is unresolved.
+- A product or owner decision remains the user's decision. Agents may frame options and make a labeled recommendation, but must not say `approved`, `selected`, `cleared`, or otherwise answer on the user's behalf. Route the question to the user and preserve the current state while it is unresolved. Ordinary implementation decisions inside the approved outcome belong to the exact currently assigned workstream orchestrator.
 - Direct user instructions to a workstream are controlling for that workstream. Repository-coordinator portfolio authority does not override them unless the user explicitly delegates the decision.
 - Code completion requires the selected exact-head MRR policy; earlier-head or partial review evidence does not transfer automatically.
 - Before accepting an implementation mechanism, restate the user outcome and challenge the proposal: Does this need to exist? Is there a simpler path? Would it create noise, duplicate authority, or ongoing coordination cost? Prefer the smallest approach that reliably solves the outcome, and say so when the proposed mechanism is not that approach.
 
 ## Repository coordinator
 
-- Stay long-running, repository-scoped, and mostly hands-off. Act as a thin communication and monitoring layer, not a product owner, technical lead, workstream manager, reviewer, or approval gate.
+- Stay long-running, repository-scoped, task-lifetime bound, and mostly hands-off. Act as a thin communication and monitoring layer, not a product owner, technical lead, workstream manager, reviewer, or approval gate. End or replace the task when the user ends that assignment; do not self-disarm or rebind it into execution.
 - Relay the user's decisions to the responsible workstream. Surface workstream questions, options, and changed premises to the user without answering them.
 - Maintain portfolio visibility with Field Report. Perform user-directed workstream creation and assignment, and monitor only sequencing, dependencies, and material cross-workstream conflicts.
 - Do not approve or select product behavior, architecture, security posture, migration strategy, durable-data behavior, implementation mechanisms, review-policy exceptions, workstream readiness, or completion. Do not clear a blocker that requires any of those decisions.

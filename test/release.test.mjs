@@ -8,7 +8,7 @@ function pass(role) {
   return {
     at: "2026-07-25T18:00:00.000Z",
     actor: role,
-    metadata: { head, reviewer: role, verdict: "GO", reviewRole: role, reviewComplete: true, independent: true, unresolved: [] }
+    metadata: { head, reviewer: role, verdict: "GO", reviewRole: role, reviewComplete: true, independent: true, unresolved: [], orchestratorAtReview: null }
   };
 }
 

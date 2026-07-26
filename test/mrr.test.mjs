@@ -8,7 +8,7 @@ function pass(model, verdict = "GO", unresolved = [], reasoning = null, reviewRo
   return {
     at: "2026-07-12T18:00:00.000Z",
     actor: model,
-    metadata: { head, model, reviewer: model, verdict, unresolved, reasoning, reviewRole, reviewScope, baseHead, reviewComplete: true, independent: true }
+    metadata: { head, model, reviewer: model, verdict, unresolved, reasoning, reviewRole, reviewScope, baseHead, reviewComplete: true, independent: true, orchestratorAtReview: null }
   };
 }
 

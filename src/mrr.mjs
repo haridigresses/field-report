@@ -63,7 +63,11 @@ export function evaluateMrr(stream) {
   const latestIndependent = completed.at(-1) || null;
   const latestDelta = completed.findLast((event) => event.metadata?.reviewScope === "delta" && /^[0-9a-f]{40}$/i.test(event.metadata?.baseHead || "")) || null;
   const requiredPasses = policy.mode === "full" ? [latestDeepCode, latestStructural].filter(Boolean) : policy.mode === "delta" ? [latestDelta].filter(Boolean) : policy.mode === "single-independent" ? [latestIndependent].filter(Boolean) : [];
-  const accepted = (event) => event && event.metadata?.verdict === "GO" && !(event.metadata?.unresolved || []).length;
+  const accepted = (event) => {
+    if (!event || event.metadata?.verdict !== "GO" || (event.metadata?.unresolved || []).length) return false;
+    const hasOwnerProvenance = Object.hasOwn(event.metadata || {}, "orchestratorAtReview");
+    return hasOwnerProvenance && event.metadata?.reviewerId !== event.metadata?.orchestratorAtReview;
+  };
   const deepCode = accepted(latestDeepCode) ? latestDeepCode : null;
   const structuralChallenge = accepted(latestStructural) ? latestStructural : null;
   const reconciledPasses = policy.mode === "full" ? latestByReviewer : requiredPasses;
