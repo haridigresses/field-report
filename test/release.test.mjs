@@ -51,6 +51,12 @@ test("release check rejects mismatched checkout, remote, and PR heads", () => {
   assert.match(result.reasons.join(" "), /PR #42 head .* does not match remote head/);
 });
 
+test("release check rejects an uncommitted checkout", () => {
+  const result = evaluateRelease(candidate({ checkout: { branch: "codex/sample", head, dirty: true } }));
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /checkout has uncommitted changes/);
+});
+
 test("release check rejects stale MRR even when all delivery heads agree", () => {
   const stale = "1234567890abcdef1234567890abcdef12345678";
   const result = evaluateRelease(candidate({

@@ -139,18 +139,19 @@ async function armed() {
 
 async function checkoutContext(cwd) {
   try {
-    const [rootResult, branchResult, headResult, commonResult] = await Promise.all([
+    const [rootResult, branchResult, headResult, commonResult, statusResult] = await Promise.all([
       exec("git", ["rev-parse", "--show-toplevel"], { cwd, timeout: 10_000 }),
       exec("git", ["branch", "--show-current"], { cwd, timeout: 10_000 }),
       exec("git", ["rev-parse", "HEAD"], { cwd, timeout: 10_000 }),
-      exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, timeout: 10_000 })
+      exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, timeout: 10_000 }),
+      exec("git", ["status", "--porcelain"], { cwd, timeout: 10_000 })
     ]);
     const repoRoot = rootResult.stdout.trim();
     const branch = branchResult.stdout.trim() || "HEAD";
     const head = headResult.stdout.trim();
     const gitCommonDir = commonResult.stdout.trim();
-    return { repoRoot, branch, head, gitCommonDir };
-  } catch { return { repoRoot: null, branch: null, head: null, gitCommonDir: null }; }
+    return { repoRoot, branch, head, gitCommonDir, dirty: Boolean(statusResult.stdout.trim()) };
+  } catch { return { repoRoot: null, branch: null, head: null, gitCommonDir: null, dirty: null }; }
 }
 
 function projectForCwd(data, cwd) {

@@ -17,6 +17,7 @@ export function evaluateRelease({ stream, checkout, remoteHead, pr, mrr: supplie
   if (!checkout?.branch || checkout.branch === "HEAD") reasons.push("checkout branch is unresolved");
   else if (branch && checkout.branch !== branch) reasons.push(`checkout branch ${checkout.branch} does not match workstream branch ${branch}`);
   if (!localHead) reasons.push("checkout head is unresolved");
+  if (checkout?.dirty) reasons.push("checkout has uncommitted changes; commit or set them aside before asserting release readiness");
   if (!remoteHead) reasons.push("remote branch head is unresolved; push the exact candidate head first");
   else if (localHead && !exactHead(localHead, remoteHead)) reasons.push(`checkout head ${localHead.slice(0, 8)} does not match remote head ${remoteHead.slice(0, 8)}`);
   if (!pr) reasons.push("no GitHub pull request exists for the workstream branch; create it as a draft");
