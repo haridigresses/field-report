@@ -4,7 +4,7 @@ function exactHead(left, right) {
   return Boolean(left && right && String(left).toLowerCase() === String(right).toLowerCase());
 }
 
-export function evaluateRelease({ stream, checkout, remoteHead, pr, mrr: suppliedMrr }) {
+export function evaluateRelease({ stream, checkout, remoteHead, pr, prOwners = [], mrr: suppliedMrr }) {
   const reasons = [];
   const branch = stream.branch || null;
   const localHead = checkout?.head || null;
@@ -14,6 +14,7 @@ export function evaluateRelease({ stream, checkout, remoteHead, pr, mrr: supplie
   });
 
   if (!branch) reasons.push("workstream branch is unresolved");
+  if (stream.publicationHold?.reason) reasons.push(`publication hold: ${stream.publicationHold.reason}`);
   if (!checkout?.branch || checkout.branch === "HEAD") reasons.push("checkout branch is unresolved");
   else if (branch && checkout.branch !== branch) reasons.push(`checkout branch ${checkout.branch} does not match workstream branch ${branch}`);
   if (!localHead) reasons.push("checkout head is unresolved");
@@ -22,6 +23,8 @@ export function evaluateRelease({ stream, checkout, remoteHead, pr, mrr: supplie
   else if (localHead && !exactHead(localHead, remoteHead)) reasons.push(`checkout head ${localHead.slice(0, 8)} does not match remote head ${remoteHead.slice(0, 8)}`);
   if (!pr) reasons.push("no GitHub pull request exists for the workstream branch; create it as a draft");
   else {
+    if (!(stream.prs || []).some((candidate) => Number(candidate.number) === Number(pr.number))) reasons.push(`PR #${pr.number} is not linked to this workstream`);
+    if (prOwners.length > 1) reasons.push(`PR #${pr.number} is linked to multiple workstreams: ${prOwners.join(", ")}`);
     if (String(pr.state || "").toUpperCase() !== "OPEN") reasons.push(`PR #${pr.number} is ${String(pr.state || "unknown").toLowerCase()}, not open`);
     if (branch && pr.headRefName !== branch) reasons.push(`PR #${pr.number} head branch ${pr.headRefName || "unknown"} does not match workstream branch ${branch}`);
     if (remoteHead && !exactHead(pr.headRefOid, remoteHead)) reasons.push(`PR #${pr.number} head ${String(pr.headRefOid || "unknown").slice(0, 8)} does not match remote head ${remoteHead.slice(0, 8)}`);

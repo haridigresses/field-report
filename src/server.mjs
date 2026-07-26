@@ -166,6 +166,14 @@ const server = http.createServer(async (req, res) => {
       return send(res, error.message === "Unknown workstream" ? 404 : 400, JSON.stringify({ ok: false, error: error.message }), "application/json; charset=utf-8");
     }
   }
+  const commitReviewRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/commit-reviews$/);
+  if (req.method === "POST" && commitReviewRoute) {
+    try {
+      const result = await store.recordCommitReview(decodeURIComponent(commitReviewRoute[1]), await readJsonBody(req));
+      runCollect().catch(() => {});
+      return send(res, 200, JSON.stringify({ ok: true, event: result }), "application/json; charset=utf-8");
+    } catch (error) { return send(res, 400, JSON.stringify({ ok: false, error: error.message }), "application/json; charset=utf-8"); }
+  }
   if (req.method !== "GET") return send(res, 405, "Method not allowed");
   if (pathname === "/api/sessions") return send(res, 200, JSON.stringify({ sessions: await store.listSessions() }), "application/json; charset=utf-8");
   if (pathname === "/api/workflow") {
@@ -176,6 +184,11 @@ const server = http.createServer(async (req, res) => {
   const mrrRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/mrr$/);
   if (mrrRoute) {
     try { return send(res, 200, JSON.stringify(await store.mrrStatus(decodeURIComponent(mrrRoute[1]), requestUrl.searchParams.get("head"))), "application/json; charset=utf-8"); }
+    catch (error) { return send(res, 400, JSON.stringify({ error: error.message }), "application/json; charset=utf-8"); }
+  }
+  const commitPanelRoute = pathname.match(/^\/api\/workstreams\/([^/]+)\/commit-panel$/);
+  if (commitPanelRoute) {
+    try { return send(res, 200, JSON.stringify(await store.commitPanelStatus(decodeURIComponent(commitPanelRoute[1]), requestUrl.searchParams.get("tree"), requestUrl.searchParams.get("baseHead"))), "application/json; charset=utf-8"); }
     catch (error) { return send(res, 400, JSON.stringify({ error: error.message }), "application/json; charset=utf-8"); }
   }
   if (workstreamRoute) {

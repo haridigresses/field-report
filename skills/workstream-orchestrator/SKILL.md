@@ -13,8 +13,12 @@ Keep routine implementation coordination inside the workstream. Push only conseq
 
 Use independent native Codex review tasks in proportion to risk and persist only completed exact-head evidence. If using Fable, first read `references/fable-review.md`. Match reasoning effort to the decision; use fresh-context structural challenge for premise-sensitive work rather than a permanent co-reviewer.
 
+Before every commit, including every patch commit, freeze the index and obtain fresh local deep-code and structural-challenge reviews of the exact base HEAD and staged tree from distinct reviewer tasks. Each reviewer records its own native identity with `fr commit-review record`; commit only through `fr commit`. Any staged or base change requires a new panel. This local gate does not replace final MRR.
+
 Direct user instructions to a workstream are controlling for that workstream. Repository-coordinator portfolio authority does not override them unless the user explicitly delegates the decision.
 
 Code completion requires the selected exact-head MRR policy; earlier-head or partial review evidence does not transfer automatically.
 
 Remote publication before MRR is draft-only review infrastructure. Push the candidate when CI or review needs it, but do not create, reopen, convert, or describe a PR as non-draft or ready until `fr release-check` succeeds against the live checkout, origin, GitHub PR, and reviewed head. A substantive push invalidates the prior release check.
+
+Use `fr hold --reason ...` for required evidence outside MRR. Do not encode a publication blocker only in prose. The release PR must be linked to exactly one workstream.
