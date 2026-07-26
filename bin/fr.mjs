@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createFieldReportStore } from "../src/store.mjs";
+import { evaluateRelease } from "../src/release.mjs";
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,6 +24,7 @@ Usage:
     fr context [workstream-id|repo-id]
     fr catchup [repo-id] [--peek] [--since <iso-time>]
     fr mrr [workstream-id]
+    fr release-check [workstream-id]
     fr policy [workstream-id] --mode full|single-independent|delta|none [--reason <text>]
     fr workflow [repo-coordinator|workstream-orchestrator|executor|reviewer|all]
   fr auto-onboard
@@ -389,6 +391,30 @@ async function deterministicEvidence(stream, context) {
   return { ...(stream.branch ? {} : { branch }), commits: [...new Set([...(stream.commits || []), head])] };
 }
 
+async function liveReleaseEvidence(stream, context) {
+  const inferred = await inferredContext(context);
+  const checkout = inferred.checkout;
+  if (!inferred.project || inferred.project.id !== stream.project) throw new Error(`Current checkout does not match repository ${stream.project}`);
+  if (!stream.branch) return { checkout, remoteHead: null, pr: null };
+  let remoteHead = null;
+  try {
+    const result = await exec("git", ["ls-remote", "--heads", "origin", `refs/heads/${stream.branch}`], { cwd: checkout.repoRoot, timeout: 30_000 });
+    remoteHead = result.stdout.trim().split(/\s+/)[0] || null;
+  } catch (error) {
+    throw new Error(`Could not resolve the live origin head for ${stream.branch}: ${error.stderr?.trim() || error.message}`);
+  }
+  let pr = null;
+  try {
+    const result = await exec("gh", ["pr", "view", stream.branch, "--json", "number,state,isDraft,headRefName,headRefOid"], { cwd: checkout.repoRoot, timeout: 30_000 });
+    pr = JSON.parse(result.stdout);
+  } catch (error) {
+    if (!/no pull requests found|Could not resolve to a PullRequest/i.test(`${error.stdout || ""} ${error.stderr || ""}`)) {
+      throw new Error(`Could not inspect the live GitHub PR for ${stream.branch}: ${error.stderr?.trim() || error.message}`);
+    }
+  }
+  return { checkout, remoteHead, pr };
+}
+
 function patchFrom(flags) {
   let patch = {};
   if (flags.data) patch = JSON.parse(flags.data.startsWith("@") ? "{}" : flags.data);
@@ -578,6 +604,21 @@ async function main() {
     const lane = (name, pass) => `${name}: ${pass ? `${pass.verdict} · ${pass.model || pass.reviewer}${pass.reasoning ? ` · ${pass.reasoning}` : ""}` : "MISSING"}`;
     const lines = [`${id} MRR gate at ${result.head ? result.head.slice(0, 8) : "unresolved head"}: ${result.ready ? "READY" : "NOT READY"}`, `Policy: ${result.policy?.mode || "full"}${result.policy?.reason ? ` — ${result.policy.reason}` : ""}`, lane("Deep code review", result.lanes.deepCode), lane("Structural challenge", result.lanes.structuralChallenge)];
     if (result.reasons?.length) lines.push(...result.reasons.map((reason) => `- ${reason}`));
+    return process.stdout.write(`${lines.join("\n")}\n`);
+  }
+  if (command === "release-check") {
+    if (!id) throw new Error("Specify a workstream ID or arm this session");
+    const [stream, mrr] = await Promise.all([
+      api("GET", `/api/workstreams/${encodeURIComponent(id)}`),
+      api("GET", `/api/workstreams/${encodeURIComponent(id)}/mrr`)
+    ]);
+    const evidence = await liveReleaseEvidence(stream, context);
+    const result = evaluateRelease({ stream, mrr, ...evidence });
+    const lines = [`${id} release gate at ${result.head ? result.head.slice(0, 8) : "unresolved head"}: ${result.ready ? "READY" : "BLOCKED"}`];
+    if (result.pr) lines.push(`PR #${result.pr.number}: ${String(result.pr.state).toLowerCase()}${result.pr.isDraft ? " draft" : " non-draft"}`);
+    if (result.reasons.length) lines.push(...result.reasons.map((reason) => `- ${reason}`));
+    if (!result.ready) throw new Error(lines.join("\n"));
+    lines.push("Exact checkout, origin, GitHub PR, and MRR heads agree. The PR may be marked ready; merge authority remains with the user.");
     return process.stdout.write(`${lines.join("\n")}\n`);
   }
   if (command === "policy") {

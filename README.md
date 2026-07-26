@@ -28,6 +28,7 @@ fr coordinate aon
 fr context
 fr catchup
 fr mrr aon-document-zone-cutover
+fr release-check aon-document-zone-cutover
 fr policy aon-document-zone-cutover --mode full
 fr onboard aon-document-zone-cutover --role workstream-orchestrator
 fr workflow
@@ -69,6 +70,8 @@ AF remains the linked issue ledger; Field Report links issue trees to durable ou
 Review passes record reviewer, model, verdict, exact head SHA, readiness/risk judgments, findings, and unresolved considerations. When the branch advances, prior passes remain in history but are counted as superseded rather than current-head evidence.
 
 For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles; the durable contract is the role, not the vendor or model. Existing passes retain backward-compatible role inference; new passes should record `--role` explicitly. `fr mrr <id>` reports the policy, missing role, or READY.
+
+Remote publication before MRR is draft-only review infrastructure. `fr release-check <id>` compares the checkout, live origin branch, GitHub PR, and MRR-reviewed head and exits nonzero unless the PR may be marked ready. It does not authorize merge.
 
 `fr policy` supports `single-independent`, `delta`, or `none` exceptions with an explicit reason. Delta passes record `--scope delta --base-head <full-sha>`. Field Report enforces role authority for policy changes and rejects the first transition to `complete` while the selected policy is unsatisfied. Non-code outcomes without a branch, PR, or commits are exempt.
 
