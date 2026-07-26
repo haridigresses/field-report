@@ -29,7 +29,7 @@ fr context
 fr catchup
 fr mrr aon-document-zone-cutover
 fr release-check aon-document-zone-cutover
-fr policy aon-document-zone-cutover --mode full
+fr policy aon-document-zone-cutover --mode full --user-authorized
 fr onboard aon-document-zone-cutover --role workstream-orchestrator
 fr workflow
 fr ask "Does attachment history belong in this slice?"
@@ -81,7 +81,7 @@ Every commit has a separate local staged-tree gate. Two distinct Sol reviewer ta
 
 Remote publication before MRR is draft-only review infrastructure. `fr release-check <id>` compares the checkout, live origin branch, GitHub PR, and MRR-reviewed head and exits nonzero unless the PR may be marked ready. It does not authorize merge.
 
-`fr policy` supports `single-independent`, `delta`, or `none` exceptions with an explicit reason. Delta passes record `--scope delta --base-head <full-sha>`. Field Report enforces role authority for policy changes and rejects the first transition to `complete` while the selected policy is unsatisfied. Non-code outcomes without a branch, PR, or commits are exempt.
+`fr policy --user-authorized` supports `single-independent`, `delta`, or `none` exceptions with an explicit reason. Delta passes record `--scope delta --base-head <full-sha>`. Only direct user invocation may change policy; agents can recommend an exception but cannot select it. Field Report rejects the first transition to `complete` while the selected policy is unsatisfied. Non-code outcomes without a branch, PR, or commits are exempt.
 
 ## Start
 

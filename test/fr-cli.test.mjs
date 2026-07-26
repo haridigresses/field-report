@@ -269,7 +269,7 @@ test("workstream decisions require exact current assignment", async () => {
   }
 });
 
-test("ordinary local creation retains the project coordinator default", async () => {
+test("ordinary local creation remains unassigned without an explicit orchestrator", async () => {
   const mock = await localFixture();
   const coordinatorId = "019f0000-0000-7000-8000-000000000007";
   try {
@@ -279,7 +279,9 @@ test("ordinary local creation retains the project coordinator default", async ()
     delete env.FIELD_REPORT_SESSION_ID;
     await exec(process.execPath, [cli, "create", "--repo", "sample", "--title", "User created outcome", "--outcome", "Track a user-created outcome", "--no-onboard"], { env });
     const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-user-created-outcome.json"), "utf8"));
-    assert.equal(stream.orchestrator, coordinatorId);
+    assert.equal(stream.orchestrator, null);
+    const store = createFieldReportStore(mock.root);
+    await assert.rejects(store.prepareAssessmentBriefs([stream.id]), /No Codex orchestrator configured/);
   } finally {
     await mock.close();
   }

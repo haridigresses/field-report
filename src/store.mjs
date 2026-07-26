@@ -275,7 +275,7 @@ export function createFieldReportStore(root) {
       const id = workstreamId(values.id || `${project.id}-${slug(values.title)}`);
       try { await findWorkstream(id); throw new Error("Workstream already exists"); } catch (error) { if (error.message !== "Unknown workstream") throw error; }
       const now = new Date().toISOString();
-      const orchestratorValue = Object.hasOwn(values, "orchestrator") ? values.orchestrator : project.coordinator;
+      const orchestratorValue = Object.hasOwn(values, "orchestrator") ? values.orchestrator : null;
       const orchestrator = await sessionIdFor(orchestratorValue);
       const stream = { id, project: project.id, title: shortText(values.title, "Title", 160), summary: shortText(values.summary || values.outcome, "Outcome", 1200), status: "planned", branch: values.branch ? sessionValue(values.branch) : null, reviewState: values.reviewState ? shortText(values.reviewState, "Current gate", 500) : "Workstream created; initial plan pending", chunks: Array.isArray(values.chunks) ? normalizeChunks(values.chunks) : [], questions: [], prs: [], issuePrefixes: [], references: Array.isArray(values.references) ? normalizeReferences(values.references) : [], orchestrator, assessment: null, updatedAt: now, updatedBy: values.updatedBy ? sessionValue(values.updatedBy) : "fr" };
       await writeJsonAtomic(path.join(root, "workstreams", `${id}.json`), stream);
@@ -437,8 +437,8 @@ Return the completed review through the native Codex task channel. Field Report 
     const results = [];
     for (const id of [...new Set(ids.map(String))]) {
       const { stream: canonical } = await findWorkstream(id);
-      const { stream, project } = await currentStream(id);
-      const recipientValue = canonical.orchestrator || project?.coordinator;
+      const { stream } = await currentStream(id);
+      const recipientValue = canonical.orchestrator;
       if (!recipientValue) throw new Error(`No Codex orchestrator configured for ${id}`);
       const recipient = await resolveSession(recipientValue);
       if (!recipient) throw new Error(`Unknown Codex session ${recipientValue}; register it with fr session alias`);
