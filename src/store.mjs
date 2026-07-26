@@ -247,7 +247,11 @@ export function createFieldReportStore(root) {
     };
   }
 
-  async function mrrStatus(id) { return evaluateMrr((await currentStream(id)).stream); }
+  async function mrrStatus(id, head = null) {
+    const stream = (await currentStream(id)).stream;
+    if (head != null && !/^[0-9a-f]{40}$/i.test(head)) throw new Error("MRR head must be an exact 40-character SHA");
+    return evaluateMrr(head ? { ...stream, assessment: { ...(stream.assessment || {}), currentHead: head } } : stream);
+  }
 
   async function createWorkstream(values) {
     return withWriteLock(async () => {

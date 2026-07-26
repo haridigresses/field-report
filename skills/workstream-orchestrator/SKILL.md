@@ -16,3 +16,5 @@ Use independent native Codex review tasks in proportion to risk and persist only
 Direct user instructions to a workstream are controlling for that workstream. Repository-coordinator portfolio authority does not override them unless the user explicitly delegates the decision.
 
 Code completion requires the selected exact-head MRR policy; earlier-head or partial review evidence does not transfer automatically.
+
+Remote publication before MRR is draft-only review infrastructure. Push the candidate when CI or review needs it, but do not create, reopen, convert, or describe a PR as non-draft or ready until `fr release-check` succeeds against the live checkout, origin, GitHub PR, and reviewed head. A substantive push invalidates the prior release check.
