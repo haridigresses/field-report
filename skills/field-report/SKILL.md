@@ -32,6 +32,8 @@ Register a short global alias with `fr session alias <alias> [--id <task-uuid>]`
 - Prepare judgment with `fr assess <id>` and deliver the brief through native Codex task tooling.
 - Record completed evidence with `fr pass record ...` or `fr pass import ...`.
 - Check the active gate with `fr mrr [id]`.
+- Before every commit, have distinct reviewer tasks record fresh base-and-staged-tree lanes with `fr commit-review record ...`, then commit through `fr commit [id] --message "..."`.
+- Use `fr hold [id] --reason "..."` and `fr unhold [id]` for publication blockers outside MRR.
 - Before marking a GitHub PR non-draft or ready, require `fr release-check [id]`. Branch pushes and draft PRs may precede MRR so remote evidence can run; non-draft publication may not.
 
 Use `fr show --json` before broad reconciliation. Let `fr checkpoint` infer checkout branch/head evidence; use `fr link commit` only for distinct chunk evidence. Link only git documents that materially constrain scope or contracts. Use `fr watch --once` for outcomes needing native follow-up.

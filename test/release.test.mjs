@@ -16,6 +16,7 @@ function candidate(overrides = {}) {
   return {
     stream: {
       branch: "codex/sample",
+      prs: [{ number: 42 }],
       reviewPasses: [pass("deep-code-review"), pass("structural-challenge")]
     },
     checkout: { branch: "codex/sample", head },
@@ -70,4 +71,16 @@ test("release check rejects PR-backed work classified as non-code", () => {
   const result = evaluateRelease(candidate({ stream: { branch: null, prs: [], commits: [], reviewPasses: [] } }));
   assert.equal(result.ready, false);
   assert.match(result.reasons.join(" "), /must use a code workstream/);
+});
+
+test("release check rejects a publication hold", () => {
+  const result = evaluateRelease(candidate({ stream: { ...candidate().stream, publicationHold: { reason: "visual proof missing" } } }));
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /visual proof missing/);
+});
+
+test("release check rejects duplicate PR ownership", () => {
+  const result = evaluateRelease(candidate({ prOwners: ["one", "two"] }));
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /multiple workstreams/);
 });

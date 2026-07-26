@@ -16,7 +16,7 @@ async function readJson(file) {
 async function readLocalEvents(streamId) {
   try {
     const content = await readFile(path.join(root, "events", `${streamId}.jsonl`), "utf8");
-    const labels = { created: "Workstream created", onboard: "Session armed", disarm: "Session disarmed", checkpoint: "Checkpoint", reconcile: "Reconciliation", status: "Situation update", question: "Uncertainty opened", decision: "Decision recorded", milestone: "Milestone update", update: "Workstream update", updated: "Workstream update", review_pass: "Review pass", delegation: "Delegated review" };
+    const labels = { created: "Workstream created", onboard: "Session armed", disarm: "Session disarmed", checkpoint: "Checkpoint", reconcile: "Reconciliation", status: "Situation update", question: "Uncertainty opened", decision: "Decision recorded", milestone: "Milestone update", update: "Workstream update", updated: "Workstream update", review_pass: "Review pass", commit_review: "Local commit review", delegation: "Delegated review" };
     return content.split("\n").filter(Boolean).map((line) => JSON.parse(line)).map((event) => ({
       at: event.at,
       actor: event.actor || "fr",
@@ -136,7 +136,7 @@ function sameHead(left, right) {
 }
 
 function semanticTimeline(events) {
-  const material = new Set(["created", "checkpoint", "reconcile", "decision", "question", "assessment_requested", "review_pass", "milestone", "commit", "pr", "complete"]);
+  const material = new Set(["created", "checkpoint", "reconcile", "decision", "question", "assessment_requested", "review_pass", "commit_review", "milestone", "commit", "pr", "complete"]);
   const labels = {
     created: "Outcome created",
     checkpoint: "Gate checkpoint",
@@ -145,6 +145,7 @@ function semanticTimeline(events) {
     question: "Uncertainty opened",
     assessment_requested: "Review requested",
     review_pass: "Review pass",
+    commit_review: "Local commit review",
     milestone: "Milestone completed",
     commit: "Patch committed",
     pr: "Delivery updated",

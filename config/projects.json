@@ -6,6 +6,7 @@
       "repoPath": "/Users/graphy/aon",
       "githubRepo": "abstractops/aon",
       "coordinator": "019f4dda-6bca-70d2-8d02-d71c0b471870",
+      "reviewPolicy": { "minProviderFamilies": 2, "requireReviewerIds": true },
       "issueNamespaces": ["aon", "aon-orch", "refrev", "aona", "aonb", "reforch"]
     },
     {
@@ -14,6 +15,7 @@
       "repoPath": "/Users/graphy/repos/arrusted-development",
       "githubRepo": "withAutograph/arrusted-development",
       "coordinator": "adb",
+      "reviewPolicy": { "minProviderFamilies": 2, "requireReviewerIds": true },
       "issueNamespaces": ["ad", "adb", "adc", "ada", "review"]
     }
   ]

@@ -25,6 +25,11 @@ Usage:
     fr catchup [repo-id] [--peek] [--since <iso-time>]
     fr mrr [workstream-id]
     fr release-check [workstream-id]
+    fr hold [workstream-id] --reason <publication blocker>
+    fr unhold [workstream-id]
+    fr commit-review record [workstream-id] --tree <staged-tree-sha> --base-head <sha> --role deep-code-review|structural-challenge --summary <text>
+    fr commit-check [workstream-id]
+    fr commit [workstream-id] --message <message>
     fr policy [workstream-id] --mode full|single-independent|delta|none [--reason <text>]
     fr workflow [repo-coordinator|workstream-orchestrator|executor|reviewer|all]
   fr auto-onboard
@@ -95,11 +100,12 @@ async function localApi(method, pathname, body) {
   if (method === "GET" && pathname === "/api/sessions") return { sessions: await store.listSessions() };
   if (method === "POST" && pathname === "/api/sessions") return { session: await store.saveSessionAlias(body) };
   if (method === "POST" && pathname === "/api/assessments/request") return { requested: await store.prepareAssessmentBriefs(body.workstreamIds) };
-  const match = pathname.match(/^\/api\/workstreams\/([^/]+)(?:\/(events|questions|decisions|passes|mrr))?$/);
+  const match = pathname.match(/^\/api\/workstreams\/([^/]+)(?:\/(events|questions|decisions|passes|commit-reviews|commit-panel|mrr))?$/);
   if (!match) throw new Error(`Unsupported local Field Report operation: ${method} ${pathname}`);
   const id = decodeURIComponent(match[1]);
   const action = match[2];
   if (method === "GET" && action === "mrr") return store.mrrStatus(id, requestUrl.searchParams.get("head"));
+  if (method === "GET" && action === "commit-panel") return store.commitPanelStatus(id, requestUrl.searchParams.get("tree"), requestUrl.searchParams.get("baseHead"));
   if (method === "GET" && !action) return (await store.findWorkstream(id)).stream;
   if (method === "PATCH" && !action) return { workstream: await store.updateWorkstream(id, body, body.eventType || "updated") };
   if (method === "POST" && action === "events") return { result: await store.appendWorkstreamEvent(id, body) };
@@ -109,6 +115,7 @@ async function localApi(method, pathname, body) {
     if (Array.isArray(body.passes)) return { events: await store.recordReviewPasses(id, body.passes) };
     return { event: await store.recordReviewPass(id, body) };
   }
+  if (method === "POST" && action === "commit-reviews") return { event: await store.recordCommitReview(id, body) };
   throw new Error(`Unsupported local Field Report operation: ${method} ${pathname}`);
 }
 
@@ -380,6 +387,8 @@ function reviewPassBody(pass, envelope, context) {
     scopeDrift: pass.scopeDrift || pass.scope_drift,
     contractIntegrity: pass.contractIntegrity || pass.contract_integrity,
     evidenceQuality: pass.evidenceQuality || pass.evidence_quality,
+    reviewerId: pass.reviewerId || pass.reviewer_id || envelope.reviewerId || envelope.reviewer_id,
+    provider: pass.provider || envelope.provider,
     findings: pass.findings,
     unresolved: pass.unresolved
   };
@@ -529,6 +538,7 @@ async function main() {
     if (command === "checkpoint" && flags.evidence !== "false") Object.assign(patch, await deterministicEvidence(current, context));
     const changed = Object.entries(patch).some(([key, value]) => JSON.stringify(current[key]) !== JSON.stringify(value));
     if (!changed) return process.stdout.write(`No material change for ${id}; checkpoint not recorded.\n`);
+    if (["checkpoint", "reconcile"].includes(command) && !flags.note && !flags.summary && !flags.gate) throw new Error(`${command} requires --note, --summary, or --gate with the semantic change`);
     patch.updatedBy = context.who.actor;
     patch.eventType = command === "update" ? "updated" : command;
     patch.eventText = flags.note || `${command} by ${context.who.actor}`;
@@ -587,8 +597,31 @@ async function main() {
       scopeDrift: flags["scope-drift"],
       contractIntegrity: flags["contract-integrity"],
       evidenceQuality: flags["evidence-quality"]
+      ,reviewerId: context.who.key,
+      provider: flags.provider
     });
     return process.stdout.write(`Recorded review pass ${result.event.metadata.passId} for ${targetId} at ${result.event.metadata.head.slice(0, 8)}.\n`);
+  }
+  if (command === "commit-review" && positional[0] === "record") {
+    const targetId = positional[1] || context.binding?.workstreamId;
+    if (!targetId) throw new Error("Specify a workstream ID or arm this session");
+    const result = await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/commit-reviews`, { tree: flags.tree, baseHead: flags["base-head"], verdict: "GO", reviewRole: flags.role, reviewer: flags.reviewer || context.who.actor, reviewerId: context.who.key, provider: flags.provider, model: flags.model, summary: flags.summary });
+    return process.stdout.write(`Recorded local commit review ${result.event.metadata.reviewRole} for staged tree ${result.event.metadata.tree.slice(0, 8)}.\n`);
+  }
+  if (command === "commit-check" || command === "commit") {
+    if (!id) throw new Error("Specify a workstream ID or arm this session");
+    const inferred = await inferredContext(context);
+    if (!inferred.checkout.repoRoot) throw new Error("Current checkout repository is unresolved");
+    const tree = (await exec("git", ["write-tree"], { cwd: inferred.checkout.repoRoot, timeout: 10_000 })).stdout.trim();
+    const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: inferred.checkout.repoRoot, timeout: 10_000 })).stdout.trim();
+    const result = await api("GET", `/api/workstreams/${encodeURIComponent(id)}/commit-panel?tree=${encodeURIComponent(tree)}&baseHead=${encodeURIComponent(baseHead)}`);
+    if (!result.ready) throw new Error(`${id} commit gate at staged tree ${tree.slice(0, 8)}: BLOCKED\n${result.reasons.map((reason) => `- ${reason}`).join("\n")}`);
+    if (command === "commit") {
+      if (!flags.message) throw new Error("fr commit requires --message");
+      const committed = await exec("git", ["commit", "-m", flags.message], { cwd: inferred.checkout.repoRoot, timeout: 120_000 });
+      return process.stdout.write(committed.stdout);
+    }
+    return process.stdout.write(`${id} commit gate at staged tree ${tree.slice(0, 8)}: READY\nFresh local deep-code and structural reviews are recorded. Commit this staged tree without changing the index.\n`);
   }
   if (command === "pass" && positional[0] === "import") {
     const { envelope, passes } = await reviewEnvelope(flags);
@@ -615,7 +648,9 @@ async function main() {
     const evidence = await liveReleaseEvidence(stream, context);
     const mrrPath = `/api/workstreams/${encodeURIComponent(id)}/mrr${evidence.remoteHead ? `?head=${encodeURIComponent(evidence.remoteHead)}` : ""}`;
     const mrr = await api("GET", mrrPath);
-    const result = evaluateRelease({ stream, mrr, ...evidence });
+    const all = await api("GET", "/api/workstreams");
+    const prOwners = evidence.pr ? all.workstreams.filter((candidate) => (candidate.prs || []).some((linked) => Number(linked.number) === Number(evidence.pr.number))).map((candidate) => candidate.id) : [];
+    const result = evaluateRelease({ stream, mrr, prOwners, ...evidence });
     const lines = [`${id} release gate at ${result.head ? result.head.slice(0, 8) : "unresolved head"}: ${result.ready ? "READY" : "BLOCKED"}`];
     if (result.pr) lines.push(`PR #${result.pr.number}: ${String(result.pr.state).toLowerCase()}${result.pr.isDraft ? " draft" : " non-draft"}`);
     if (result.reasons.length) lines.push(...result.reasons.map((reason) => `- ${reason}`));
@@ -623,12 +658,19 @@ async function main() {
     lines.push("Exact checkout, origin, GitHub PR, and MRR heads agree. The PR may be marked ready; merge authority remains with the user.");
     return process.stdout.write(`${lines.join("\n")}\n`);
   }
+  if (command === "hold" || command === "unhold") {
+    if (!id) throw new Error("Specify a workstream ID or arm this session");
+    if (command === "hold" && !flags.reason) throw new Error("Publication hold requires --reason");
+    const publicationHold = command === "hold" ? { reason: flags.reason } : null;
+    await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { publicationHold, updatedBy: context.who.actor, eventType: "checkpoint", eventText: command === "hold" ? `Publication held: ${flags.reason}` : "Publication hold cleared" });
+    return process.stdout.write(`${id}: publication ${command === "hold" ? "held" : "hold cleared"}.\n`);
+  }
   if (command === "policy") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
     if (context.binding && context.binding.role !== "repo-coordinator") throw new Error("Only the user or an armed repository coordinator may change review policy");
     const mode = flags.mode;
     if (!mode) throw new Error("Specify --mode full|single-independent|delta|none");
-    const result = await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { reviewPolicy: { mode, reason: flags.reason || null }, updatedBy: context.who.actor, eventType: "review_policy", eventText: `Review policy set to ${mode}${flags.reason ? `: ${flags.reason}` : ""}` });
+    const result = await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { reviewPolicy: { mode, reason: flags.reason || null, ...(flags["min-provider-families"] ? { minProviderFamilies: Number(flags["min-provider-families"]) } : {}), ...(flags["require-reviewer-ids"] === "true" ? { requireReviewerIds: true } : {}) }, updatedBy: context.who.actor, eventType: "review_policy", eventText: `Review policy set to ${mode}${flags.reason ? `: ${flags.reason}` : ""}` });
     return process.stdout.write(`Set ${result.workstream.id} review policy to ${mode}${flags.reason ? ` — ${flags.reason}` : ""}.\n`);
   }
   if (command === "disarm") {

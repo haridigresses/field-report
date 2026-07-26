@@ -74,3 +74,38 @@ test("non-full policy without a reason cannot bypass the gate", () => {
   assert.equal(result.ready, false);
   assert.match(result.reasons.join(" "), /explicit reason/);
 });
+
+test("CONDITIONAL_GO does not satisfy readiness", () => {
+  const result = evaluateMrr({ branch: "codex/sample", assessment: { currentHead: head }, reviewPasses: [pass("gpt-5.6-sol", "CONDITIONAL_GO", [], "high"), pass("anthropic.claude-fable-5")] });
+  assert.equal(result.ready, false);
+});
+
+test("configured review provenance requires distinct reviewer IDs and providers", () => {
+  const deep = pass("gpt-5.6-sol", "GO", [], "high", "deep-code-review");
+  const structural = pass("anthropic.claude-fable-5", "GO", [], null, "structural-challenge");
+  deep.metadata.reviewerId = "task-deep";
+  structural.metadata.reviewerId = "task-structural";
+  const ready = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "full", requireReviewerIds: true, minProviderFamilies: 2 }, assessment: { currentHead: head }, reviewPasses: [deep, structural] });
+  assert.equal(ready.ready, true);
+  structural.metadata.reviewerId = "task-deep";
+  const duplicate = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "full", requireReviewerIds: true, minProviderFamilies: 2 }, assessment: { currentHead: head }, reviewPasses: [deep, structural] });
+  assert.equal(duplicate.ready, false);
+  assert.match(duplicate.reasons.join(" "), /distinct reviewers/);
+});
+
+test("provider diversity rejects arbitrary labels and remains satisfiable for reduced policies", () => {
+  const deep = pass("future-model-a", "GO", [], null, "deep-code-review");
+  const structural = pass("future-model-b", "GO", [], null, "structural-challenge");
+  deep.metadata.provider = "vendor-a";
+  structural.metadata.provider = "vendor-b";
+  deep.metadata.reviewerId = "deep";
+  structural.metadata.reviewerId = "structural";
+  const forged = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "full", minProviderFamilies: 2 }, assessment: { currentHead: head }, reviewPasses: [deep, structural] });
+  assert.equal(forged.ready, false);
+  const one = pass("gpt-5.6-sol", "GO", [], null, "deep-code-review");
+  one.metadata.reviewerId = "one";
+  const reduced = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "single-independent", reason: "bounded exception", minProviderFamilies: 2, requireReviewerIds: true }, assessment: { currentHead: head }, reviewPasses: [one] });
+  assert.equal(reduced.ready, true);
+  const none = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "none", reason: "retrospective", minProviderFamilies: 2, requireReviewerIds: true }, assessment: { currentHead: head }, reviewPasses: [] });
+  assert.equal(none.ready, true);
+});

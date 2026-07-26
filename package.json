@@ -10,7 +10,7 @@
     "dev": "node src/server.mjs",
     "refresh": "node src/collect.mjs",
     "test": "node --test",
-    "check": "node --check src/server.mjs && node --check src/store.mjs && node --check src/collect.mjs && node --check src/mrr.mjs && node --check src/release.mjs && node --check src/prs.mjs && node --check public/app.js && node --check bin/fr.mjs && npm test"
+    "check": "node --check src/server.mjs && node --check src/store.mjs && node --check src/collect.mjs && node --check src/mrr.mjs && node --check src/commit-panel.mjs && node --check src/release.mjs && node --check src/prs.mjs && node --check public/app.js && node --check bin/fr.mjs && npm test"
   },
   "engines": {
     "node": ">=20"

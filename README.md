@@ -37,6 +37,10 @@ fr checkpoint --summary "Implementation complete; exact-SHA review is next" --st
 fr reconcile --data '{"summary":"...","chunks":[...]}'
 fr assess
 fr pass record aon-document-zone-cutover --head 4ad570c2e81ac141fa18cc0893465264b533f637 --verdict CONDITIONAL_GO --role deep-code-review --reviewer codex-sol-high --model gpt-5.6-sol --reasoning high --merge 82 --structural 8 --summary "Contracts hold; one evidence gap remains."
+fr commit-review record aon-document-zone-cutover --tree <git-write-tree-sha> --base-head <head-sha> --role deep-code-review --summary "Staged candidate is sound."
+fr commit-check aon-document-zone-cutover
+fr commit aon-document-zone-cutover --message "Implement reviewed change"
+fr hold aon-document-zone-cutover --reason "Exact-head visual proof is missing"
 fr pass import aon-document-zone-cutover --file /tmp/review-envelope.json
 fr link issue ad.41
 fr link commit 4ad570c2 --chunk kernel-timeout
@@ -69,7 +73,9 @@ AF remains the linked issue ledger; Field Report links issue trees to durable ou
 
 Review passes record reviewer, model, verdict, exact head SHA, readiness/risk judgments, findings, and unresolved considerations. When the branch advances, prior passes remain in history but are counted as superseded rather than current-head evidence.
 
-For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles; the durable contract is the role, not the vendor or model. Existing passes retain backward-compatible role inference; new passes should record `--role` explicitly. `fr mrr <id>` reports the policy, missing role, or READY.
+For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles. A project may additionally require distinct durable reviewer IDs and provider families; AON and Arrusted require both. Only `GO` satisfies readiness.
+
+Every commit has a separate local staged-tree gate. Two distinct reviewer tasks inspect the exact `{base HEAD, staged tree}` candidate and publish their own records. Agents commit through `fr commit`; changing the index or base invalidates the panel. `fr commit-check` is available for inspection, but does not replace the checked commit path. Final exact-head MRR is still required before declaring a PR ready.
 
 Remote publication before MRR is draft-only review infrastructure. `fr release-check <id>` compares the checkout, live origin branch, GitHub PR, and MRR-reviewed head and exits nonzero unless the PR may be marked ready. It does not authorize merge.
 

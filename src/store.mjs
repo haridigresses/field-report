@@ -4,6 +4,7 @@ import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } fro
 import path from "node:path";
 import { promisify } from "node:util";
 import { evaluateMrr } from "./mrr.mjs";
+import { evaluateCommitPanel } from "./commit-panel.mjs";
 
 const exec = promisify(execFile);
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -170,8 +171,11 @@ export function createFieldReportStore(root) {
       if (!["full", "single-independent", "delta", "none"].includes(mode)) throw new Error("Review policy must be full, single-independent, delta, or none");
       const reason = patch.reviewPolicy.reason ? shortText(patch.reviewPolicy.reason, "Review policy reason", 500) : null;
       if (mode !== "full" && !reason) throw new Error("A non-full review policy requires an explicit reason");
-      next.reviewPolicy = { mode, reason };
+      const minProviderFamilies = Number(patch.reviewPolicy.minProviderFamilies || 0);
+      if (!Number.isInteger(minProviderFamilies) || minProviderFamilies < 0 || minProviderFamilies > 4) throw new Error("Minimum provider families must be between 0 and 4");
+      next.reviewPolicy = { mode, reason, ...(minProviderFamilies ? { minProviderFamilies } : {}), ...(patch.reviewPolicy.requireReviewerIds === true ? { requireReviewerIds: true } : {}) };
     }
+    if (patch.publicationHold !== undefined) next.publicationHold = patch.publicationHold ? { reason: shortText(patch.publicationHold.reason, "Publication hold reason", 500) } : null;
     if (patch.chunks != null) next.chunks = normalizeChunks(patch.chunks);
     if (patch.prs != null) next.prs = normalizePrs(patch.prs);
     if (patch.references != null) next.references = normalizeReferences(patch.references);
@@ -239,6 +243,7 @@ export function createFieldReportStore(root) {
     return {
       stream: {
         ...(projected?.stream || {}), ...canonical,
+        reviewPolicy: { ...(project?.reviewPolicy || {}), ...(canonical.reviewPolicy || {}) },
         prs: projected?.stream?.prs || canonical.prs || [],
         reviewPasses: events.filter((event) => event.type === "review_pass").sort((left, right) => new Date(left.at) - new Date(right.at)),
         assessment: { ...(projected?.stream?.assessment || canonical.assessment || {}), currentHead }
@@ -271,13 +276,13 @@ export function createFieldReportStore(root) {
   async function updateWorkstream(id, patch, eventType = "updated") {
     return withWriteLock(async () => {
       const { streamFile, stream } = await findWorkstream(id);
-      const semanticKeys = ["title", "summary", "status", "branch", "reviewState", "reviewPolicy", "chunks", "prs", "references", "issuePrefixes", "commits", "questions", "orchestrator"];
+      const semanticKeys = ["title", "summary", "status", "branch", "reviewState", "reviewPolicy", "publicationHold", "chunks", "prs", "references", "issuePrefixes", "commits", "questions", "orchestrator"];
       const requestedKeys = semanticKeys.filter((key) => patch[key] !== undefined);
       if (!requestedKeys.some((key) => JSON.stringify(stream[key]) !== JSON.stringify(patch[key]))) return stream;
       const next = applyCanonicalPatch(stream, patch);
       if (stream.status !== "complete" && next.status === "complete" && (next.branch || (next.prs || []).length || (next.commits || []).length)) {
         const current = await currentStream(id);
-        const mrr = evaluateMrr({ ...current.stream, branch: next.branch, prs: current.stream.prs?.length ? current.stream.prs : next.prs, commits: next.commits, reviewPolicy: next.reviewPolicy });
+        const mrr = evaluateMrr({ ...current.stream, branch: next.branch, prs: current.stream.prs?.length ? current.stream.prs : next.prs, commits: next.commits, reviewPolicy: { ...(current.stream.reviewPolicy || {}), ...(next.reviewPolicy || {}) } });
         if (!mrr.ready) throw new Error(`MRR completion gate is not satisfied: ${mrr.reasons.join("; ")}. Run fr mrr ${id}.`);
       }
       await writeJsonAtomic(streamFile, next);
@@ -333,7 +338,7 @@ export function createFieldReportStore(root) {
     if (!["full", "delta"].includes(reviewScope)) throw new Error("Review scope must be full or delta");
     const baseHead = values.baseHead || null;
     if (reviewScope === "delta" && !/^[0-9a-f]{40}$/i.test(baseHead || "")) throw new Error("A delta review requires --base-head with an exact 40-character SHA");
-    return { type: "review_pass", actor: values.reviewer || values.actor || "reviewer", text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`, metadata: { passId: values.passId || randomUUID(), head, verdict, reviewComplete: true, reviewer: values.reviewer || values.actor || "reviewer", model: values.model || "unknown", reasoning: values.reasoning || null, reviewRole, reviewScope, baseHead, independent: values.independent !== false, findings: Array.isArray(values.findings) ? values.findings : [], unresolved: Array.isArray(values.unresolved) ? values.unresolved : [], mergeReadiness, structuralRisk, outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null, necessity: values.necessity || null, simplerPath: values.simplerPath || null, scopeDrift: values.scopeDrift || null, contractIntegrity: values.contractIntegrity || null, evidenceQuality: values.evidenceQuality || null } };
+    return { type: "review_pass", actor: values.reviewer || values.actor || "reviewer", text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`, metadata: { passId: values.passId || randomUUID(), head, verdict, reviewComplete: true, reviewer: values.reviewer || values.actor || "reviewer", reviewerId: sessionValue(values.reviewerId), provider: sessionValue(values.provider), model: values.model || "unknown", reasoning: values.reasoning || null, reviewRole, reviewScope, baseHead, independent: values.independent !== false, findings: Array.isArray(values.findings) ? values.findings : [], unresolved: Array.isArray(values.unresolved) ? values.unresolved : [], mergeReadiness, structuralRisk, outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null, necessity: values.necessity || null, simplerPath: values.simplerPath || null, scopeDrift: values.scopeDrift || null, contractIntegrity: values.contractIntegrity || null, evidenceQuality: values.evidenceQuality || null } };
   }
 
   async function recordReviewPasses(id, values) {
@@ -351,6 +356,26 @@ export function createFieldReportStore(root) {
 
   async function recordReviewPass(id, values) {
     return (await recordReviewPasses(id, [values]))[0];
+  }
+
+  async function recordCommitReview(id, values) {
+    const tree = String(values.tree || "").trim();
+    if (!/^[0-9a-f]{40}$/i.test(tree)) throw new Error("Commit review requires the exact 40-character staged tree SHA");
+    const baseHead = String(values.baseHead || "").trim();
+    if (!/^[0-9a-f]{40}$/i.test(baseHead)) throw new Error("Commit review requires the exact 40-character base HEAD");
+    const reviewRole = values.reviewRole;
+    if (!["deep-code-review", "structural-challenge"].includes(reviewRole)) throw new Error("Commit review role must be deep-code-review or structural-challenge");
+    if (String(values.verdict || "").toUpperCase() !== "GO") throw new Error("Only a completed GO may satisfy a local commit panel");
+    const reviewerId = sessionValue(values.reviewerId);
+    if (!reviewerId) throw new Error("Commit review requires a durable reviewer ID");
+    if (reviewerId.startsWith("cwd:")) throw new Error("Commit review requires a task or provider-run ID, not checkout identity");
+    const event = { type: "commit_review", actor: values.reviewer || reviewerId, text: shortText(values.summary, "Commit review summary", 1200), metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole, reviewer: values.reviewer || reviewerId, reviewerId, provider: sessionValue(values.provider), model: values.model || "unknown" } };
+    return appendWorkstreamEvent(id, event);
+  }
+
+  async function commitPanelStatus(id, tree, baseHead) {
+    const { stream } = await findWorkstream(id);
+    return evaluateCommitPanel({ tree, baseHead, events: await readEvents(id), orchestrator: stream.orchestrator || null });
   }
 
   async function workflowContract(role = "shared") {
@@ -401,5 +426,5 @@ Return the completed review through the native Codex task channel. Field Report 
     return results;
   }
 
-  return { appendWorkstreamEvent, createWorkstream, currentStream, findWorkstream, listCanonicalWorkstreams, listSessions, mrrStatus, prepareAssessmentBriefs, recordDecision, recordQuestion, recordReviewPass, recordReviewPasses, resolveSession, saveSessionAlias, updateSessions, updateWorkstream, workflowContract };
+  return { appendWorkstreamEvent, commitPanelStatus, createWorkstream, currentStream, findWorkstream, listCanonicalWorkstreams, listSessions, mrrStatus, prepareAssessmentBriefs, recordCommitReview, recordDecision, recordQuestion, recordReviewPass, recordReviewPasses, resolveSession, saveSessionAlias, updateSessions, updateWorkstream, workflowContract };
 }

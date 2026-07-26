@@ -345,3 +345,42 @@ test("fr pass refuses review evidence on an outcome without a code anchor", asyn
     await mock.close();
   }
 });
+
+test("fr commit-check requires two reviews of the exact staged tree", async () => {
+  const mock = await localFixture();
+  try {
+    await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
+    await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
+    const tree = (await exec("git", ["write-tree"], { cwd: mock.root })).stdout.trim();
+    const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "deep-code-review", "--summary", "Deep review clear"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: "019f0000-0000-7000-8000-000000000010" } });
+    const blocked = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env }).catch((error) => error);
+    assert.match(`${blocked.stderr || ""}${blocked.stdout || ""}`, /missing local structural-challenge/);
+    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "structural-challenge", "--summary", "Structural review clear"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: "019f0000-0000-7000-8000-000000000011" } });
+    const ready = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env });
+    assert.match(ready.stdout, /commit gate .* READY/);
+    await writeFile(path.join(mock.root, "candidate.txt"), "changed\n");
+    await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
+    const changed = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env }).catch((error) => error);
+    assert.match(`${changed.stderr || ""}${changed.stdout || ""}`, /missing local deep-code-review/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("completion preserves project-level review provenance requirements", async () => {
+  const mock = await localFixture();
+  try {
+    const configPath = path.join(mock.root, "config", "projects.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.projects[0].reviewPolicy = { requireReviewerIds: true, minProviderFamilies: 2 };
+    await writeFile(configPath, JSON.stringify(config));
+    const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    const store = createFieldReportStore(mock.root);
+    await store.recordReviewPass("sample-stream", { head, verdict: "GO", reviewRole: "deep-code-review", reviewer: "deep", model: "gpt-5.6-sol", mergeReadiness: 95, structuralRisk: 5 });
+    await store.recordReviewPass("sample-stream", { head, verdict: "GO", reviewRole: "structural-challenge", reviewer: "structural", model: "anthropic.claude-fable-5", mergeReadiness: 95, structuralRisk: 5 });
+    await assert.rejects(store.updateWorkstream("sample-stream", { status: "complete", updatedBy: "test" }), /durable reviewer IDs/);
+  } finally {
+    await mock.close();
+  }
+});
