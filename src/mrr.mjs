@@ -15,6 +15,18 @@ function durableReviewerId(value) {
   return Boolean(value && !String(value).startsWith("cwd:"));
 }
 
+function isSol(event) {
+  return event.metadata?.model === "gpt-5.6-sol";
+}
+
+function isVerifiedFable(event) {
+  return ["anthropic.claude-fable-5", "claude-fable-5"].includes(event.metadata?.model)
+    && event.metadata?.provider === "anthropic"
+    && event.metadata?.route === "claude-aws"
+    && event.metadata?.provenanceVerified === true
+    && /^[0-9a-f]{64}$/i.test(event.metadata?.evidenceDigest || "");
+}
+
 function roleFor(event) {
   const explicit = String(event.metadata?.reviewRole || "").toLowerCase();
   if (["deep-code-review", "structural-challenge"].includes(explicit)) return explicit;
@@ -30,7 +42,9 @@ function policyFor(stream) {
     mode: policy.mode || "full",
     reason: policy.reason || null,
     minProviderFamilies: Number(policy.minProviderFamilies || 0),
-    requireReviewerIds: policy.requireReviewerIds === true
+    requireReviewerIds: policy.requireReviewerIds === true,
+    minSolReviewers: Number(policy.minSolReviewers || 0),
+    requireFableViaClaudeAws: policy.requireFableViaClaudeAws === true
   };
 }
 
@@ -43,6 +57,7 @@ export function evaluateMrr(stream) {
   const head = stream.assessment?.currentHead || (stream.prs || []).find((pr) => pr.state === "OPEN" && pr.headRefName === stream.branch)?.headRefOid || null;
   const current = (stream.reviewPasses || []).filter((event) => exactHead(event.metadata?.head, head)).sort((left, right) => new Date(left.at || 0) - new Date(right.at || 0));
   const completed = current.filter((event) => event.metadata?.reviewComplete === true && event.metadata?.independent !== false);
+  const latestByReviewer = [...new Map(completed.map((event) => [event.metadata?.reviewerId || `${event.metadata?.reviewer || event.actor}:${roleFor(event)}`, event])).values()];
   const latestDeepCode = completed.findLast((event) => roleFor(event) === "deep-code-review") || null;
   const latestStructural = completed.findLast((event) => roleFor(event) === "structural-challenge") || null;
   const latestIndependent = completed.at(-1) || null;
@@ -51,8 +66,9 @@ export function evaluateMrr(stream) {
   const accepted = (event) => event && event.metadata?.verdict === "GO" && !(event.metadata?.unresolved || []).length;
   const deepCode = accepted(latestDeepCode) ? latestDeepCode : null;
   const structuralChallenge = accepted(latestStructural) ? latestStructural : null;
-  const noGo = requiredPasses.filter((event) => event.metadata?.verdict === "NO_GO");
-  const unresolved = requiredPasses.flatMap((event) => event.metadata?.unresolved || []);
+  const reconciledPasses = policy.mode === "full" ? latestByReviewer : requiredPasses;
+  const blockingVerdicts = reconciledPasses.filter((event) => event.metadata?.verdict !== "GO");
+  const reconciledUnresolved = reconciledPasses.flatMap((event) => event.metadata?.unresolved || []);
   const reasons = [];
   if (!head) reasons.push("current branch head is unresolved; refresh sources first");
   if (!policyValid) reasons.push(`review policy ${policy.mode} requires an explicit reason`);
@@ -68,15 +84,23 @@ export function evaluateMrr(stream) {
   const providers = [...new Set(acceptedPasses.map(providerFor).filter(Boolean))];
   const requiredProviderFamilies = policy.mode === "full" ? policy.minProviderFamilies : policy.mode === "none" ? 0 : Math.min(policy.minProviderFamilies, 1);
   if (requiredProviderFamilies > providers.length) reasons.push(`review policy requires ${requiredProviderFamilies} provider families; found ${providers.length}`);
-  if (noGo.length) reasons.push(`${noGo.length} current-head NO-GO pass${noGo.length === 1 ? "" : "es"} must be reconciled`);
-  if (unresolved.length) reasons.push(`${unresolved.length} current-head reviewer finding${unresolved.length === 1 ? " remains" : "s remain"} unresolved`);
+  const acceptedFleet = latestByReviewer.filter(accepted);
+  const orchestratorFleetPasses = acceptedFleet.filter((event) => stream.orchestrator && event.metadata?.reviewerId === stream.orchestrator);
+  if (policy.mode === "full" && orchestratorFleetPasses.length) reasons.push("the workstream orchestrator cannot count toward the independent MRR fleet");
+  const solReviewerIds = new Set(acceptedFleet.filter(isSol).map((event) => event.metadata?.reviewerId).filter(durableReviewerId));
+  if (policy.mode === "full" && solReviewerIds.size < policy.minSolReviewers) reasons.push(`full MRR requires ${policy.minSolReviewers} distinct Sol reviewers; found ${solReviewerIds.size}`);
+  const fablePass = acceptedFleet.find((event) => isVerifiedFable(event) && durableReviewerId(event.metadata?.reviewerId));
+  if (policy.mode === "full" && policy.requireFableViaClaudeAws && !fablePass) reasons.push("full MRR requires a completed Fable review through claude-aws");
+  if (blockingVerdicts.length) reasons.push(`${blockingVerdicts.length} required current-head review verdict${blockingVerdicts.length === 1 ? " is" : "s are"} not GO`);
+  if (reconciledUnresolved.length) reasons.push(`${reconciledUnresolved.length} required current-head reviewer finding${reconciledUnresolved.length === 1 ? " remains" : "s remain"} unresolved`);
   return {
     required: true,
-    ready: Boolean(head && policyValid && (policy.mode === "none" || (policy.mode === "full" && deepCode && structuralChallenge) || (policy.mode === "single-independent" && accepted(latestIndependent)) || (policy.mode === "delta" && accepted(latestDelta))) && !noGo.length && !unresolved.length && !reasons.length),
+    ready: Boolean(head && policyValid && (policy.mode === "none" || (policy.mode === "full" && deepCode && structuralChallenge) || (policy.mode === "single-independent" && accepted(latestIndependent)) || (policy.mode === "delta" && accepted(latestDelta))) && !blockingVerdicts.length && !reconciledUnresolved.length && !reasons.length),
     head,
     policy,
     reasons,
     currentPassCount: current.length,
+    fleet: { accepted: acceptedFleet.length, solReviewers: solReviewerIds.size, fableViaClaudeAws: Boolean(fablePass) },
     lanes: {
       deepCode: deepCode ? { reviewer: deepCode.metadata?.reviewer || deepCode.actor, reviewerId: deepCode.metadata?.reviewerId, provider: providerFor(deepCode), model: deepCode.metadata?.model, reasoning: deepCode.metadata?.reasoning, verdict: deepCode.metadata?.verdict } : null,
       structuralChallenge: structuralChallenge ? { reviewer: structuralChallenge.metadata?.reviewer || structuralChallenge.actor, reviewerId: structuralChallenge.metadata?.reviewerId, provider: providerFor(structuralChallenge), model: structuralChallenge.metadata?.model, verdict: structuralChallenge.metadata?.verdict } : null

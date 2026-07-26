@@ -29,7 +29,7 @@ test("MRR accepts completed Codex sol and Fable passes", () => {
 test("MRR remains blocked by current-head NO-GO or unresolved findings", () => {
   const result = evaluateMrr({ branch: "codex/sample", assessment: { currentHead: head }, reviewPasses: [pass("gpt-5.6-sol", "NO_GO", [], "high"), pass("anthropic.claude-fable-5", "GO", ["contract gap"])] });
   assert.equal(result.ready, false);
-  assert.match(result.reasons.join(" "), /NO-GO/);
+  assert.match(result.reasons.join(" "), /not GO/);
   assert.match(result.reasons.join(" "), /unresolved/);
 });
 
@@ -107,5 +107,80 @@ test("provider diversity rejects arbitrary labels and remains satisfiable for re
   const reduced = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "single-independent", reason: "bounded exception", minProviderFamilies: 2, requireReviewerIds: true }, assessment: { currentHead: head }, reviewPasses: [one] });
   assert.equal(reduced.ready, true);
   const none = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "none", reason: "retrospective", minProviderFamilies: 2, requireReviewerIds: true }, assessment: { currentHead: head }, reviewPasses: [] });
+  assert.equal(none.ready, true);
+});
+
+test("full MRR fleet requires multiple Sol reviewers and Fable through claude-aws", () => {
+  const deep = pass("gpt-5.6-sol", "GO", [], "high", "deep-code-review");
+  deep.metadata.reviewerId = "sol-deep";
+  const secondSol = pass("gpt-5.6-sol", "GO", [], "high", "structural-challenge");
+  secondSol.metadata.reviewerId = "sol-structural";
+  const fable = pass("anthropic.claude-fable-5", "GO", [], null, "structural-challenge");
+  fable.metadata.reviewerId = "fable-run";
+  fable.metadata.provider = "anthropic";
+  fable.metadata.route = "claude-aws";
+  fable.metadata.provenanceVerified = true;
+  fable.metadata.evidenceDigest = "a".repeat(64);
+  const policy = { mode: "full", requireReviewerIds: true, minSolReviewers: 2, requireFableViaClaudeAws: true };
+  const ready = evaluateMrr({ branch: "codex/sample", reviewPolicy: policy, assessment: { currentHead: head }, reviewPasses: [deep, secondSol, fable] });
+  assert.equal(ready.ready, true);
+  assert.deepEqual(ready.fleet, { accepted: 3, solReviewers: 2, fableViaClaudeAws: true });
+  const wrongRoute = structuredClone(fable);
+  wrongRoute.metadata.route = "claude-direct";
+  const blocked = evaluateMrr({ branch: "codex/sample", reviewPolicy: policy, assessment: { currentHead: head }, reviewPasses: [deep, secondSol, wrongRoute] });
+  assert.equal(blocked.ready, false);
+  assert.match(blocked.reasons.join(" "), /Fable review through claude-aws/);
+});
+
+test("full MRR fleet does not accept another Anthropic model as Fable", () => {
+  const deep = pass("gpt-5.6-sol", "GO", [], "high", "deep-code-review");
+  deep.metadata.reviewerId = "sol-deep";
+  const secondSol = pass("gpt-5.6-sol", "GO", [], "high", "structural-challenge");
+  secondSol.metadata.reviewerId = "sol-structural";
+  const opus = pass("anthropic.claude-opus-4", "GO", [], null, "structural-challenge");
+  opus.metadata.reviewerId = "opus-run";
+  opus.metadata.provider = "anthropic";
+  opus.metadata.route = "claude-aws";
+  opus.metadata.provenanceVerified = true;
+  opus.metadata.evidenceDigest = "b".repeat(64);
+  const result = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "full", requireReviewerIds: true, minSolReviewers: 2, requireFableViaClaudeAws: true }, assessment: { currentHead: head }, reviewPasses: [deep, secondSol, opus] });
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /Fable review through claude-aws/);
+});
+
+test("full MRR reconciles every fleet reviewer and excludes the orchestrator", () => {
+  const deep = pass("gpt-5.6-sol", "GO", [], "high", "deep-code-review");
+  deep.metadata.reviewerId = "owner";
+  const secondSol = pass("gpt-5.6-sol", "GO", [], "high", "structural-challenge");
+  secondSol.metadata.reviewerId = "sol-two";
+  const fable = pass("anthropic.claude-fable-5", "GO", [], null, "structural-challenge");
+  Object.assign(fable.metadata, { reviewerId: "fable", provider: "anthropic", route: "claude-aws", provenanceVerified: true, evidenceDigest: "c".repeat(64) });
+  const dissent = pass("gpt-5.6-sol", "NO_GO", [], "high", "deep-code-review");
+  dissent.metadata.reviewerId = "sol-dissent";
+  const policy = { mode: "full", requireReviewerIds: true, minSolReviewers: 2, requireFableViaClaudeAws: true };
+  const orchestrated = evaluateMrr({ branch: "codex/sample", orchestrator: "owner", reviewPolicy: policy, assessment: { currentHead: head }, reviewPasses: [deep, secondSol, fable] });
+  assert.equal(orchestrated.ready, false);
+  assert.match(orchestrated.reasons.join(" "), /orchestrator cannot count/);
+  deep.metadata.reviewerId = "sol-one";
+  const noGo = evaluateMrr({ branch: "codex/sample", reviewPolicy: policy, assessment: { currentHead: head }, reviewPasses: [deep, secondSol, fable, dissent] });
+  assert.equal(noGo.ready, false);
+  assert.match(noGo.reasons.join(" "), /not GO/);
+});
+
+test("full fleet blocks every non-GO while reduced policies ignore unrelated fleet passes", () => {
+  const deep = pass("gpt-5.6-sol", "GO", [], "high", "deep-code-review");
+  deep.metadata.reviewerId = "sol-one";
+  const secondSol = pass("gpt-5.6-sol", "GO", [], "high", "structural-challenge");
+  secondSol.metadata.reviewerId = "sol-two";
+  const fable = pass("anthropic.claude-fable-5", "GO", [], null, "structural-challenge");
+  Object.assign(fable.metadata, { reviewerId: "fable", provider: "anthropic", route: "claude-aws", provenanceVerified: true, evidenceDigest: "d".repeat(64) });
+  const conditional = pass("gpt-5.6-terra", "CONDITIONAL_GO", [], null, "structural-challenge");
+  conditional.metadata.reviewerId = "conditional";
+  const full = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "full", requireReviewerIds: true, minSolReviewers: 2, requireFableViaClaudeAws: true }, assessment: { currentHead: head }, reviewPasses: [deep, secondSol, fable, conditional] });
+  assert.equal(full.ready, false);
+  assert.match(full.reasons.join(" "), /not GO/);
+  const reduced = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "single-independent", reason: "bounded exception" }, assessment: { currentHead: head }, reviewPasses: [conditional, deep] });
+  assert.equal(reduced.ready, true);
+  const none = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "none", reason: "retrospective" }, assessment: { currentHead: head }, reviewPasses: [conditional] });
   assert.equal(none.ready, true);
 });

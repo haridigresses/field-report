@@ -13,7 +13,9 @@ Keep routine implementation coordination inside the workstream. Push only conseq
 
 Use independent native Codex review tasks in proportion to risk and persist only completed exact-head evidence. If using Fable, first read `references/fable-review.md`. Match reasoning effort to the decision; use fresh-context structural challenge for premise-sensitive work rather than a permanent co-reviewer.
 
-Before every commit, including every patch commit, freeze the index and obtain fresh local deep-code and structural-challenge reviews of the exact base HEAD and staged tree from distinct reviewer tasks. Each reviewer records its own native identity with `fr commit-review record`; commit only through `fr commit`. Any staged or base change requires a new panel. This local gate does not replace final MRR.
+Before every commit, including every patch commit, freeze the index and obtain fresh local deep-code and structural-challenge reviews of the exact base HEAD and staged tree from two distinct Sol tasks. Each reviewer records its own native identity and Sol model with `fr commit-review record`; commit only through `fr commit`. Any staged or base change requires a new panel. This local gate does not replace final fleet MRR.
+
+For AON and Arrusted full MRR, staff multiple distinct Sol reviewers plus at least one Fable reviewer through verified `claude-aws`, all on the exact final SHA. Another Anthropic model or an unverified Fable invocation does not satisfy the fleet.
 
 Direct user instructions to a workstream are controlling for that workstream. Repository-coordinator portfolio authority does not override them unless the user explicitly delegates the decision.
 

@@ -1,4 +1,5 @@
 const ROLES = ["deep-code-review", "structural-challenge"];
+const isSol = (event) => event.metadata?.model === "gpt-5.6-sol";
 
 export function evaluateCommitPanel({ tree, baseHead, events = [], orchestrator = null }) {
   const current = events.filter((event) => event.type === "commit_review" && event.metadata?.tree === tree && event.metadata?.baseHead === baseHead && event.metadata?.reviewComplete === true);
@@ -7,6 +8,7 @@ export function evaluateCommitPanel({ tree, baseHead, events = [], orchestrator 
   const reviewerIds = accepted.map((event) => event.metadata?.reviewerId).filter((value) => value && !String(value).startsWith("cwd:"));
   const reasons = [];
   for (const role of ROLES) if (!lanes[role]) reasons.push(`missing local ${role} review for staged tree`);
+  for (const role of ROLES) if (lanes[role] && !isSol(lanes[role])) reasons.push(`local ${role} review must come from a Sol agent`);
   if (reviewerIds.length !== accepted.length) reasons.push("local commit reviews require durable reviewer IDs");
   if (new Set(reviewerIds).size !== reviewerIds.length) reasons.push("local commit review roles must come from distinct reviewers");
   if (orchestrator && reviewerIds.includes(orchestrator)) reasons.push("the workstream orchestrator cannot satisfy a local commit review lane");
