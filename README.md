@@ -56,7 +56,7 @@ AF remains the linked issue ledger; Field Report links issue trees to durable ou
 
 ## Operating topology
 
-- One persistent Codex repository coordinator owns portfolio orientation, workstream creation, sequencing, and cross-workstream conflicts.
+- One persistent Codex repository coordinator is a thin relay and monitor: it maintains portfolio orientation, carries user direction, and watches sequencing and material cross-workstream conflicts without owning product or technical decisions.
 - One persistent Codex workstream orchestrator owns each durable outcome but normally delegates implementation to Codex workers in isolated worktrees.
 - Independent Codex review tasks are delegated through native task channels and publish exact-head evidence through Field Report.
 - Field Report is the durable control plane; sleeping agent sessions never own the only copy of pending work or review evidence.

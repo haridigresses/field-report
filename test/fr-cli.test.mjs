@@ -191,6 +191,47 @@ test("fr policy records a reasoned review exception", async () => {
   }
 });
 
+test("armed repository coordinators cannot answer decisions or mutate workstream authority", async () => {
+  const mock = await fixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000002";
+  try {
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [sessionId]: { projectId: "sample", role: "repo-coordinator" } } }));
+    const env = { ...mock.env, CODEX_THREAD_ID: sessionId };
+    const attempts = [
+      ["onboard", "sample-stream", "--role", "workstream-orchestrator"],
+      ["decide", "sample-stream", "Q1", "Approved option 2"],
+      ["reconcile", "sample-stream", "--data", JSON.stringify({ status: "complete", questions: [] }), "--note", "Cleared"],
+      ["policy", "sample-stream", "--mode", "delta", "--reason", "Only a bounded fix changed"],
+      ["pass", "record", "sample-stream", "--head", "a".repeat(40), "--verdict", "GO"]
+    ];
+    for (const args of attempts) await assert.rejects(exec(process.execPath, [cli, ...args], { env }), /relay and monitoring role/);
+    assert.equal(mock.requests.length, 0);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("coordinator workstream creation preserves the coordinator binding", async () => {
+  const mock = await localFixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000004";
+  const stateFile = path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json");
+  try {
+    await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
+    await writeFile(stateFile, JSON.stringify({ sessions: { [sessionId]: { projectId: "sample", role: "repo-coordinator" } } }));
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: sessionId, alias: "sample-coordinator", kind: "codex" }] }));
+    const env = { ...mock.env, CODEX_THREAD_ID: sessionId };
+    const result = await exec(process.execPath, [cli, "create", "--repo", "sample", "--title", "New tracked outcome", "--outcome", "Track the user-directed outcome"], { env });
+    assert.match(result.stdout, /Created sample-new-tracked-outcome/);
+    await assert.rejects(exec(process.execPath, [cli, "auto-onboard"], { env }), /remain bound as a relay and monitoring role/);
+    await exec(process.execPath, [cli, "hook", "session-start"], { env });
+    const state = JSON.parse(await readFile(stateFile, "utf8"));
+    assert.equal(state.sessions[sessionId].role, "repo-coordinator");
+    assert.equal(state.sessions[sessionId].workstreamId, undefined);
+  } finally {
+    await mock.close();
+  }
+});
+
 test("fr checkpoint writes canonical state while the HTTP service is offline", async () => {
   const mock = await localFixture();
   try {

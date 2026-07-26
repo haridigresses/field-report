@@ -216,11 +216,13 @@ function describe(stream) {
 
 async function onboard(id, role = "orchestrator") {
   if (!id) throw new Error("Specify a workstream ID, or use fr auto-onboard from a matching branch");
+  const context = await armed();
+  if (context.binding?.role === "repo-coordinator") throw new Error("Repository coordinators remain bound as a relay and monitoring role; disarm only when the user explicitly ends that assignment");
   role = role === "orchestrator" ? "workstream-orchestrator" : role;
   if (!["workstream-orchestrator", "executor", "reviewer"].includes(role)) throw new Error("Role must be workstream-orchestrator, executor, or reviewer");
   const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
   const workflow = await api("GET", `/api/workflow?role=${encodeURIComponent(role)}`);
-  const { state, who } = await armed();
+  const { state, who } = context;
   state.sessions[who.key] = { workstreamId: stream.id, role, actor: who.actor, cwd: who.cwd, armedAt: new Date().toISOString() };
   await writeState(state);
   await api("POST", `/api/workstreams/${encodeURIComponent(id)}/events`, { type: "onboard", actor: who.actor, text: `${who.actor} armed as ${role}` });
@@ -452,6 +454,12 @@ function patchFrom(flags) {
   return patch;
 }
 
+function enforceCoordinatorBoundary(context, command) {
+  if (context.binding?.role !== "repo-coordinator") return;
+  const forbidden = new Set(["onboard", "decide", "update", "checkpoint", "reconcile", "pass", "commit-review", "commit", "policy", "unhold"]);
+  if (forbidden.has(command)) throw new Error(`Repository coordinators are a relay and monitoring role; ${command} belongs to the user, workstream, or reviewers`);
+}
+
 async function nudge() {
   const data = await api("GET", "/data/current.json");
   const now = Date.now();
@@ -475,6 +483,7 @@ async function main() {
   const context = await armed();
   const id = streamId(positional, context.binding);
   if (["help", "--help", "-h"].includes(command)) return process.stdout.write(`${usage()}\n`);
+  enforceCoordinatorBoundary(context, command);
   if (command === "list") {
     const result = await api("GET", "/api/workstreams");
     return process.stdout.write(`${result.workstreams.map((stream) => `${stream.id}\t${stream.status}\t${stream.title}`).join("\n")}\n`);
@@ -526,7 +535,7 @@ async function main() {
   if (command === "create") {
     const result = await api("POST", "/api/workstreams", { project: flags.repo, id: flags.id, title: flags.title, outcome: flags.outcome, summary: flags.outcome, orchestrator: flags.orchestrator, reviewer: flags.reviewer, branch: flags.branch, updatedBy: context.who.actor });
     process.stdout.write(`Created ${result.workstream.id}.\n`);
-    if (!flags["no-onboard"]) await onboard(result.workstream.id, "orchestrator");
+    if (!flags["no-onboard"] && context.binding?.role !== "repo-coordinator") await onboard(result.workstream.id, "orchestrator");
     return;
   }
   if (command === "ask") {
@@ -682,7 +691,7 @@ async function main() {
   }
   if (command === "policy") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
-    if (context.binding && context.binding.role !== "repo-coordinator") throw new Error("Only the user or an armed repository coordinator may change review policy");
+    if (context.binding) throw new Error("Only the user may change review policy; armed agents may recommend an exception but cannot select it");
     const mode = flags.mode;
     if (!mode) throw new Error("Specify --mode full|single-independent|delta|none");
     const result = await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { reviewPolicy: { mode, reason: flags.reason || null, ...(flags["min-provider-families"] ? { minProviderFamilies: Number(flags["min-provider-families"]) } : {}), ...(flags["require-reviewer-ids"] === "true" ? { requireReviewerIds: true } : {}) }, updatedBy: context.who.actor, eventType: "review_policy", eventText: `Review policy set to ${mode}${flags.reason ? `: ${flags.reason}` : ""}` });
