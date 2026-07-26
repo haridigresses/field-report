@@ -30,7 +30,7 @@ Usage:
     fr commit-review record [workstream-id] --tree <staged-tree-sha> --base-head <sha> --role deep-code-review|structural-challenge --summary <text>
     fr commit-check [workstream-id]
     fr commit [workstream-id] --message <message>
-    fr policy [workstream-id] --mode full|single-independent|delta|none [--reason <text>]
+    fr policy [workstream-id] --mode full|single-independent|delta|none --user-authorized [--reason <text>]
     fr workflow [repo-coordinator|workstream-orchestrator|executor|reviewer|all]
   fr auto-onboard
   fr status
@@ -216,11 +216,15 @@ function describe(stream) {
 
 async function onboard(id, role = "orchestrator") {
   if (!id) throw new Error("Specify a workstream ID, or use fr auto-onboard from a matching branch");
+  const context = await armed();
+  if (context.binding?.role === "repo-coordinator") throw new Error("Repository coordinators remain bound as a relay and monitoring role; end or replace the task to change that assignment");
   role = role === "orchestrator" ? "workstream-orchestrator" : role;
   if (!["workstream-orchestrator", "executor", "reviewer"].includes(role)) throw new Error("Role must be workstream-orchestrator, executor, or reviewer");
   const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
+  const owner = stream.orchestrator ? await store.resolveSession(stream.orchestrator) : null;
+  if (role === "workstream-orchestrator" && (owner?.id || stream.orchestrator) !== context.who.key) throw new Error("Workstream-orchestrator onboarding requires the exact durable task assignment; use fr assign first");
   const workflow = await api("GET", `/api/workflow?role=${encodeURIComponent(role)}`);
-  const { state, who } = await armed();
+  const { state, who } = context;
   state.sessions[who.key] = { workstreamId: stream.id, role, actor: who.actor, cwd: who.cwd, armedAt: new Date().toISOString() };
   await writeState(state);
   await api("POST", `/api/workstreams/${encodeURIComponent(id)}/events`, { type: "onboard", actor: who.actor, text: `${who.actor} armed as ${role}` });
@@ -231,6 +235,7 @@ async function coordinate(projectId) {
   const [data, context, workflow] = await Promise.all([api("GET", "/data/current.json"), armed(), api("GET", "/api/workflow?role=repo-coordinator")]);
   const project = resolveProject(data, projectId, context.who.cwd);
   if (!project) throw new Error(`Unknown repository: ${projectId}`);
+  if (context.binding?.role === "repo-coordinator" && context.binding.projectId !== project.id) throw new Error("Repository coordinators remain bound to one repository; the user must start a separate coordinator task for another repository");
   projectId = project.id;
   context.state.sessions[context.who.key] = { projectId, role: "repo-coordinator", actor: context.who.actor, cwd: context.who.cwd, armedAt: new Date().toISOString() };
   await writeState(context.state);
@@ -452,6 +457,27 @@ function patchFrom(flags) {
   return patch;
 }
 
+function enforceCoordinatorBoundary(context, command) {
+  if (context.binding?.role !== "repo-coordinator") return;
+  const allowed = new Set(["list", "coordinate", "context", "catchup", "workflow", "status", "show", "session", "assign", "create", "ask", "mrr", "release-check", "hold", "watch", "hook"]);
+  if (!allowed.has(command)) throw new Error(`Repository coordinators are a relay and monitoring role; ${command} belongs to the user, workstream, or reviewers`);
+}
+
+async function coordinatorTarget(context, id) {
+  if (context.binding?.role !== "repo-coordinator") return null;
+  const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
+  if (stream.project !== context.binding.projectId) throw new Error("Repository coordinators may mutate only workstreams in their assigned repository");
+  return stream;
+}
+
+async function assertWorkstreamAuthority(context, id) {
+  if (context.who.kind === "unknown" || context.binding?.role === "repo-coordinator") return;
+  if (context.binding?.role !== "workstream-orchestrator" || context.binding.workstreamId !== id) throw new Error("This mutation belongs to the exact assigned workstream orchestrator");
+  const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
+  const owner = stream.orchestrator ? await store.resolveSession(stream.orchestrator) : null;
+  if ((owner?.id || stream.orchestrator) !== context.who.key) throw new Error("This task is no longer the durable orchestrator assigned to this workstream");
+}
+
 async function nudge() {
   const data = await api("GET", "/data/current.json");
   const now = Date.now();
@@ -475,6 +501,7 @@ async function main() {
   const context = await armed();
   const id = streamId(positional, context.binding);
   if (["help", "--help", "-h"].includes(command)) return process.stdout.write(`${usage()}\n`);
+  enforceCoordinatorBoundary(context, command);
   if (command === "list") {
     const result = await api("GET", "/api/workstreams");
     return process.stdout.write(`${result.workstreams.map((stream) => `${stream.id}\t${stream.status}\t${stream.title}`).join("\n")}\n`);
@@ -518,19 +545,34 @@ async function main() {
   }
   if (command === "assign") {
     if (!id || !flags.session) throw new Error("Use fr assign [workstream-id] --session <alias-or-uuid>");
+    await coordinatorTarget(context, id);
+    await assertWorkstreamAuthority(context, id);
     const session = await store.resolveSession(flags.session);
     if (!session) throw new Error(`Unknown Codex session ${flags.session}; register it with fr session alias`);
+    if (context.binding?.role === "repo-coordinator" && session.id === context.who.key) throw new Error("Repository coordinators cannot assign themselves as workstream orchestrators");
     const result = await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { orchestrator: session.id, updatedBy: context.who.actor, eventType: "checkpoint", eventText: `Assigned ${session.alias} (${session.id}) as orchestrator` });
     return process.stdout.write(`Assigned ${session.alias} (${session.id}) to ${result.workstream.id}.\n`);
   }
   if (command === "create") {
-    const result = await api("POST", "/api/workstreams", { project: flags.repo, id: flags.id, title: flags.title, outcome: flags.outcome, summary: flags.outcome, orchestrator: flags.orchestrator, reviewer: flags.reviewer, branch: flags.branch, updatedBy: context.who.actor });
+    if (context.binding?.role === "repo-coordinator" && flags.repo !== context.binding.projectId) throw new Error("Repository coordinators may create workstreams only in their assigned repository");
+    let orchestrator = flags.orchestrator;
+    if (context.binding?.role === "repo-coordinator") {
+      if (orchestrator) {
+        const requested = await store.resolveSession(orchestrator);
+        if (!requested) throw new Error(`Unknown Codex session ${orchestrator}; register it with fr session alias`);
+        orchestrator = requested.id;
+      } else orchestrator = null;
+    } else if (orchestrator === undefined && context.who.kind === "codex") orchestrator = context.who.key;
+    if (context.binding?.role === "repo-coordinator" && orchestrator === context.who.key) throw new Error("Repository coordinators cannot create a workstream assigned to themselves");
+    const result = await api("POST", "/api/workstreams", { project: flags.repo, id: flags.id, title: flags.title, outcome: flags.outcome, summary: flags.outcome, ...(orchestrator !== undefined ? { orchestrator } : {}), reviewer: flags.reviewer, branch: flags.branch, updatedBy: context.who.actor });
     process.stdout.write(`Created ${result.workstream.id}.\n`);
-    if (!flags["no-onboard"]) await onboard(result.workstream.id, "orchestrator");
+    if (!flags["no-onboard"] && context.who.kind === "codex" && result.workstream.orchestrator === context.who.key) await onboard(result.workstream.id, "orchestrator");
     return;
   }
   if (command === "ask") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
+    await coordinatorTarget(context, id);
+    await assertWorkstreamAuthority(context, id);
     const offset = positional[0] === id ? 1 : 0;
     const text = positional.slice(offset).join(" ");
     const result = await api("POST", `/api/workstreams/${encodeURIComponent(id)}/questions`, { text, actor: context.who.actor });
@@ -538,6 +580,7 @@ async function main() {
   }
   if (command === "decide") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
+    await assertWorkstreamAuthority(context, id);
     const offset = positional[0] === id ? 1 : 0;
     const questionId = positional[offset];
     const text = positional.slice(offset + 1).join(" ");
@@ -546,6 +589,7 @@ async function main() {
   }
   if (["update", "checkpoint", "reconcile"].includes(command)) {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
+    await assertWorkstreamAuthority(context, id);
     const patch = patchFrom(flags);
     const current = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
     if (command === "checkpoint" && flags.evidence !== "false") Object.assign(patch, await deterministicEvidence(current, context));
@@ -562,7 +606,7 @@ async function main() {
       if (!id) throw new Error("Specify a workstream ID or arm this session");
       const result = await api("POST", "/api/assessments/request", { workstreamIds: [id] });
       const brief = result.requested[0];
-      return process.stdout.write(`Native Codex review brief for ${brief.alias} (${brief.recipient}) at ${brief.head}:\n\n${brief.prompt}\n`);
+      return process.stdout.write(`Native Codex advisory-assessment brief at ${brief.head}:\n\n${brief.prompt}\n`);
   }
   if (command === "link") {
     const kind = positional[0];
@@ -570,6 +614,7 @@ async function main() {
     const targetId = explicitId || context.binding?.workstreamId;
     const value = positional[explicitId ? 2 : 1];
     if (!targetId || !value || !["issue", "commit"].includes(kind)) throw new Error("Use fr link issue|commit [workstream-id] <value>");
+    await assertWorkstreamAuthority(context, targetId);
     const stream = await api("GET", `/api/workstreams/${encodeURIComponent(targetId)}`);
     let patch;
     if (kind === "issue") patch = { issuePrefixes: [...new Set([...(stream.issuePrefixes || []), value])] };
@@ -584,6 +629,7 @@ async function main() {
   }
   if (command === "reference") {
     if (!id || !flags.path) throw new Error("Specify a workstream and --path");
+    await assertWorkstreamAuthority(context, id);
     const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
     const reference = { path: flags.path, label: flags.label || flags.path, kind: flags.kind || "plan", ...(flags.section ? { section: flags.section } : {}), ...(flags.quote ? { quote: flags.quote } : {}) };
     await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { references: [...(stream.references || []), reference], updatedBy: context.who.actor, eventType: "updated", eventText: `Linked ${reference.kind} reference ${reference.path}` });
@@ -625,6 +671,7 @@ async function main() {
   }
   if (command === "commit-check" || command === "commit") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
+    if (command === "commit") await assertWorkstreamAuthority(context, id);
     const inferred = await inferredContext(context);
     if (!inferred.checkout.repoRoot) throw new Error("Current checkout repository is unresolved");
     const tree = (await exec("git", ["write-tree"], { cwd: inferred.checkout.repoRoot, timeout: 10_000 })).stdout.trim();
@@ -675,6 +722,8 @@ async function main() {
   }
   if (command === "hold" || command === "unhold") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
+    await coordinatorTarget(context, id);
+    await assertWorkstreamAuthority(context, id);
     if (command === "hold" && !flags.reason) throw new Error("Publication hold requires --reason");
     const publicationHold = command === "hold" ? { reason: flags.reason } : null;
     await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { publicationHold, updatedBy: context.who.actor, eventType: "checkpoint", eventText: command === "hold" ? `Publication held: ${flags.reason}` : "Publication hold cleared" });
@@ -682,7 +731,7 @@ async function main() {
   }
   if (command === "policy") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
-    if (context.binding && context.binding.role !== "repo-coordinator") throw new Error("Only the user or an armed repository coordinator may change review policy");
+    if (context.binding || context.who.kind !== "unknown" || !flags["user-authorized"]) throw new Error("Only the user may change review policy; run this outside a Codex task with --user-authorized");
     const mode = flags.mode;
     if (!mode) throw new Error("Specify --mode full|single-independent|delta|none");
     const result = await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { reviewPolicy: { mode, reason: flags.reason || null, ...(flags["min-provider-families"] ? { minProviderFamilies: Number(flags["min-provider-families"]) } : {}), ...(flags["require-reviewer-ids"] === "true" ? { requireReviewerIds: true } : {}) }, updatedBy: context.who.actor, eventType: "review_policy", eventText: `Review policy set to ${mode}${flags.reason ? `: ${flags.reason}` : ""}` });
@@ -705,7 +754,12 @@ async function main() {
       try { return await autoOnboard(); } catch { return; }
     }
       if (positional[0] === "stop") {
-        try { if (context.binding?.workstreamId) await api("POST", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}/events`, { type: "checkpoint", actor: context.who.actor, text: "Agent session stopped; semantic reconciliation may be due" }); } catch {}
+        try {
+          if (context.binding?.workstreamId) {
+            await assertWorkstreamAuthority(context, context.binding.workstreamId);
+            await api("POST", `/api/workstreams/${encodeURIComponent(context.binding.workstreamId)}/events`, { type: "checkpoint", actor: context.who.actor, text: "Agent session stopped; semantic reconciliation may be due" });
+          }
+        } catch {}
       return;
     }
     throw new Error("Hook must be session-start or stop");

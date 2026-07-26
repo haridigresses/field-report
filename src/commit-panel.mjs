@@ -3,7 +3,11 @@ const isSol = (event) => event.metadata?.model === "gpt-5.6-sol";
 
 export function evaluateCommitPanel({ tree, baseHead, events = [], orchestrator = null }) {
   const current = events.filter((event) => event.type === "commit_review" && event.metadata?.tree === tree && event.metadata?.baseHead === baseHead && event.metadata?.reviewComplete === true);
-  const lanes = Object.fromEntries(ROLES.map((role) => [role, current.findLast((event) => event.metadata?.reviewRole === role && event.metadata?.verdict === "GO") || null]));
+  const independentlyProven = (event) => {
+    const hasOwnerProvenance = Object.hasOwn(event.metadata || {}, "orchestratorAtReview");
+    return hasOwnerProvenance && event.metadata?.reviewerId !== event.metadata?.orchestratorAtReview;
+  };
+  const lanes = Object.fromEntries(ROLES.map((role) => [role, current.findLast((event) => event.metadata?.reviewRole === role && event.metadata?.verdict === "GO" && independentlyProven(event)) || null]));
   const accepted = ROLES.map((role) => lanes[role]).filter(Boolean);
   const reviewerIds = accepted.map((event) => event.metadata?.reviewerId).filter((value) => value && !String(value).startsWith("cwd:"));
   const reasons = [];

@@ -84,6 +84,8 @@ async function localFixture() {
   }));
   const env = { ...process.env, FIELD_REPORT_ROOT: localRoot, FIELD_REPORT_STATE_DIR: path.join(localRoot, "state"), FIELD_REPORT_CWD: localRoot };
   delete env.FIELD_REPORT_URL;
+  delete env.CODEX_THREAD_ID;
+  delete env.FIELD_REPORT_SESSION_ID;
   return {
     root: localRoot,
     env,
@@ -107,7 +109,7 @@ test("fr assess prepares a native Codex review brief", async () => {
   const mock = await fixture();
   try {
     const { stdout } = await exec(process.execPath, [cli, "assess", "sample-stream"], { env: mock.env });
-    assert.match(stdout, /Native Codex review brief for repo-orchestrator/);
+    assert.match(stdout, /Native Codex advisory-assessment brief/);
     assert.match(stdout, /Review this head/);
     assert.equal(mock.requests[0].url, "/api/assessments/request");
   } finally {
@@ -124,7 +126,10 @@ test("fr stores a readable alias and assigns the exact Codex task UUID", async (
     assert.match(saved.stdout, new RegExp(`Saved sample-orchestrator for Codex task ${sessionId}`));
     const renamed = await exec(process.execPath, [cli, "session", "alias", "sample"], { env });
     assert.match(renamed.stdout, new RegExp(`Saved sample for Codex task ${sessionId}`));
-    const assigned = await exec(process.execPath, [cli, "assign", "sample-stream", "--session", "sample-orchestrator"], { env });
+    const userEnv = { ...env };
+    delete userEnv.CODEX_THREAD_ID;
+    delete userEnv.FIELD_REPORT_SESSION_ID;
+    const assigned = await exec(process.execPath, [cli, "assign", "sample-stream", "--session", "sample-orchestrator"], { env: userEnv });
     assert.match(assigned.stdout, /Assigned sample \(/);
     const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-stream.json"), "utf8"));
     assert.equal(stream.orchestrator, sessionId);
@@ -183,9 +188,237 @@ test("MRR can evaluate an explicit live release head instead of a stale local re
 test("fr policy records a reasoned review exception", async () => {
   const mock = await fixture();
   try {
-    const result = await exec(process.execPath, [cli, "policy", "sample-stream", "--mode", "delta", "--reason", "Only a bounded fix changed"], { env: mock.env });
+    const env = { ...mock.env };
+    delete env.CODEX_THREAD_ID;
+    delete env.FIELD_REPORT_SESSION_ID;
+    const result = await exec(process.execPath, [cli, "policy", "sample-stream", "--mode", "delta", "--reason", "Only a bounded fix changed", "--user-authorized"], { env });
     assert.match(result.stdout, /review policy to delta/);
     assert.deepEqual(mock.requests[0].body.reviewPolicy, { mode: "delta", reason: "Only a bounded fix changed" });
+  } finally {
+    await mock.close();
+  }
+});
+
+test("armed repository coordinators cannot answer decisions or mutate workstream authority", async () => {
+  const mock = await fixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000002";
+  try {
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [sessionId]: { projectId: "sample", role: "repo-coordinator" } } }));
+    const env = { ...mock.env, CODEX_THREAD_ID: sessionId };
+    const attempts = [
+      ["onboard", "sample-stream", "--role", "workstream-orchestrator"],
+      ["decide", "sample-stream", "Q1", "Approved option 2"],
+      ["reconcile", "sample-stream", "--data", JSON.stringify({ status: "complete", questions: [] }), "--note", "Cleared"],
+      ["policy", "sample-stream", "--mode", "delta", "--reason", "Only a bounded fix changed"],
+      ["pass", "record", "sample-stream", "--head", "a".repeat(40), "--verdict", "GO"],
+      ["disarm"]
+    ];
+    for (const args of attempts) await assert.rejects(exec(process.execPath, [cli, ...args], { env }), /relay and monitoring role/);
+    assert.equal(mock.requests.length, 0);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("coordinator workstream creation preserves the coordinator binding", async () => {
+  const mock = await localFixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000004";
+  const stateFile = path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json");
+  try {
+    await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
+    await writeFile(stateFile, JSON.stringify({ sessions: { [sessionId]: { projectId: "sample", role: "repo-coordinator" } } }));
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: sessionId, alias: "sample-coordinator", kind: "codex" }] }));
+    const env = { ...mock.env, CODEX_THREAD_ID: sessionId };
+    const result = await exec(process.execPath, [cli, "create", "--repo", "sample", "--title", "New tracked outcome", "--outcome", "Track the user-directed outcome"], { env });
+    assert.match(result.stdout, /Created sample-new-tracked-outcome/);
+    await assert.rejects(exec(process.execPath, [cli, "create", "--repo", "sample", "--title", "Self owned outcome", "--outcome", "Invalid self assignment", "--orchestrator", sessionId], { env }), /cannot create a workstream assigned to themselves/);
+    await assert.rejects(exec(process.execPath, [cli, "create", "--repo", "sample", "--title", "Alias self owned outcome", "--outcome", "Invalid alias self assignment", "--orchestrator", "sample-coordinator"], { env }), /cannot create a workstream assigned to themselves/);
+    await assert.rejects(exec(process.execPath, [cli, "auto-onboard"], { env }), /relay and monitoring role/);
+    await exec(process.execPath, [cli, "hook", "session-start"], { env });
+    const state = JSON.parse(await readFile(stateFile, "utf8"));
+    assert.equal(state.sessions[sessionId].role, "repo-coordinator");
+    assert.equal(state.sessions[sessionId].workstreamId, undefined);
+    const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-new-tracked-outcome.json"), "utf8"));
+    assert.equal(stream.orchestrator, null);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("an unbound Codex identity cannot claim user-only review-policy authority", async () => {
+  const mock = await fixture();
+  try {
+    const env = { ...mock.env, CODEX_THREAD_ID: "019f0000-0000-7000-8000-000000000005" };
+    await assert.rejects(exec(process.execPath, [cli, "policy", "sample-stream", "--mode", "none", "--reason", "Agent bypass"], { env }), /Only the user may change review policy/);
+    assert.equal(mock.requests.length, 0);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("workstream decisions require exact current assignment", async () => {
+  const mock = await fixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000006";
+  try {
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [sessionId]: { workstreamId: "other-stream", role: "workstream-orchestrator" } } }));
+    const env = { ...mock.env, CODEX_THREAD_ID: sessionId };
+    await assert.rejects(exec(process.execPath, [cli, "decide", "sample-stream", "Q1", "Approved option 2"], { env }), /exact assigned workstream orchestrator/);
+    assert.equal(mock.requests.length, 0);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("ordinary local creation remains unassigned without an explicit orchestrator", async () => {
+  const mock = await localFixture();
+  const coordinatorId = "019f0000-0000-7000-8000-000000000007";
+  try {
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: coordinatorId, alias: "sample-coordinator", kind: "codex" }] }));
+    const env = { ...mock.env };
+    delete env.CODEX_THREAD_ID;
+    delete env.FIELD_REPORT_SESSION_ID;
+    await exec(process.execPath, [cli, "create", "--repo", "sample", "--title", "User created outcome", "--outcome", "Track a user-created outcome", "--no-onboard"], { env });
+    const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-user-created-outcome.json"), "utf8"));
+    assert.equal(stream.orchestrator, null);
+    const store = createFieldReportStore(mock.root);
+    const [brief] = await store.prepareAssessmentBriefs(["sample-stream"]);
+    assert.equal(brief.recipient, undefined);
+    assert.match(brief.prompt, /independent reviewer/);
+    assert.match(brief.prompt, /not a role-assigned MRR lane/);
+    assert.doesNotMatch(brief.prompt, /Publish the judgment directly/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("coordinator mutations stay inside the assigned repository", async () => {
+  const mock = await localFixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000008";
+  try {
+    await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [sessionId]: { projectId: "other", role: "repo-coordinator" } } }));
+    const env = { ...mock.env, CODEX_THREAD_ID: sessionId };
+    await assert.rejects(exec(process.execPath, [cli, "create", "--repo", "sample", "--title", "Cross repo", "--outcome", "Invalid"], { env }), /only in their assigned repository/);
+    await assert.rejects(exec(process.execPath, [cli, "ask", "sample-stream", "Should this cross repositories?"], { env }), /only workstreams in their assigned repository/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("workstream-orchestrator onboarding requires durable assignment", async () => {
+  const mock = await localFixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000009";
+  try {
+    const env = { ...mock.env, CODEX_THREAD_ID: sessionId };
+    await assert.rejects(exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env }), /requires the exact durable task assignment/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("creating for another orchestrator succeeds without onboarding the creator", async () => {
+  const mock = await localFixture();
+  const creatorId = "019f0000-0000-7000-8000-000000000010";
+  const ownerId = "019f0000-0000-7000-8000-000000000011";
+  try {
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: ownerId, alias: "delegated-owner", kind: "codex" }] }));
+    const env = { ...mock.env, CODEX_THREAD_ID: creatorId };
+    const result = await exec(process.execPath, [cli, "create", "--repo", "sample", "--title", "Delegated outcome", "--outcome", "Owned by another task", "--orchestrator", "delegated-owner"], { env });
+    assert.match(result.stdout, /Created sample-delegated-outcome/);
+    const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-delegated-outcome.json"), "utf8"));
+    assert.equal(stream.orchestrator, ownerId);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("legacy orchestrator aliases resolve to UUID authority and new writes canonicalize them", async () => {
+  const mock = await localFixture();
+  const ownerId = "019f0000-0000-7000-8000-000000000014";
+  try {
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: ownerId, alias: "sample-agent", kind: "codex" }] }));
+    await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [ownerId]: { workstreamId: "sample-stream", role: "workstream-orchestrator" } } }));
+    const ownerEnv = { ...mock.env, CODEX_THREAD_ID: ownerId };
+    await exec(process.execPath, [cli, "checkpoint", "sample-stream", "--summary", "Legacy alias owner remains authorized"], { env: ownerEnv });
+
+    const store = createFieldReportStore(mock.root);
+    const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    const tree = (await exec("git", ["write-tree"], { cwd: mock.root })).stdout.trim();
+    await assert.rejects(store.recordCommitReview("sample-stream", { tree, baseHead, reviewRole: "deep-code-review", verdict: "GO", reviewerId: "sample-agent", summary: "Owner cannot review its own commit" }), /cannot record an independent review/);
+    await assert.rejects(store.recordReviewPass("sample-stream", { head: baseHead, verdict: "GO", reviewRole: "deep-code-review", reviewerId: "sample-agent", provider: "openai", model: "gpt-5.6-sol", mergeReadiness: 95, structuralRisk: 5 }), /cannot record an independent review/);
+    await store.appendWorkstreamEvent("sample-stream", { type: "commit_review", actor: ownerId, text: "Legacy self-review evidence", metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole: "deep-code-review", reviewerId: ownerId } });
+    await store.recordCommitReview("sample-stream", { tree, baseHead, reviewRole: "structural-challenge", verdict: "GO", reviewerId: "019f0000-0000-7000-8000-000000000017", summary: "Independent structural review" });
+    await store.updateWorkstream("sample-stream", { orchestrator: "019f0000-0000-7000-8000-000000000021" });
+    const panel = await store.commitPanelStatus("sample-stream", tree, baseHead);
+    assert.equal(panel.ready, false);
+    assert.match(panel.reasons.join(" "), /missing local deep-code-review/);
+    await store.updateWorkstream("sample-stream", { orchestrator: null });
+    assert.equal((await store.commitPanelStatus("sample-stream", tree, baseHead)).ready, false);
+    await store.updateWorkstream("sample-stream", { orchestrator: "019f0000-0000-7000-8000-000000000021" });
+
+    const configPath = path.join(mock.root, "config", "projects.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.projects[0].reviewPolicy = { requireReviewerIds: true };
+    await writeFile(configPath, JSON.stringify(config));
+    await store.appendWorkstreamEvent("sample-stream", { type: "review_pass", actor: ownerId, text: "Legacy self-review pass", metadata: { head: baseHead, verdict: "GO", reviewComplete: true, reviewRole: "deep-code-review", reviewScope: "full", reviewerId: ownerId, provider: "openai", model: "gpt-5.6-sol", independent: true, unresolved: [] } });
+    await store.recordReviewPass("sample-stream", { head: baseHead, verdict: "GO", reviewRole: "structural-challenge", reviewerId: "019f0000-0000-7000-8000-000000000017", provider: "anthropic", model: "claude-fable-5", independent: true, mergeReadiness: 95, structuralRisk: 5 });
+    const mrr = await store.mrrStatus("sample-stream", baseHead);
+    assert.equal(mrr.ready, false);
+    assert.match(mrr.reasons.join(" "), /missing completed deep-code-review/);
+    await store.updateWorkstream("sample-stream", { orchestrator: null });
+    assert.equal((await store.mrrStatus("sample-stream", baseHead)).ready, false);
+    await store.updateWorkstream("sample-stream", { orchestrator: "019f0000-0000-7000-8000-000000000021" });
+
+    await store.recordReviewPass("sample-stream", { head: baseHead, verdict: "GO", reviewRole: "deep-code-review", reviewerId: "019f0000-0000-7000-8000-000000000018", provider: "openai", model: "gpt-5.6-sol", independent: true, mergeReadiness: 95, structuralRisk: 5 });
+    await assert.rejects(store.updateWorkstream("sample-stream", { orchestrator: "019f0000-0000-7000-8000-000000000017", status: "complete" }), /orchestrator cannot count toward the independent MRR fleet/);
+
+    const stream = await store.updateWorkstream("sample-stream", { orchestrator: "sample-agent" });
+    assert.equal(stream.orchestrator, ownerId);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("exact task IDs take precedence over colliding legacy aliases", async () => {
+  const mock = await localFixture();
+  const ownerId = "019f0000-0000-7000-8000-000000000015";
+  const otherId = "019f0000-0000-7000-8000-000000000016";
+  const futureId = "019f0000-0000-7000-8000-000000000019";
+  try {
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [
+      { id: otherId, alias: ownerId, kind: "codex" },
+      { id: ownerId, alias: "exact-owner", kind: "codex" },
+      { id: "019f0000-0000-7000-8000-000000000020", alias: futureId, kind: "codex" }
+    ] }));
+    const store = createFieldReportStore(mock.root);
+    assert.equal((await store.resolveSession(ownerId)).id, ownerId);
+    await assert.rejects(store.saveSessionAlias({ id: otherId, alias: ownerId }), /conflicts with an existing task ID/);
+    await assert.rejects(store.saveSessionAlias({ id: futureId, alias: "new-owner" }), /conflicts with an existing alias/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("a reassigned former orchestrator cannot mutate the workstream", async () => {
+  const mock = await localFixture();
+  const formerId = "019f0000-0000-7000-8000-000000000012";
+  try {
+    const streamPath = path.join(mock.root, "workstreams", "sample-stream.json");
+    const stream = JSON.parse(await readFile(streamPath, "utf8"));
+    await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: "019f0000-0000-7000-8000-000000000013" }, null, 2));
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: formerId, alias: "former-owner", kind: "codex" }] }));
+    await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [formerId]: { workstreamId: "sample-stream", role: "workstream-orchestrator" } } }));
+    const env = { ...mock.env, CODEX_THREAD_ID: formerId };
+    await assert.rejects(exec(process.execPath, [cli, "checkpoint", "sample-stream", "--summary", "Unauthorized mutation"], { env }), /no longer the durable orchestrator/);
+    await assert.rejects(exec(process.execPath, [cli, "assign", "sample-stream", "--session", "former-owner"], { env }), /no longer the durable orchestrator/);
+    await assert.rejects(exec(process.execPath, [cli, "commit", "sample-stream", "--message", "Unauthorized commit"], { env }), /no longer the durable orchestrator/);
+    const eventPath = path.join(mock.root, "events", "sample-stream.jsonl");
+    const before = await readFile(eventPath, "utf8").catch(() => "");
+    await exec(process.execPath, [cli, "hook", "stop"], { env });
+    const after = await readFile(eventPath, "utf8").catch(() => "");
+    assert.equal(after, before);
   } finally {
     await mock.close();
   }

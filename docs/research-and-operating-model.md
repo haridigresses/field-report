@@ -1,6 +1,6 @@
 # Multi-agent visibility research and operating model
 
-> Historical pilot research. The current operating decision supersedes AF session and inbox coordination: Field Report stores Codex task UUID aliases, native Codex task channels carry messaging, and AF remains only as the issue list.
+> Archive only. Everything below describes the historical pilot and is not an operational role, approval, messaging, or release contract. Current behavior comes only from `docs/fr-workflow.md`; in particular, coordinators do not provide sign-off or product and technical direction, native Codex carries live messaging, and AF remains only the issue list.
 
 ## Recommendation
 

@@ -60,7 +60,7 @@ export function createFieldReportStore(root) {
     const normalized = sessionValue(value);
     if (!normalized) return null;
     const sessions = await listSessions();
-    return sessions.find((session) => session.id === normalized || session.alias === normalized || session.aliases?.includes(normalized)) || null;
+    return sessions.find((session) => session.id === normalized) || sessions.find((session) => session.alias === normalized || session.aliases?.includes(normalized)) || null;
   }
 
   async function sessionIdFor(value) {
@@ -72,6 +72,12 @@ export function createFieldReportStore(root) {
     throw new Error(`Unknown Codex session ${normalized}; register it with fr session alias`);
   }
 
+  async function withCanonicalOrchestrator(stream) {
+    if (!stream.orchestrator) return stream;
+    const registered = await resolveSession(stream.orchestrator);
+    return registered ? { ...stream, orchestrator: registered.id } : stream;
+  }
+
   async function saveSessionAlias(values) {
     return withWriteLock(async () => {
       const id = sessionValue(values.id);
@@ -79,6 +85,8 @@ export function createFieldReportStore(root) {
       if (!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(id || "")) throw new Error("Session ID must be a Codex task UUID");
       if (!/^[a-z0-9][a-z0-9/_-]{0,79}$/.test(alias || "")) throw new Error("Session aliases use lowercase letters, numbers, slash, underscore, or hyphen");
       const sessions = await listSessions();
+      if (sessions.some((session) => session.id !== id && (session.alias === id || session.aliases?.includes(id)))) throw new Error(`Session ID ${id} conflicts with an existing alias`);
+      if (sessions.some((session) => session.id === alias && session.id !== id)) throw new Error(`Session alias ${alias} conflicts with an existing task ID`);
       if (sessions.some((session) => (session.alias === alias || session.aliases?.includes(alias)) && session.id !== id)) throw new Error(`Session alias ${alias} is already assigned`);
       const existing = sessions.find((session) => session.id === id);
       const aliases = [...new Set([...(existing?.aliases || []), ...(existing?.alias && existing.alias !== alias ? [existing.alias] : [])])].filter((value) => value !== alias);
@@ -255,7 +263,7 @@ export function createFieldReportStore(root) {
   }
 
   async function mrrStatus(id, head = null) {
-    const stream = (await currentStream(id)).stream;
+    const stream = await withCanonicalOrchestrator((await currentStream(id)).stream);
     if (head != null && !/^[0-9a-f]{40}$/i.test(head)) throw new Error("MRR head must be an exact 40-character SHA");
     return evaluateMrr(head ? { ...stream, assessment: { ...(stream.assessment || {}), currentHead: head } } : stream);
   }
@@ -267,7 +275,8 @@ export function createFieldReportStore(root) {
       const id = workstreamId(values.id || `${project.id}-${slug(values.title)}`);
       try { await findWorkstream(id); throw new Error("Workstream already exists"); } catch (error) { if (error.message !== "Unknown workstream") throw error; }
       const now = new Date().toISOString();
-      const orchestrator = await sessionIdFor(values.orchestrator || project.coordinator);
+      const orchestratorValue = Object.hasOwn(values, "orchestrator") ? values.orchestrator : null;
+      const orchestrator = await sessionIdFor(orchestratorValue);
       const stream = { id, project: project.id, title: shortText(values.title, "Title", 160), summary: shortText(values.summary || values.outcome, "Outcome", 1200), status: "planned", branch: values.branch ? sessionValue(values.branch) : null, reviewState: values.reviewState ? shortText(values.reviewState, "Current gate", 500) : "Workstream created; initial plan pending", chunks: Array.isArray(values.chunks) ? normalizeChunks(values.chunks) : [], questions: [], prs: [], issuePrefixes: [], references: Array.isArray(values.references) ? normalizeReferences(values.references) : [], orchestrator, assessment: null, updatedAt: now, updatedBy: values.updatedBy ? sessionValue(values.updatedBy) : "fr" };
       await writeJsonAtomic(path.join(root, "workstreams", `${id}.json`), stream);
       await appendEventUnlocked(id, { type: "created", text: `Created workstream: ${stream.summary}`, actor: stream.updatedBy });
@@ -278,13 +287,15 @@ export function createFieldReportStore(root) {
   async function updateWorkstream(id, patch, eventType = "updated") {
     return withWriteLock(async () => {
       const { streamFile, stream } = await findWorkstream(id);
+      if (patch.orchestrator !== undefined) patch = { ...patch, orchestrator: await sessionIdFor(patch.orchestrator) };
       const semanticKeys = ["title", "summary", "status", "branch", "reviewState", "reviewPolicy", "publicationHold", "chunks", "prs", "references", "issuePrefixes", "commits", "questions", "orchestrator"];
       const requestedKeys = semanticKeys.filter((key) => patch[key] !== undefined);
       if (!requestedKeys.some((key) => JSON.stringify(stream[key]) !== JSON.stringify(patch[key]))) return stream;
       const next = applyCanonicalPatch(stream, patch);
       if (stream.status !== "complete" && next.status === "complete" && (next.branch || (next.prs || []).length || (next.commits || []).length)) {
         const current = await currentStream(id);
-        const mrr = evaluateMrr({ ...current.stream, branch: next.branch, prs: current.stream.prs?.length ? current.stream.prs : next.prs, commits: next.commits, reviewPolicy: { ...(current.stream.reviewPolicy || {}), ...(next.reviewPolicy || {}) } });
+        const mrrStream = await withCanonicalOrchestrator({ ...current.stream, orchestrator: next.orchestrator, branch: next.branch, prs: current.stream.prs?.length ? current.stream.prs : next.prs, commits: next.commits, reviewPolicy: { ...(current.stream.reviewPolicy || {}), ...(next.reviewPolicy || {}) } });
+        const mrr = evaluateMrr(mrrStream);
         if (!mrr.ready) throw new Error(`MRR completion gate is not satisfied: ${mrr.reasons.join("; ")}. Run fr mrr ${id}.`);
       }
       await writeJsonAtomic(streamFile, next);
@@ -345,11 +356,16 @@ export function createFieldReportStore(root) {
 
   async function recordReviewPasses(id, values) {
     if (!Array.isArray(values) || !values.length) throw new Error("Review import requires at least one pass");
-    const events = values.map(reviewPassEvent);
+    const normalized = await Promise.all(values.map(async (value) => {
+      const reviewer = value.reviewerId ? await resolveSession(value.reviewerId) : null;
+      return reviewer ? { ...value, reviewerId: reviewer.id } : value;
+    }));
     return withWriteLock(async () => {
-      const { stream } = await findWorkstream(id);
+      const stream = await withCanonicalOrchestrator((await findWorkstream(id)).stream);
       const hasCodeAnchor = Boolean(stream.branch || stream.commits?.length || stream.prs?.length);
       if (!hasCodeAnchor) throw new Error("Review passes require a code workstream anchored by a branch, commit, or PR");
+      const events = normalized.map(reviewPassEvent).map((event) => ({ ...event, metadata: { ...event.metadata, orchestratorAtReview: stream.orchestrator || null } }));
+      if (events.some((event) => stream.orchestrator && event.metadata.reviewerId === stream.orchestrator)) throw new Error("The workstream orchestrator cannot record an independent review of their own work");
       const recorded = [];
       for (const event of events) recorded.push(await appendEventUnlocked(id, event));
       return recorded;
@@ -368,15 +384,20 @@ export function createFieldReportStore(root) {
     const reviewRole = values.reviewRole;
     if (!["deep-code-review", "structural-challenge"].includes(reviewRole)) throw new Error("Commit review role must be deep-code-review or structural-challenge");
     if (String(values.verdict || "").toUpperCase() !== "GO") throw new Error("Only a completed GO may satisfy a local commit panel");
-    const reviewerId = sessionValue(values.reviewerId);
+    const registeredReviewer = values.reviewerId ? await resolveSession(values.reviewerId) : null;
+    const reviewerId = registeredReviewer?.id || sessionValue(values.reviewerId);
     if (!reviewerId) throw new Error("Commit review requires a durable reviewer ID");
     if (reviewerId.startsWith("cwd:")) throw new Error("Commit review requires a task or provider-run ID, not checkout identity");
-    const event = { type: "commit_review", actor: values.reviewer || reviewerId, text: shortText(values.summary, "Commit review summary", 1200), metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole, reviewer: values.reviewer || reviewerId, reviewerId, provider: sessionValue(values.provider), model: values.model || "unknown" } };
-    return appendWorkstreamEvent(id, event);
+    return withWriteLock(async () => {
+      const stream = await withCanonicalOrchestrator((await findWorkstream(id)).stream);
+      if (stream.orchestrator && reviewerId === stream.orchestrator) throw new Error("The workstream orchestrator cannot record an independent review of their own work");
+      const event = { type: "commit_review", actor: values.reviewer || reviewerId, text: shortText(values.summary, "Commit review summary", 1200), metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole, reviewer: values.reviewer || reviewerId, reviewerId, orchestratorAtReview: stream.orchestrator || null, provider: sessionValue(values.provider), model: values.model || "unknown" } };
+      return appendEventUnlocked(id, event);
+    });
   }
 
   async function commitPanelStatus(id, tree, baseHead) {
-    const { stream } = await findWorkstream(id);
+    const stream = await withCanonicalOrchestrator((await findWorkstream(id)).stream);
     return evaluateCommitPanel({ tree, baseHead, events: await readEvents(id), orchestrator: stream.orchestrator || null });
   }
 
@@ -391,9 +412,9 @@ export function createFieldReportStore(root) {
 
   function assessmentPrompt(stream, currentHead) {
     const prs = (stream.prs || []).map((pr) => `#${pr.number} (${pr.state || "unknown"}; head ${pr.headRefOid || "unknown"})`).join(", ") || "none yet";
-    return `You are the authoritative orchestrator/reviewer for workstream ${stream.id}. Give an honest, evidence-backed assessment using what you have observed in this workstream, the repository's merge-ready-review rules, the current branch, and linked AF issues. Inspect current evidence if needed; do not merely repeat the dashboard summary.
+    return `You are an independent reviewer for workstream ${stream.id}. Give an honest, evidence-backed assessment using the repository's merge-ready-review rules, the current branch, linked Field Report evidence, and linked AF issues. Inspect current evidence if needed; do not merely repeat the dashboard summary.
 
-This request authorizes a read-only review and publication of the assessment. Do not wait for separate user confirmation unless completing the review would require a state-changing action outside that scope.
+This request authorizes a read-only advisory assessment. It is not a role-assigned MRR lane and must not be recorded with \`fr pass record\` or \`fr pass import\`. Return the judgment through the native Codex task channel; a separate role-specific delegation with truthful model/provider provenance is required for gating MRR evidence.
 
 Outcome: ${stream.title}
 Dashboard orientation (may be stale): ${stream.liveStatus?.text || stream.summary}
@@ -403,27 +424,17 @@ Linked PRs: ${prs}
 
 First reconcile the dashboard orientation against the current branch head, PR state, linked issue history, prior plan, and prior reviewer decisions. When they disagree, use the current evidence and call out the drift explicitly.
 
-Explicitly test necessity, simpler designs, scope drift, ownership and failure contracts, evidence quality, structural rot, and contradictions with prior plans or decisions. Judge the accumulated mechanism rather than only the latest repair, and answer whether you would select this mechanism from scratch given the current evidence.
-
-Publish the judgment directly with:
-fr pass record ${stream.id} --head ${currentHead} --verdict <GO|CONDITIONAL_GO|NO_GO> --merge <0-100> --structural <0-100> --outcome-confidence <0-100> --necessity <clear|challenged|unjustified> --simpler-path <none_found|candidate|recommended> --scope-drift <none|low|material> --contract-integrity <sound|at_risk|broken> --evidence-quality <strong|partial|weak> --summary "<2-4 sentence rationale including the primary risk and next gate>"
-
-Return the completed review through the native Codex task channel. Field Report is the durable review ledger; AF is reserved for issue tracking.`;
+Explicitly test necessity, simpler designs, scope drift, ownership and failure contracts, evidence quality, structural rot, and contradictions with prior plans or decisions. Judge the accumulated mechanism rather than only the latest repair, and answer whether you would select this mechanism from scratch given the current evidence.`;
   }
 
   async function prepareAssessmentBriefs(ids) {
     if (!Array.isArray(ids) || ids.length < 1 || ids.length > 20) throw new Error("Select between 1 and 20 workstreams");
     const results = [];
     for (const id of [...new Set(ids.map(String))]) {
-      const { stream: canonical } = await findWorkstream(id);
-      const { stream, project } = await currentStream(id);
-      const recipientValue = canonical.orchestrator || project?.coordinator;
-      if (!recipientValue) throw new Error(`No Codex orchestrator configured for ${id}`);
-      const recipient = await resolveSession(recipientValue);
-      if (!recipient) throw new Error(`Unknown Codex session ${recipientValue}; register it with fr session alias`);
+      const { stream } = await currentStream(id);
       const currentHead = stream.assessment?.currentHead;
       if (!/^[0-9a-f]{40}$/i.test(currentHead || "")) throw new Error(`Could not resolve an exact current head for ${id}`);
-      results.push({ id, recipient: recipient.id, alias: recipient.alias, head: currentHead, prompt: assessmentPrompt(stream, currentHead) });
+      results.push({ id, head: currentHead, prompt: assessmentPrompt(stream, currentHead) });
     }
     return results;
   }
