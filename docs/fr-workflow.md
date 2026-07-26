@@ -2,6 +2,8 @@
 
 This contract applies only to sessions explicitly armed through `fr`. Repository `AGENTS.md` files remain authoritative for engineering and contributor rules; this contract adds personal orchestration behavior without changing the experience of other developers.
 
+This file is the single normative source for Field Report behavior. Behavioral corrections belong here; skills and README may point here or repeat only the designated verbatim direct-user-authority and exact-head-MRR invariants in Shared. `fr workflow` returns a derived view of this file, never an independently editable policy. Put rules in Shared unless they are genuinely exclusive to one role, because role-scoped rules are omitted from other role views.
+
 ## Shared contract
 
 - Treat Field Report as durable outcome, assignment, and review state. Native Codex task channels carry live execution and messaging; AF supplies linked issues only. Do not make a live transcript the only source of a decision, blocker, or review verdict.
@@ -18,6 +20,7 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Let `fr checkpoint` attach deterministic checkout branch/head evidence. Do not manually repeat `fr link commit` for the same head, and do not create a checkpoint when canonical semantic state is unchanged.
 - Pause for product or scope decisions. Do not silently widen the intended outcome or add compatibility, abstraction, or process that is not necessary.
 - Direct user instructions to a workstream are controlling for that workstream. Repository-coordinator portfolio authority does not override them unless the user explicitly delegates the decision.
+- Code completion requires the selected exact-head MRR policy; earlier-head or partial review evidence does not transfer automatically.
 - Before accepting an implementation mechanism, restate the user outcome and challenge the proposal: Does this need to exist? Is there a simpler path? Would it create noise, duplicate authority, or ongoing coordination cost? Prefer the smallest approach that reliably solves the outcome, and say so when the proposed mechanism is not that approach.
 
 ## Repository coordinator
@@ -55,8 +58,7 @@ This contract applies only to sessions explicitly armed through `fr`. Repository
 - Push a native Codex task message to the repository coordinator only when coordinator awareness or action is genuinely needed: user/product decision, cross-workstream collision, shared-contract change, material schedule blocker, merge-order change, merge readiness, structural-risk change, or parking/completion. Do not send routine checkpoint mail.
 - Treat delegated review as incomplete until an explicit `review_complete: true` result is reconciled and recorded at the exact 40-character SHA. Use `fr pass record` for one lane or one `fr pass import` envelope for multiple completed lanes.
 - Do not mark a PR-level chunk or code workstream complete until its selected review policy is satisfied, no required pass is NO-GO, and no required current-head findings remain unresolved. Under the default `full` policy, both reviewer roles must cover the current head. Locally green, CI green, or one 5/5 review is insufficient.
-- Before launching Fable, verify that the requested Mantle/Bedrock route is enabled and use an explicit read-only reviewer profile: allow Read, Grep, Glob, and narrowly constrained read-only git commands; deny editing and mutation tools. Do not rely on plan mode's default permissions.
-- For long Fable reviews, persist stream-JSON evidence, treat permission or route failures as terminal orchestration signals, give evidence collection and synthesis separate deadlines, and retry only the failed phase. A vanished final response must not erase already collected findings or count as a completed pass.
+- When selecting Fable as a reviewer, follow the provider-specific procedure in `skills/workstream-orchestrator/references/fable-review.md`; provider mechanics are not part of the general role contract.
 
 ## Executor
 

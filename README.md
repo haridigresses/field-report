@@ -2,11 +2,13 @@
 
 A local portfolio field report for Codex task coordination, linked Agent Fixes issues, and GitHub pull requests.
 
+This README describes the product and user-facing CLI. Agent behavior is governed only by `docs/fr-workflow.md`, delivered through `fr workflow`; behavioral corrections are not duplicated here.
+
 Agents and users interact through the `fr` CLI. Field Report owns curated outcome state, readable aliases for exact Codex task UUIDs, and the exact-SHA review ledger. Native Codex task channels carry delegation and messaging; AF supplies only the issue list.
 
 The CLI is local-first and does not require the dashboard server. Canonical workstream updates, event appends, questions, decisions, review passes, policies, and assessment requests go through the same filesystem-backed core used by the HTTP server. A short cross-process lock prevents agents from overwriting one another. Run the server only to view or operate the browser dashboard; use **Refresh sources** when you want it to collect the latest canonical, AF, GitHub, and repository state.
 
-Field Report stores durable Codex task UUIDs separately from their human-readable aliases. Use short, globally unique names and add a repository prefix only to resolve a real collision. `fr session alias <alias> [--id <uuid>]` makes a new primary name while retaining the prior name as a fallback; `fr assign <workstream-id> --session <alias-or-uuid>` accepts either. On Codex surfaces that expose task-title management, agents should mirror the primary alias into the sidebar title for readability; the title is not routing authority. Native Codex delegation and messaging carry live coordination; AF is collected only as the linked issue ledger.
+Field Report stores durable Codex task UUIDs separately from their human-readable aliases. Use short, globally unique names and add a repository prefix only to resolve a real collision. `fr session alias <alias> [--id <uuid>]` makes a new primary name while retaining the prior name as a fallback; `fr assign <workstream-id> --session <alias-or-uuid>` accepts either. Codex task-title management can mirror the primary alias into the sidebar for readability; the title is not routing authority. Native Codex delegation and messaging carry live coordination; AF is collected only as the linked issue ledger.
 
 ## Install
 
@@ -45,7 +47,7 @@ Field Report writes canonical updates immediately. Dashboard-originated writes t
 
 CLI updates do not automatically launch the dashboard or collect external sources. This keeps agent writes available when the UI is offline. The next dashboard refresh incorporates them.
 
-AF remains the linked issue ledger; Field Report links issue trees to durable outcomes and milestones. Commit SHAs are delivery evidence, not narrative status. Git plans and contracts remain authoritative in their repositories: Field Report stores only pointed references (path, revision, optional section, and a short exact excerpt) when they materially constrain a workstream. Avoid attaching general documentation or duplicating entire plans.
+AF remains the linked issue ledger; Field Report links issue trees to durable outcomes and milestones. Commit SHAs are delivery evidence, not narrative status. Git plans and contracts remain authoritative in their repositories; Field Report references them by path, revision, optional section, and short excerpt rather than duplicating whole plans.
 
 ## Operating topology
 
@@ -56,19 +58,19 @@ AF remains the linked issue ledger; Field Report links issue trees to durable ou
 - Agent Fixes provides the linked issue list only.
 - GitHub remains authoritative for pull-request state.
 
-Repository coordinators own routine orientation. `fr context` infers the repository, workstream, branch, head, delivery artifact, next gate, and MRR state from the checkout in one concise view. External Git worktrees, including Codex-managed worktrees outside the configured checkout path, resolve through their shared Git common directory. `fr coordinate` and `fr catchup` also infer the repository when no ID is supplied and accept the configured ID or repository-directory name. `fr coordinate` runs an initial catch-up; later `fr catchup` calls report semantic and delivery changes since the durable repository cursor plus all outcomes currently needing attention. Workstream orchestrators keep Field Report current and send consequential exceptions through native Codex task messaging.
+`fr context` infers the repository, workstream, branch, head, delivery artifact, next gate, and MRR state from the checkout. External Git worktrees, including Codex-managed worktrees outside the configured checkout path, resolve through their shared Git common directory. `fr coordinate` and `fr catchup` infer the repository when no ID is supplied and accept the configured ID or repository-directory name. `fr coordinate` runs an initial catch-up; later calls report changes since the durable repository cursor plus outcomes needing attention.
 
 `fr assess` prepares a bounded, target-specific review brief for native Codex delegation; it does not send through AF. Only an explicit exact-head review pass counts as completed evidence. Use `fr pass record` for one lane or `fr pass import` to validate and record all lanes from one structured JSON envelope. Review passes require a code anchor on the outcome—a branch, commit, or PR—so audit-only outcomes cannot accumulate code-readiness evidence.
 
 `fr checkpoint` automatically records the current full commit and fills an unassigned branch when the checkout maps unambiguously to the workstream repository. It does not copy GitHub facts into canonical state, and a semantically identical checkpoint is skipped instead of adding timeline noise. Pass `--evidence false` only when the checkout must not contribute Git evidence.
 
-`docs/fr-workflow.md` is the canonical opt-in orchestration contract. It is not copied into repository `AGENTS.md` files used by other developers. `fr coordinate`, `fr onboard`, and `fr workflow` load the shared contract plus only the armed session's role section.
+`docs/fr-workflow.md` is the canonical opt-in orchestration contract. It is not copied into repository `AGENTS.md` files used by other developers. `fr coordinate`, `fr onboard`, and `fr workflow` derive a role projection containing the shared contract plus only the armed session's role section.
 
 Review passes record reviewer, model, verdict, exact head SHA, readiness/risk judgments, findings, and unresolved considerations. When the branch advances, prior passes remain in history but are counted as superseded rather than current-head evidence.
 
 For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles; the durable contract is the role, not the vendor or model. Existing passes retain backward-compatible role inference; new passes should record `--role` explicitly. `fr mrr <id>` reports the policy, missing role, or READY.
 
-The user or repository coordinator may choose `single-independent`, `delta`, or `none` with `fr policy`, but every non-full policy requires an explicit reason. Delta passes must record `--scope delta --base-head <full-sha>`. Workstream orchestrators cannot silently weaken their own completion gate. Field Report rejects the first transition to `complete` while the selected policy is unsatisfied. Non-code outcomes without a branch, PR, or commits are exempt.
+`fr policy` supports `single-independent`, `delta`, or `none` exceptions with an explicit reason. Delta passes record `--scope delta --base-head <full-sha>`. Field Report enforces role authority for policy changes and rejects the first transition to `complete` while the selected policy is unsatisfied. Non-code outcomes without a branch, PR, or commits are exempt.
 
 ## Start
 

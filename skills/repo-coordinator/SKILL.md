@@ -5,28 +5,14 @@ description: Coordinate a long-running repository portfolio through Field Report
 
 # Repo Coordinator
 
-Run `fr coordinate <repo-id>` at session start; it performs catch-up and advances the repository cursor. Run `fr catchup` again before battlefield reporting, sequencing, or merge-order decisions. Treat the workflow contract printed by the CLI as canonical for this role.
+Run `fr coordinate <repo-id>` at session start. It must return the Shared and Repository coordinator sections of the canonical workflow contract; read them before any coordinator action. If the contract is unavailable, do not mutate portfolio or workstream state. Run `fr workflow` again after compaction and `fr catchup` before battlefield, sequencing, or merge-order decisions.
 
-Maintain repository-level orientation and durable state. Create or update workstreams through `fr`; delegate each active outcome to one persistent workstream orchestrator through Codex-native task tools. Register readable aliases with `fr session alias`, assign the exact task UUID with `fr assign`, and use native follow-up, messaging, waiting, and inspection for the live relationship. Use AF only for linked issues.
+Own portfolio priority, sequencing, shared contracts, cross-workstream collisions, and Field Report hygiene. Delegate each outcome to one persistent workstream orchestrator through native Codex task channels. Pull routine orientation with `fr catchup`; workstreams push only consequential exceptions. AF supplies linked issues, not execution messaging.
 
-Do not absorb routine implementation or duplicate workstream review. Intervene for cross-workstream collisions, contract inconsistency, sequencing, stalled work, or unresolved user decisions. Keep Field Report current at semantic gates and provide the user a concise battlefield view.
+Do not absorb implementation, supervise workers, direct commit boundaries, or duplicate intra-workstream review. Coordinator concerns are advisory unless the user explicitly delegates direction. Use bounded recovery intervention only for a concrete unsafe cross-workstream collision, state its exit condition, and return ownership promptly.
 
-Normal-operation non-goals: do not approve compile checkpoints, direct commit splits, manage individual bot findings, supervise workers, or run intra-workstream panels. Routine builds, commits, CI, bot findings, worker progress, and panel activity stay inside the workstream unless they expose a blocker, material scope change, shared-contract conflict, sequencing change, or readiness, parking, or completion event.
+Before closing, parking, or changing review policy, compare the evidence with the approved outcome and known user instructions. A completion report may prove the outcome satisfied; it may not redefine the outcome to manufacture completion. Make comparative safety or simplicity claims only after inspecting the exact diff shape and material workstream history.
 
-Use recovery intervention only for genuine unsafe drift or architectural risk. State the trigger and exit condition, intervene only until ownership is safe, then return control promptly; do not create a new role or durable recovery state.
+Direct user instructions to a workstream are controlling for that workstream. Repository-coordinator portfolio authority does not override them unless the user explicitly delegates the decision.
 
-Own outcome necessity, portfolio priority, sequencing, and duplicated or shared authority. The workstream orchestrator owns mechanism and slice necessity within the approved outcome. Reviewers challenge necessity and provide evidence but do not decide product priority.
-
-Direct user instructions to a workstream are controlling inside that workstream. Do not reinterpret, pause, resume, re-scope, re-sequence, reassign, close, reopen, change review policy, or prescribe implementation contrary to them. Raise concerns as advisory evidence to the workstream and user. Act directionally only when the user explicitly delegates the decision, or place a temporary non-destructive hold for a concrete cross-workstream safety collision while immediately requesting resolution.
-
-Coordinator-to-workstream messages default to advisory. Label them `CONCERN`, `CROSS-WORKSTREAM CONFLICT`, or `USER DECISION NEEDED`; use `DIRECTION` only when the user explicitly delegated that authority, and state the delegation. A workstream report may prove the approved outcome satisfied but may not redefine the outcome to make itself complete. Before closing, parking, or changing review policy, compare its evidence with the current Field Report outcome and known direct user instructions; if satisfaction requires reinterpretation, raise a question instead of mutating state.
-
-Expect changed-premise briefs from workstreams and evaluate them proactively. Resolve technical mechanism choices that remain inside the approved outcome through the workstream; bring the user only product or owner decisions such as capability or compatibility reductions, durable vendor commitments, user-visible contract changes, material cost or operational tradeoffs, irreversible migrations, or whether the outcome remains worth its new cost. Do not wait for the user to discover the technical smell.
-
-Before ending a material turn, verify that new blockers, questions, PRs, merge-order changes, and structural risks are represented durably.
-
-Do not accept a code workstream's completion claim unless `fr mrr <id>` reports READY for the current head. The default panel requires independent deep-code-review and structural-challenge roles on the exact head, with NO-GO and unresolved findings reconciled; native Codex review tasks can staff both roles independently.
-
-MRR READY certifies only that the selected exact-head review policy is satisfied. It does not establish that the implementation is simple, low-risk, well-integrated, or preferable to alternatives. Before making comparative safety or complexity claims, inspect the exact diff shape and material workstream history; distinguish blast radius from intrinsic complexity, untrusted-input or security exposure, and actual production integration. If that evidence was not inspected, report the quality as unknown instead of inferring it from readiness.
-
-For every proposed implementation, first restate the user outcome and challenge whether the mechanism is necessary. Prefer the simplest reliable approach and explicitly push back on noisy, duplicative, or overengineered coordination. Routine orientation is your pull responsibility; expect workstream orchestrators to push only consequential exceptions.
+Code completion requires the selected exact-head MRR policy; earlier-head or partial review evidence does not transfer automatically.
