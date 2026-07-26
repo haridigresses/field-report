@@ -612,7 +612,8 @@ async function main() {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
     const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
     const evidence = await liveReleaseEvidence(stream, context);
-    const mrr = await api("GET", `/api/workstreams/${encodeURIComponent(id)}/mrr?head=${encodeURIComponent(evidence.remoteHead || "")}`);
+    const mrrPath = `/api/workstreams/${encodeURIComponent(id)}/mrr${evidence.remoteHead ? `?head=${encodeURIComponent(evidence.remoteHead)}` : ""}`;
+    const mrr = await api("GET", mrrPath);
     const result = evaluateRelease({ stream, mrr, ...evidence });
     const lines = [`${id} release gate at ${result.head ? result.head.slice(0, 8) : "unresolved head"}: ${result.ready ? "READY" : "BLOCKED"}`];
     if (result.pr) lines.push(`PR #${result.pr.number}: ${String(result.pr.state).toLowerCase()}${result.pr.isDraft ? " draft" : " non-draft"}`);
