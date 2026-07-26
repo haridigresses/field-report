@@ -65,7 +65,7 @@ AF remains the linked issue ledger; Field Report links issue trees to durable ou
 
 `fr context` infers the repository, workstream, branch, head, delivery artifact, next gate, and MRR state from the checkout. External Git worktrees, including Codex-managed worktrees outside the configured checkout path, resolve through their shared Git common directory. `fr coordinate` and `fr catchup` infer the repository when no ID is supplied and accept the configured ID or repository-directory name. `fr coordinate` runs an initial catch-up; later calls report changes since the durable repository cursor plus outcomes needing attention.
 
-`fr assess` prepares a bounded, target-specific review brief for native Codex delegation; it does not send through AF. Only an explicit exact-head review pass counts as completed evidence. Use `fr pass record` for one lane or `fr pass import` to validate and record all lanes from one structured JSON envelope. Review passes require a code anchor on the outcome—a branch, commit, or PR—so audit-only outcomes cannot accumulate code-readiness evidence.
+`fr assess` prepares a bounded, target-specific advisory brief for native Codex delegation; it does not send through AF and does not create MRR evidence. Gating review requires a separate role-specific delegation with truthful model/provider provenance. That reviewer uses `fr pass record` for one lane or `fr pass import` for a structured envelope. Review passes require a code anchor on the outcome—a branch, commit, or PR—so audit-only outcomes cannot accumulate code-readiness evidence.
 
 `fr checkpoint` automatically records the current full commit and fills an unassigned branch when the checkout maps unambiguously to the workstream repository. It does not copy GitHub facts into canonical state, and a semantically identical checkpoint is skipped instead of adding timeline noise. Pass `--evidence false` only when the checkout must not contribute Git evidence.
 
@@ -106,7 +106,7 @@ Each workstream displays two reviewer-owned, evidence-backed percentages:
 - **Merge readiness:** probability that the branch can merge without material changes beyond normal review and release gates. This is not merge authorization.
 - **Structural rebuild risk:** probability that architectural or contract rot makes a bounded rebuild safer or cheaper than continuing to patch the current branch.
 
-Select one or more outcomes and use **Prepare review brief** when fresh judgment is needed. The brief is copied for delivery through a native Codex task channel. The reviewer publishes directly with `fr pass record`.
+Select one or more outcomes and use **Prepare review brief** when fresh advisory judgment is needed. The brief is copied for delivery through a native Codex task channel and is explicitly non-gating. Start a separate role-specific review task before recording any MRR pass.
 
 The dashboard is attention-first: each row reports whether the outcome needs the user, its current gate, delivery artifact, and freshness. The deep dive keeps the 2–3 line situation, remaining milestones, exact-SHA review ledger, governing git references, linked AF issues, and semantic timeline.
 

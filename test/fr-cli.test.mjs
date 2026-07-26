@@ -109,7 +109,7 @@ test("fr assess prepares a native Codex review brief", async () => {
   const mock = await fixture();
   try {
     const { stdout } = await exec(process.execPath, [cli, "assess", "sample-stream"], { env: mock.env });
-    assert.match(stdout, /Native Codex independent-review brief/);
+    assert.match(stdout, /Native Codex advisory-assessment brief/);
     assert.match(stdout, /Review this head/);
     assert.equal(mock.requests[0].url, "/api/assessments/request");
   } finally {
@@ -284,6 +284,8 @@ test("ordinary local creation remains unassigned without an explicit orchestrato
     const [brief] = await store.prepareAssessmentBriefs(["sample-stream"]);
     assert.equal(brief.recipient, undefined);
     assert.match(brief.prompt, /independent reviewer/);
+    assert.match(brief.prompt, /not a role-assigned MRR lane/);
+    assert.doesNotMatch(brief.prompt, /Publish the judgment directly/);
   } finally {
     await mock.close();
   }

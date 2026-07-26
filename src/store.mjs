@@ -414,7 +414,7 @@ export function createFieldReportStore(root) {
     const prs = (stream.prs || []).map((pr) => `#${pr.number} (${pr.state || "unknown"}; head ${pr.headRefOid || "unknown"})`).join(", ") || "none yet";
     return `You are an independent reviewer for workstream ${stream.id}. Give an honest, evidence-backed assessment using the repository's merge-ready-review rules, the current branch, linked Field Report evidence, and linked AF issues. Inspect current evidence if needed; do not merely repeat the dashboard summary.
 
-This request authorizes a read-only review and publication of the assessment. Do not wait for separate user confirmation unless completing the review would require a state-changing action outside that scope.
+This request authorizes a read-only advisory assessment. It is not a role-assigned MRR lane and must not be recorded with \`fr pass record\` or \`fr pass import\`. Return the judgment through the native Codex task channel; a separate role-specific delegation with truthful model/provider provenance is required for gating MRR evidence.
 
 Outcome: ${stream.title}
 Dashboard orientation (may be stale): ${stream.liveStatus?.text || stream.summary}
@@ -424,12 +424,7 @@ Linked PRs: ${prs}
 
 First reconcile the dashboard orientation against the current branch head, PR state, linked issue history, prior plan, and prior reviewer decisions. When they disagree, use the current evidence and call out the drift explicitly.
 
-Explicitly test necessity, simpler designs, scope drift, ownership and failure contracts, evidence quality, structural rot, and contradictions with prior plans or decisions. Judge the accumulated mechanism rather than only the latest repair, and answer whether you would select this mechanism from scratch given the current evidence.
-
-Publish the judgment directly with:
-fr pass record ${stream.id} --head ${currentHead} --verdict <GO|CONDITIONAL_GO|NO_GO> --merge <0-100> --structural <0-100> --outcome-confidence <0-100> --necessity <clear|challenged|unjustified> --simpler-path <none_found|candidate|recommended> --scope-drift <none|low|material> --contract-integrity <sound|at_risk|broken> --evidence-quality <strong|partial|weak> --summary "<2-4 sentence rationale including the primary risk and next gate>"
-
-Return the completed review through the native Codex task channel. Field Report is the durable review ledger; AF is reserved for issue tracking.`;
+Explicitly test necessity, simpler designs, scope drift, ownership and failure contracts, evidence quality, structural rot, and contradictions with prior plans or decisions. Judge the accumulated mechanism rather than only the latest repair, and answer whether you would select this mechanism from scratch given the current evidence.`;
   }
 
   async function prepareAssessmentBriefs(ids) {

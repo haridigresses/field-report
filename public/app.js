@@ -415,7 +415,7 @@ async function requestAssessments(workstreamIds) {
     const response = await fetch("/api/assessments/request", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workstreamIds }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Assessment request failed");
-      const briefs = result.requested.map((brief) => `Independent review brief\nWorkstream: ${brief.id}\nHead: ${brief.head}\n\n${brief.prompt}`).join("\n\n---\n\n");
+      const briefs = result.requested.map((brief) => `Advisory assessment brief\nWorkstream: ${brief.id}\nHead: ${brief.head}\n\n${brief.prompt}`).join("\n\n---\n\n");
       await navigator.clipboard.writeText(briefs);
       selectedStreams.clear();
       selectionCount.textContent = `Copied ${result.requested.length} native Codex review brief${result.requested.length === 1 ? "" : "s"}.`;
