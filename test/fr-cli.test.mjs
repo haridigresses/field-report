@@ -172,6 +172,7 @@ test("workflow routes decisions directly to the user and coordinator messages on
   const store = createFieldReportStore(root);
   const workstream = await store.workflowContract("workstream-orchestrator");
   const coordinator = await store.workflowContract("repo-coordinator");
+  const coordinatorSkill = await readFile(path.join(root, "skills", "repo-coordinator", "SKILL.md"), "utf8");
 
   assert.match(workstream, /decisions directly to the user as compact briefs/);
   assert.match(workstream, /only for a concrete cross-workstream collision/);
@@ -181,6 +182,8 @@ test("workflow routes decisions directly to the user and coordinator messages on
   assert.doesNotMatch(workstream, /user\/product decision, cross-workstream collision/);
   assert.match(coordinator, /Workstreams bring their own unresolved decisions directly to the user/);
   assert.match(coordinator, /do not make the coordinator a decision conduit/);
+  assert.match(coordinatorSkill, /relay user direction to persistent workstreams/);
+  assert.doesNotMatch(coordinatorSkill, /relay between the user and persistent workstreams/);
 });
 
 test("MRR can evaluate an explicit live release head instead of a stale local ref", async () => {

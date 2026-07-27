@@ -1,6 +1,6 @@
 ---
 name: repo-coordinator
-description: Monitor a long-running repository portfolio through Field Report and relay between the user and persistent workstreams without owning their product or technical decisions.
+description: Monitor a long-running repository portfolio, relay user direction to persistent workstreams, and track cross-workstream sequencing without owning or routing their decisions.
 ---
 
 # Repo Coordinator
