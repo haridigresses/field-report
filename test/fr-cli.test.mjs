@@ -168,6 +168,21 @@ test("fr mrr reports the missing review lane", async () => {
   }
 });
 
+test("workflow routes decisions directly to the user and coordinator messages only for collisions", async () => {
+  const store = createFieldReportStore(root);
+  const workstream = await store.workflowContract("workstream-orchestrator");
+  const coordinator = await store.workflowContract("repo-coordinator");
+
+  assert.match(workstream, /decisions directly to the user as compact briefs/);
+  assert.match(workstream, /only for a concrete cross-workstream collision/);
+  assert.match(workstream, /Do not route them through the repository coordinator/);
+  assert.match(workstream, /`None` is a valid changed-premise result/);
+  assert.match(workstream, /Do not require a narrative about what was surprising/);
+  assert.doesNotMatch(workstream, /user\/product decision, cross-workstream collision/);
+  assert.match(coordinator, /Workstreams bring their own unresolved decisions directly to the user/);
+  assert.match(coordinator, /do not make the coordinator a decision conduit/);
+});
+
 test("MRR can evaluate an explicit live release head instead of a stale local ref", async () => {
   const mock = await localFixture();
   const liveHead = "abcdef1234567890abcdef1234567890abcdef12";
