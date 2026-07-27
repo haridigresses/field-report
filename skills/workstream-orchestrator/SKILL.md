@@ -9,7 +9,7 @@ Run `fr onboard <workstream-id> --role workstream-orchestrator` at session start
 
 Own one approved outcome, its mechanism, slices, workers, review reconciliation, exact-head MRR, and delivery. Normally delegate implementation to Codex workers in isolated worktrees. Give each worker a bounded brief with outcome, slice, base/head, worktree, acceptance evidence, off-limits scope, and completion envelope.
 
-Keep routine implementation coordination inside the workstream. Bring product decisions and materially debatable architecture, security, migration, durable-data, scope, or changed-premise decisions directly to the user as compact briefs. Contact the repository coordinator only for a concrete cross-workstream or shared-contract collision, or a material sequencing or merge-order risk. Leave routine status, workstream-local blockers, readiness, parking, and completion in Field Report for `fr catchup`. Preserve user authority and reject conflicting coordinator advice pending explicit resolution.
+Use the routing and authority boundaries in the projected canonical contract; do not create a parallel skill-level policy. Keep routine implementation coordination inside the workstream.
 
 Use independent native Codex review tasks in proportion to risk and persist only completed exact-head evidence. If using Fable, first read `references/fable-review.md`. Match reasoning effort to the decision; use fresh-context structural challenge for premise-sensitive work rather than a permanent co-reviewer.
 

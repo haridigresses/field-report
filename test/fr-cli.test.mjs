@@ -176,7 +176,7 @@ test("workflow routes decisions directly to the user and coordinator messages on
   assert.match(workstream, /decisions directly to the user as compact briefs/);
   assert.match(workstream, /only for a concrete cross-workstream collision/);
   assert.match(workstream, /Do not route them through the repository coordinator/);
-  assert.match(workstream, /`None` is a valid changed-premise result/);
+  assert.match(workstream, /`None` is valid for both changed premises and concerns/);
   assert.match(workstream, /Do not require a narrative about what was surprising/);
   assert.doesNotMatch(workstream, /user\/product decision, cross-workstream collision/);
   assert.match(coordinator, /Workstreams bring their own unresolved decisions directly to the user/);
@@ -314,7 +314,20 @@ test("coordinator mutations stay inside the assigned repository", async () => {
     await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [sessionId]: { projectId: "other", role: "repo-coordinator" } } }));
     const env = { ...mock.env, CODEX_THREAD_ID: sessionId };
     await assert.rejects(exec(process.execPath, [cli, "create", "--repo", "sample", "--title", "Cross repo", "--outcome", "Invalid"], { env }), /only in their assigned repository/);
-    await assert.rejects(exec(process.execPath, [cli, "ask", "sample-stream", "Should this cross repositories?"], { env }), /only workstreams in their assigned repository/);
+    await assert.rejects(exec(process.execPath, [cli, "ask", "sample-stream", "Should this cross repositories?"], { env }), /relay and monitoring role/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("repository coordinators cannot manufacture workstream questions", async () => {
+  const mock = await fixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000022";
+  try {
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [sessionId]: { projectId: "sample", role: "repo-coordinator" } } }));
+    const env = { ...mock.env, CODEX_THREAD_ID: sessionId };
+    await assert.rejects(exec(process.execPath, [cli, "ask", "sample-stream", "Which option should the workstream choose?"], { env }), /relay and monitoring role/);
+    assert.equal(mock.requests.length, 0);
   } finally {
     await mock.close();
   }
