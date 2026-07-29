@@ -459,7 +459,7 @@ function patchFrom(flags) {
 
 function enforceCoordinatorBoundary(context, command) {
   if (context.binding?.role !== "repo-coordinator") return;
-  const allowed = new Set(["list", "coordinate", "context", "catchup", "workflow", "status", "show", "session", "assign", "create", "ask", "mrr", "release-check", "hold", "watch", "hook"]);
+  const allowed = new Set(["list", "coordinate", "context", "catchup", "workflow", "status", "show", "session", "assign", "create", "mrr", "release-check", "hold", "watch", "hook"]);
   if (!allowed.has(command)) throw new Error(`Repository coordinators are a relay and monitoring role; ${command} belongs to the user, workstream, or reviewers`);
 }
 
