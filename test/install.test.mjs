@@ -199,9 +199,10 @@ test("installer adds only a locally scoped managed pre-commit hook", async () =>
     const hook = await readFile(installed.preCommitHooks[0].hook, "utf8");
     assert.match(hook, /field-report-managed-pre-commit:v1/);
     assert.match(hook, /unset FIELD_REPORT_URL/);
+    assert.match(hook, /unset FIELD_REPORT_CWD/);
     assert.match(hook, /hook pre-commit/);
     assert.match(hook, new RegExp(installed.releaseLauncher.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-    await exec(installed.preCommitHooks[0].hook, [], { env: { FIELD_REPORT_URL: "http://127.0.0.1:1" } });
+    await exec(installed.preCommitHooks[0].hook, [], { env: { FIELD_REPORT_URL: "http://127.0.0.1:1", FIELD_REPORT_CWD: "/not/the/checkout" } });
   } finally {
     await rm(fixture.fixtureRoot, { recursive: true, force: true });
   }

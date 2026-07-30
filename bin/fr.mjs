@@ -168,10 +168,11 @@ async function doctor() {
 async function identity() {
   const cwd = process.env.FIELD_REPORT_CWD || process.cwd();
   const nativeSessionId = process.env.CODEX_THREAD_ID || null;
+  const codexRuntime = Boolean(nativeSessionId) || process.env.CODEX_CI === "1";
   const sessionId = nativeSessionId || process.env.FIELD_REPORT_SESSION_ID || null;
-  if (!sessionId) return { key: `cwd:${cwd}`, actor: process.env.USER || "agent", kind: "unknown", native: false, cwd };
+  if (!sessionId) return { key: `cwd:${cwd}`, actor: process.env.USER || "agent", kind: "unknown", native: false, codexRuntime, cwd };
   const registered = await store.resolveSession(sessionId);
-  return { key: sessionId, actor: registered?.alias || sessionId, kind: registered?.kind || "codex", native: sessionId === nativeSessionId, cwd };
+  return { key: sessionId, actor: registered?.alias || sessionId, kind: registered?.kind || "codex", native: sessionId === nativeSessionId, codexRuntime, cwd };
 }
 
 async function armed() {
@@ -803,6 +804,7 @@ async function main() {
   const context = await armed();
   const id = streamId(positional, context.binding);
   if (command === "hook" && positional[0] === "pre-commit") {
+    if (context.who.codexRuntime && !context.who.native) throw new Error("Codex commits require CODEX_THREAD_ID so Field Report can bind the commit to the exact armed task");
     if (!context.who.native) return;
     if (!context.binding?.workstreamId) throw new Error("Codex commits require an armed Field Report workstream; run fr onboard <outcome-id> --role workstream-orchestrator");
     const inferred = await inferredContext(context);

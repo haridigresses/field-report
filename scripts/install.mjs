@@ -164,6 +164,7 @@ async function installPreCommitHooks(hooks, launcher) {
     "#!/bin/sh",
     managedPreCommitMarker,
     "unset FIELD_REPORT_URL",
+    "unset FIELD_REPORT_CWD",
     `exec ${shellQuote(launcher)} hook pre-commit`,
     ""
   ].join("\n");

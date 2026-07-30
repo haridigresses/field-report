@@ -981,7 +981,11 @@ test("fr pass run-sol records exact-head witnessed MRR lanes and a head change i
 test("pre-commit hook is inert for humans and blocks unarmed, mismatched, or unreviewed Codex commits", async () => {
   const mock = await localFixture();
   try {
-    await exec(process.execPath, [cli, "hook", "pre-commit"], { env: mock.env });
+    const humanEnv = { ...mock.env };
+    delete humanEnv.CODEX_CI;
+    await exec(process.execPath, [cli, "hook", "pre-commit"], { env: humanEnv });
+    const unidentifiedCodex = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_CI: "1" } }).catch((error) => error);
+    assert.match(`${unidentifiedCodex.stderr || ""}${unidentifiedCodex.stdout || ""}`, /require CODEX_THREAD_ID/);
     const ownerId = "019f0000-0000-7000-8000-000000000020";
     const staleKindId = "019f0000-0000-7000-8000-000000000021";
     await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: ownerId, alias: "sample-agent", kind: "codex" }, { id: staleKindId, alias: "stale-kind", kind: "other" }] }));
@@ -996,7 +1000,7 @@ test("pre-commit hook is inert for humans and blocks unarmed, mismatched, or unr
     await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [ownerId]: { workstreamId: "sample-stream", role: "workstream-orchestrator" } } }));
     await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
     await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
-    await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: ownerId } });
+    await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...humanEnv, FIELD_REPORT_SESSION_ID: ownerId } });
     const currentPath = path.join(mock.root, "data", "current.json");
     const current = JSON.parse(await readFile(currentPath, "utf8"));
     await writeFile(currentPath, JSON.stringify({ ...current, workstreams: current.workstreams.map((candidate) => candidate.id === "sample-stream" ? { ...candidate, branch: "stale/projected-branch" } : candidate) }));
