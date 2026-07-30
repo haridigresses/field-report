@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 import { activateSurfaces, installFieldReport } from "../scripts/install.mjs";
+import { releasePayloadDigest } from "../src/release-integrity.mjs";
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -65,12 +66,32 @@ test("installer pins the launcher and skills to one clean exact commit", async (
   }
 });
 
-test("installer rejects a corrupted existing release payload", async () => {
-  const fixture = await installFixture();
+test("installer repairs a corrupted existing release payload and managed launcher", async () => {
+  const fixture = await installFixture({ configuredProject: true });
   try {
     const installed = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
     await writeFile(path.join(installed.releaseRoot, "bin", "fr.mjs"), "corrupted\n");
-    await assert.rejects(installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }), /payload differs from the clean exact-main source/);
+    await writeFile(installed.releaseLauncher, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    const repaired = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    assert.equal(repaired.revision, installed.revision);
+    assert.notEqual(await readFile(path.join(repaired.releaseRoot, "bin", "fr.mjs"), "utf8"), "corrupted\n");
+    assert.match(await readFile(repaired.releaseLauncher, "utf8"), /FIELD_REPORT_RELEASE_REVISION/);
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("failed activation restores the prior same-revision release during repair", async () => {
+  const fixture = await installFixture({ configuredProject: true });
+  try {
+    const installed = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    const runtime = path.join(installed.releaseRoot, "bin", "fr.mjs");
+    await writeFile(runtime, "corrupted before repair\n");
+    await writeFile(path.join(fixture.home, ".claude", "settings.json"), "not json\n");
+    await assert.rejects(installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }), /Cannot preserve Claude settings/);
+    assert.equal(await readFile(runtime, "utf8"), "corrupted before repair\n");
+    assert.match(await readFile(installed.releaseLauncher, "utf8"), /FIELD_REPORT_RELEASE_REVISION/);
+    assert.match(await readFile(installed.preCommitHooks[0].hook, "utf8"), new RegExp(installed.releaseLauncher.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   } finally {
     await rm(fixture.fixtureRoot, { recursive: true, force: true });
   }
@@ -83,6 +104,31 @@ test("installer reuses an intact release idempotently", async () => {
     const second = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
     assert.equal(second.releaseRoot, first.releaseRoot);
     assert.equal(second.revision, first.revision);
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("installer upgrades an exact legacy release hook to the digested release format", async () => {
+  const fixture = await installFixture({ configuredProject: true });
+  try {
+    const legacy = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    const manifestPath = path.join(legacy.releaseRoot, "install-manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    delete manifest.payloadDigest;
+    manifest.schemaVersion = 1;
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    await writeFile(path.join(fixture.sourceRoot, "docs", "fr-workflow.md"), `${await readFile(path.join(fixture.sourceRoot, "docs", "fr-workflow.md"), "utf8")}\n`);
+    await exec("git", ["add", "docs/fr-workflow.md"], { cwd: fixture.sourceRoot });
+    await exec("git", ["-c", "user.name=Field Report Test", "-c", "user.email=field-report@example.invalid", "commit", "-m", "next release"], {
+      cwd: fixture.sourceRoot,
+      env: { ...process.env, CODEX_CI: "0", CODEX_THREAD_ID: "" }
+    });
+    await exec("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: fixture.sourceRoot });
+    const upgraded = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    assert.notEqual(upgraded.revision, legacy.revision);
+    assert.equal(JSON.parse(await readFile(path.join(upgraded.releaseRoot, "install-manifest.json"), "utf8")).schemaVersion, 2);
+    assert.match(await readFile(upgraded.preCommitHooks[0].hook, "utf8"), new RegExp(upgraded.releaseLauncher.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   } finally {
     await rm(fixture.fixtureRoot, { recursive: true, force: true });
   }
@@ -214,7 +260,7 @@ test("installer adds only a locally scoped managed pre-commit hook", async () =>
     const installed = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
     assert.equal(installed.preCommitHooks.length, 1);
     const hook = await readFile(installed.preCommitHooks[0].hook, "utf8");
-    assert.match(hook, /field-report-managed-pre-commit:v1/);
+    assert.match(hook, /field-report-managed-pre-commit:v2/);
     assert.match(hook, /unset FIELD_REPORT_URL/);
     assert.match(hook, /unset FIELD_REPORT_CWD/);
     assert.match(hook, /hook pre-commit/);
@@ -225,15 +271,79 @@ test("installer adds only a locally scoped managed pre-commit hook", async () =>
   }
 });
 
-test("installer refuses to overwrite an unrelated pre-commit hook", async () => {
+test("installer preserves and composes an unrelated pre-commit hook", async () => {
   const fixture = await installFixture({ configuredProject: true });
   try {
     const hook = path.join(fixture.sourceRoot, ".git", "hooks", "pre-commit");
-    await writeFile(hook, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-    await assert.rejects(
-      installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }),
-      /Refusing to overwrite the existing pre-commit hook/
-    );
+    const original = "#!/bin/sh\nexit 0\n";
+    await writeFile(hook, original, { mode: 0o755 });
+    const installed = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    const preserved = `${hook}.field-report-preserved`;
+    assert.equal(await readFile(preserved, "utf8"), original);
+    assert.match(await readFile(hook, "utf8"), new RegExp(preserved.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(await readFile(hook, "utf8"), new RegExp(installed.releaseLauncher.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    assert.equal(await readFile(preserved, "utf8"), original);
+    const wrapper = await readFile(hook, "utf8");
+    await rm(hook);
+    await assert.rejects(installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }), /wrapper is missing/);
+    await writeFile(hook, wrapper, { mode: 0o755 });
+    await rm(preserved);
+    await assert.rejects(installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }), /incomplete or drifted/);
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("installer preserves a composed hook that merely copies the managed marker", async () => {
+  const fixture = await installFixture({ configuredProject: true });
+  try {
+    const hook = path.join(fixture.sourceRoot, ".git", "hooks", "pre-commit");
+    const composed = "#!/bin/sh\n# field-report-managed-pre-commit:v1\nunset FIELD_REPORT_URL\nunset FIELD_REPORT_CWD\nrun-other-checks\n";
+    await writeFile(hook, composed, { mode: 0o755 });
+    await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    assert.equal(await readFile(`${hook}.field-report-preserved`, "utf8"), composed);
+    assert.match(await readFile(hook, "utf8"), /field-report-managed-pre-commit:v2/);
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("installer preserves an exact-shaped hook that targets an unrelated launcher", async () => {
+  const fixture = await installFixture({ configuredProject: true });
+  try {
+    const hook = path.join(fixture.sourceRoot, ".git", "hooks", "pre-commit");
+    const unrelated = "#!/bin/sh\n# field-report-managed-pre-commit:v1\nunset FIELD_REPORT_URL\nunset FIELD_REPORT_CWD\nexec '/tmp/not-field-report/fr' hook pre-commit\n";
+    await writeFile(hook, unrelated, { mode: 0o755 });
+    await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    assert.equal(await readFile(`${hook}.field-report-preserved`, "utf8"), unrelated);
+    assert.doesNotMatch(await readFile(hook, "utf8"), /not-field-report/);
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("installer preserves a hook targeting an invalid SHA-named release directory", async () => {
+  const fixture = await installFixture({ configuredProject: true });
+  try {
+    const revision = "a".repeat(40);
+    const releaseRoot = path.join(fixture.home, ".local", "share", "field-report", "releases", revision);
+    const launcher = path.join(releaseRoot, "fr");
+    await mkdir(releaseRoot, { recursive: true });
+    await writeFile(launcher, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    await writeFile(path.join(releaseRoot, "install-manifest.json"), JSON.stringify({
+      schemaVersion: 2,
+      revision,
+      stateRoot: fixture.sourceRoot,
+      nodeExecutable: process.execPath,
+      payloadDigest: await releasePayloadDigest(releaseRoot)
+    }));
+    const hook = path.join(fixture.sourceRoot, ".git", "hooks", "pre-commit");
+    const contents = `#!/bin/sh\n# field-report-managed-pre-commit:v1\nunset FIELD_REPORT_URL\nunset FIELD_REPORT_CWD\nexec '${launcher}' hook pre-commit\n`;
+    await writeFile(hook, contents, { mode: 0o755 });
+    const installed = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    assert.equal(await readFile(`${hook}.field-report-preserved`, "utf8"), contents);
+    assert.match(await readFile(hook, "utf8"), new RegExp(installed.releaseLauncher.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   } finally {
     await rm(fixture.fixtureRoot, { recursive: true, force: true });
   }

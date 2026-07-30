@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { access, lstat, mkdir, mkdtemp, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
@@ -9,6 +10,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createFieldReportStore } from "../src/store.mjs";
 import { writeAll } from "../src/evidence.mjs";
+import { contentDigest, isExclusivelyManagedPreCommitHook } from "../src/hooks.mjs";
+import { assertInstalledRelease, gitRevisionPayloadDigest } from "../src/release-integrity.mjs";
 import { evaluateRelease } from "../src/release.mjs";
 
 const exec = promisify(execFile);
@@ -200,6 +203,7 @@ async function checkoutContext(cwd) {
 }
 
 function projectForCwd(data, cwd) {
+  if (!cwd) return null;
   return (data.projects || [])
     .filter((project) => project.repoPath && (cwd === project.repoPath || cwd.startsWith(`${project.repoPath}${path.sep}`)))
     .sort((left, right) => right.repoPath.length - left.repoPath.length)[0] || null;
@@ -231,7 +235,9 @@ function resolveProject(data, value, cwd) {
 async function inferredContext(context) {
   const data = await api("GET", "/data/current.json");
   const checkout = await checkoutContext(context.who.cwd);
-  const project = projectForCwd(data, context.who.cwd) || projectForCwd(data, checkout.repoRoot) || await projectForGitCommonDir(data, checkout.gitCommonDir);
+  const project = checkout.gitCommonDir
+    ? await projectForGitCommonDir(data, checkout.gitCommonDir)
+    : projectForCwd(data, context.who.cwd);
   const matches = project && checkout.branch && checkout.branch !== "HEAD"
     ? data.workstreams.filter((stream) => stream.project === project.id && stream.branch === checkout.branch)
     : [];
@@ -261,6 +267,41 @@ async function onboard(id, role = "orchestrator") {
   const stream = await api("GET", `/api/workstreams/${encodeURIComponent(id)}`);
   const owner = stream.orchestrator ? await store.resolveSession(stream.orchestrator) : null;
   if (role === "workstream-orchestrator" && (owner?.id || stream.orchestrator) !== context.who.key) throw new Error("Workstream-orchestrator onboarding requires the exact durable task assignment; use fr assign first");
+  if (context.who.native && role !== "reviewer") {
+    const onboardingCwd = process.cwd();
+    const onboardingContext = { ...context, who: { ...context.who, cwd: onboardingCwd } };
+    const inferred = await inferredContext(onboardingContext);
+    if (inferred.project?.id !== stream.project) throw new Error(`Native Field Report onboarding for ${stream.id} requires a checkout of project ${stream.project}, not ${inferred.project?.id || "an unconfigured repository"}`);
+    let hook;
+    try { hook = (await exec("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: onboardingCwd, timeout: 10_000 })).stdout.trim(); }
+    catch { throw new Error("Native Field Report onboarding requires a Git checkout with the managed local pre-commit gate"); }
+    let hookContents;
+    let hookStat;
+    try { [hookContents, hookStat] = await Promise.all([readFile(hook, "utf8"), lstat(hook)]); }
+    catch { throw new Error(`Native Field Report onboarding requires the managed local pre-commit gate at ${hook}; reinstall Field Report after configuring the repository`); }
+    const expectedLauncher = path.join(runtimeRoot, "fr");
+    const preservedHook = `${hook}.field-report-preserved`;
+    let composedMatches = false;
+    try {
+      const preservedStat = await lstat(preservedHook);
+      await access(preservedHook, fsConstants.X_OK);
+      if (!(preservedStat.isFile() || preservedStat.isSymbolicLink())) throw new Error("unsupported preserved hook");
+      const preservedDigest = contentDigest(await readFile(preservedHook));
+      composedMatches = isExclusivelyManagedPreCommitHook(hookContents, expectedLauncher, preservedHook, preservedDigest);
+    } catch {}
+    if (!isExclusivelyManagedPreCommitHook(hookContents, expectedLauncher) && !composedMatches) {
+      throw new Error(`Native Field Report onboarding refuses an absent or replaced pre-commit gate at ${hook}; reinstall Field Report`);
+    }
+    if (!hookStat.isFile() || !(hookStat.mode & 0o111)) throw new Error(`Native Field Report onboarding requires a regular executable pre-commit gate at ${hook}; reinstall Field Report`);
+    const revision = process.env.FIELD_REPORT_RELEASE_REVISION || "";
+    if (!/^[0-9a-f]{40}$/i.test(revision)) throw new Error("Native Field Report onboarding requires an exact installed release revision; reinstall Field Report");
+    try {
+      const manifest = await assertInstalledRelease({ runtimeRoot, stateRoot: fieldReportRoot, revision, nodeExecutable: process.execPath });
+      if (manifest.payloadDigest !== await gitRevisionPayloadDigest(fieldReportRoot, revision)) throw new Error("release payload does not match canonical revision");
+    } catch {
+      throw new Error(`Native Field Report onboarding requires an intact installed release at ${runtimeRoot}; reinstall Field Report`);
+    }
+  }
   const workflow = await api("GET", `/api/workflow?role=${encodeURIComponent(role)}`);
   const { state, who } = context;
   state.sessions[who.key] = { workstreamId: stream.id, role, actor: who.actor, cwd: who.cwd, armedAt: new Date().toISOString() };

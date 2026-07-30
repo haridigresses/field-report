@@ -8,6 +8,7 @@ import {
   mkdtemp,
   lstat,
   readFile,
+  readdir,
   readlink,
   realpath,
   rename,
@@ -19,17 +20,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { contentDigest, isExclusivelyManagedPreCommitHook, managedPreCommitMarker, preCommitHookText, releaseLauncherText, shellQuote } from "../src/hooks.mjs";
+import { assertInstalledRelease, materializeGitRelease, releasePayloadDigest, releasePayloadEntries } from "../src/release-integrity.mjs";
 
 const exec = promisify(execFile);
 const scriptFile = fileURLToPath(import.meta.url);
 const defaultSourceRoot = path.resolve(path.dirname(scriptFile), "..");
-const releaseEntries = ["bin", "docs", "integrations", "scripts", "skills", "src", "package.json"];
-const managedPreCommitMarker = "# field-report-managed-pre-commit:v1";
-
-function shellQuote(value) {
-  return `'${String(value).replaceAll("'", "'\"'\"'")}'`;
-}
-
+const releaseEntries = releasePayloadEntries;
 async function git(sourceRoot, args) {
   try {
     return (await exec("git", args, { cwd: sourceRoot, timeout: 30_000, maxBuffer: 10 * 1024 * 1024 })).stdout.trim();
@@ -181,49 +178,87 @@ async function preflightSymlinks(destinations) {
   }
 }
 
-async function configuredPreCommitHooks(stateRoot) {
+async function managedReleaseLaunchers(releasesRoot, stateRoot) {
+  const launchers = [];
+  try {
+    for (const entry of await readdir(releasesRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^[0-9a-f]{40}$/i.test(entry.name)) continue;
+      const revision = entry.name.toLowerCase();
+      const runtimeRoot = path.join(releasesRoot, entry.name);
+      try {
+        await assertInstalledRelease({ runtimeRoot, stateRoot, revision, allowLegacySchema1: true });
+        launchers.push(path.join(runtimeRoot, "fr"));
+      } catch {
+        // An invalid directory cannot establish ownership of a repository hook.
+      }
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  return launchers;
+}
+
+async function configuredPreCommitHooks(stateRoot, expectedLaunchers) {
   const config = JSON.parse(await readFile(path.join(stateRoot, "config", "projects.json"), "utf8"));
   const hooks = [];
   for (const project of config.projects || []) {
     if (!project.repoPath) continue;
     const hook = await git(project.repoPath, ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"]);
+    const preservedHook = `${hook}.field-report-preserved`;
+    let preserve = null;
+    let composed = false;
+    let preservedDigest = null;
     try {
-      const existing = await readFile(hook, "utf8");
-      if (!existing.includes(managedPreCommitMarker)) {
-        throw new Error(`Refusing to overwrite the existing pre-commit hook for ${project.id || project.repoPath}: ${hook}`);
-      }
+      const preservedStat = await lstat(preservedHook);
+      if (!(preservedStat.isFile() || preservedStat.isSymbolicLink())) throw new Error(`Unsupported preserved pre-commit hook: ${preservedHook}`);
+      await access(preservedHook, fsConstants.X_OK);
+      preservedDigest = contentDigest(await readFile(preservedHook));
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
-    hooks.push({ hook, project: project.id || project.repoPath });
+    try {
+      const existing = await readFile(hook, "utf8");
+      const managedPlain = expectedLaunchers.some((launcher) => isExclusivelyManagedPreCommitHook(existing, launcher, null, null, true));
+      const managedComposed = preservedDigest && expectedLaunchers.some((launcher) => isExclusivelyManagedPreCommitHook(existing, launcher, preservedHook, preservedDigest));
+      if (existing.includes(managedPreCommitMarker) && !managedPlain && !managedComposed) throw new Error(`Managed composed pre-commit hook is incomplete or drifted: ${hook}`);
+      if (!managedPlain && !managedComposed) {
+        try {
+          await lstat(preservedHook);
+          throw new Error(`Cannot preserve the existing pre-commit hook because ${preservedHook} already exists`);
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+        preserve = await snapshotSurface(hook);
+        await access(hook, fsConstants.X_OK);
+        preservedDigest = contentDigest(existing);
+        composed = true;
+      } else composed = managedComposed;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (preservedDigest && !composed) throw new Error(`Managed pre-commit wrapper is missing while its preserved hook remains: ${hook}`);
+    hooks.push({ hook, preserve, preservedDigest: composed ? preservedDigest : null, preservedHook: composed ? preservedHook : null, project: project.id || project.repoPath });
   }
   return hooks;
 }
 
-function preCommitHookText(launcher) {
-  return [
-    "#!/bin/sh",
-    managedPreCommitMarker,
-    "unset FIELD_REPORT_URL",
-    "unset FIELD_REPORT_CWD",
-    `exec ${shellQuote(launcher)} hook pre-commit`,
-    ""
-  ].join("\n");
-}
-
 async function copyRelease(sourceRoot, releasesRoot, revision, stateRoot, nodeExecutable) {
   const releaseRoot = path.join(releasesRoot, revision);
+  const sourceDigest = await releasePayloadDigest(sourceRoot);
+  let replaceExisting = false;
   try {
     const manifest = JSON.parse(await readFile(path.join(releaseRoot, "install-manifest.json"), "utf8"));
     if (manifest.revision !== revision || manifest.stateRoot !== stateRoot || manifest.nodeExecutable !== nodeExecutable) {
       throw new Error(`Existing Field Report release ${revision} has different runtime metadata`);
     }
-    for (const entry of releaseEntries) {
-      await exec("git", ["diff", "--no-index", "--quiet", "--", path.join(sourceRoot, entry), path.join(releaseRoot, entry)], { timeout: 30_000, maxBuffer: 1024 * 1024 }).catch(() => {
-        throw new Error(`Existing Field Report release ${revision} payload differs from the clean exact-main source`);
-      });
+    replaceExisting = manifest.schemaVersion !== 2 || manifest.payloadDigest !== sourceDigest || await releasePayloadDigest(releaseRoot) !== sourceDigest;
+    if (!replaceExisting) {
+      for (const entry of releaseEntries) {
+        try { await exec("git", ["diff", "--no-index", "--quiet", "--", path.join(sourceRoot, entry), path.join(releaseRoot, entry)], { timeout: 30_000, maxBuffer: 1024 * 1024 }); }
+        catch { replaceExisting = true; break; }
+      }
     }
-    return releaseRoot;
+    if (!replaceExisting) return { finalize: async () => {}, rollback: async () => {}, root: releaseRoot };
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
@@ -239,29 +274,31 @@ async function copyRelease(sourceRoot, releasesRoot, revision, stateRoot, nodeEx
       });
     }
     await writeFile(path.join(temporary, "install-manifest.json"), `${JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       revision,
       stateRoot,
-      nodeExecutable
+      nodeExecutable,
+      payloadDigest: sourceDigest
     }, null, 2)}\n`);
-    await rename(temporary, releaseRoot);
+    await writeFile(path.join(temporary, "fr"), releaseLauncherText({ stateRoot, runtimeRoot: releaseRoot, revision, nodeExecutable }), { mode: 0o755 });
+    let displaced = null;
+    if (!replaceExisting) await rename(temporary, releaseRoot);
+    else {
+      displaced = `${releaseRoot}.${process.pid}.${Date.now()}.replaced`;
+      await rename(releaseRoot, displaced);
+      try { await rename(temporary, releaseRoot); }
+      catch (error) { await rename(displaced, releaseRoot); throw error; }
+    }
+    return {
+      root: releaseRoot,
+      finalize: async () => { if (displaced) await rm(displaced, { recursive: true, force: true }); },
+      rollback: async () => {
+        await rm(releaseRoot, { recursive: true, force: true });
+        if (displaced) await rename(displaced, releaseRoot);
+      }
+    };
   } catch (error) {
     await rm(temporary, { recursive: true, force: true });
-    throw error;
-  }
-  return releaseRoot;
-}
-
-async function materializeReleaseSource(sourceRoot, revision) {
-  const snapshot = await mkdtemp(path.join(os.tmpdir(), `field-report-source-${revision.slice(0, 12)}-`));
-  const archive = path.join(snapshot, "release.tar");
-  try {
-    await git(sourceRoot, ["archive", "--format=tar", "--output", archive, revision, "--", ...releaseEntries]);
-    await exec("tar", ["-xf", archive, "-C", snapshot], { timeout: 30_000, maxBuffer: 1024 * 1024 });
-    await rm(archive, { force: true });
-    return snapshot;
-  } catch (error) {
-    await rm(snapshot, { recursive: true, force: true });
     throw error;
   }
 }
@@ -272,12 +309,15 @@ export async function installFieldReport(options = {}) {
   const nodeExecutable = path.resolve(options.nodeExecutable || process.execPath);
   await access(nodeExecutable);
   const { revision, stateRoot } = await sourceIdentity(sourceRoot);
-  const preCommitHooks = await configuredPreCommitHooks(stateRoot);
   const installRoot = path.resolve(options.installRoot || path.join(home, ".local", "share", "field-report"));
-  const releaseSource = await materializeReleaseSource(sourceRoot, revision);
-  let releaseRoot;
-  try { releaseRoot = await copyRelease(releaseSource, path.join(installRoot, "releases"), revision, stateRoot, nodeExecutable); }
+  const releasesRoot = path.join(installRoot, "releases");
+  const releaseSource = await materializeGitRelease(sourceRoot, revision);
+  let releaseTransaction;
+  try { releaseTransaction = await copyRelease(releaseSource, releasesRoot, revision, stateRoot, nodeExecutable); }
   finally { await rm(releaseSource, { recursive: true, force: true }); }
+  const releaseRoot = releaseTransaction.root;
+  try {
+  const preCommitHooks = await configuredPreCommitHooks(stateRoot, await managedReleaseLaunchers(releasesRoot, stateRoot));
   const launcher = path.join(home, ".local", "bin", "fr");
   const releaseLauncher = path.join(releaseRoot, "fr");
   const skillLinks = ["field-report", "repo-coordinator", "workstream-orchestrator"].flatMap((skill) => [
@@ -289,25 +329,24 @@ export async function installFieldReport(options = {}) {
   await preflightSymlinks(skillLinks.map((link) => link.destination));
   await preflightFileDestination(launcher);
   await preflightFileDestination(releaseLauncher);
-  await Promise.all([claudeHooks.file, ...preCommitHooks.map(({ hook }) => hook)].map(writableAncestor));
-  const launcherText = [
-    "#!/bin/sh",
-    `export FIELD_REPORT_ROOT=${shellQuote(stateRoot)}`,
-    `export FIELD_REPORT_RUNTIME_ROOT=${shellQuote(releaseRoot)}`,
-    `export FIELD_REPORT_RELEASE_REVISION=${shellQuote(revision)}`,
-    `exec ${shellQuote(nodeExecutable)} ${shellQuote(path.join(releaseRoot, "bin", "fr.mjs"))} "$@"`,
-    ""
-  ].join("\n");
-  const hookText = preCommitHookText(releaseLauncher);
+  await Promise.all([claudeHooks.file, ...preCommitHooks.flatMap(({ hook, preserve, preservedHook }) => [hook, ...(preserve ? [preservedHook] : [])])].map(writableAncestor));
+  const launcherText = releaseLauncherText({ stateRoot, runtimeRoot: releaseRoot, revision, nodeExecutable });
   await activateSurfaces([
     { destination: releaseLauncher, write: () => atomicReplace(releaseLauncher, (temporary) => writeFile(temporary, launcherText, { mode: 0o755 })) },
     { destination: claudeHooks.file, write: () => installClaudeHooks(claudeHooks) },
-    ...preCommitHooks.map(({ hook }) => ({ destination: hook, write: () => atomicReplace(hook, (temporary) => writeFile(temporary, hookText, { mode: 0o755 })) })),
+    ...preCommitHooks.flatMap(({ hook, preserve, preservedDigest, preservedHook }) => [
+      ...(preserve ? [{ destination: preservedHook, write: () => restoreSurface(preservedHook, preserve) }] : []),
+      { destination: hook, write: () => atomicReplace(hook, (temporary) => writeFile(temporary, preCommitHookText(releaseLauncher, preservedHook, preservedDigest), { mode: 0o755 })) }
+    ]),
     ...skillLinks.map((link) => ({ destination: link.destination, write: () => replaceSymlink(link.target, link.destination) })),
     { destination: launcher, write: () => atomicReplace(launcher, (temporary) => writeFile(temporary, launcherText, { mode: 0o755 })) }
   ]);
-
+  await releaseTransaction.finalize();
   return { launcher, nodeExecutable, preCommitHooks, releaseLauncher, releaseRoot, revision, stateRoot };
+  } catch (error) {
+    await releaseTransaction.rollback();
+    throw error;
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {

@@ -78,6 +78,21 @@ test("latest completed pass supersedes an earlier same-lane verdict", () => {
   assert.equal(result.ready, true);
 });
 
+test("a reviewer changing roles cannot erase an earlier adverse lane", () => {
+  const deepNoGo = solPass(ids.solDeep, "deep-code-review");
+  deepNoGo.metadata.verdict = "NO_GO";
+  deepNoGo.metadata.findings = ["Deep defect remains"];
+  const laterStructural = solPass(ids.solDeep, "structural-challenge");
+  laterStructural.at = "2026-07-13T00:00:00.000Z";
+  const independentDeep = solPass(ids.dissent, "deep-code-review");
+  const fable = pass("anthropic.claude-fable-5", "GO", [], null, "structural-challenge");
+  Object.assign(fable.metadata, { reviewerId: ids.fable, provider: "anthropic", route: "claude-aws", provenanceVerified: true, evidenceDigest: "e".repeat(64) });
+  const result = evaluateMrr({ branch: "codex/sample", assessment: { currentHead: head }, reviewPasses: [deepNoGo, laterStructural, independentDeep, fable] });
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /not GO/);
+  assert.match(result.reasons.join(" "), /finding remains unreconciled/);
+});
+
 test("explicit reviewer roles do not bypass the global fleet floor", () => {
   const result = evaluateMrr({ branch: "codex/sample", assessment: { currentHead: head }, reviewPasses: [
     pass("future-model-a", "GO", [], null, "deep-code-review"),

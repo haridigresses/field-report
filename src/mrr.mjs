@@ -60,7 +60,7 @@ export function evaluateMrr(stream) {
   const current = (stream.reviewPasses || []).filter((event) => exactHead(event.metadata?.head, head)).sort((left, right) => new Date(left.at || 0) - new Date(right.at || 0));
   const eligible = current.filter((event) => isSol(event) || isVerifiedFable(event));
   const completed = eligible.filter((event) => event.metadata?.reviewComplete === true && event.metadata?.independent !== false);
-  const latestByReviewer = [...new Map(completed.map((event) => [event.metadata?.reviewerId || `${event.metadata?.reviewer || event.actor}:${roleFor(event)}`, event])).values()];
+  const latestByReviewer = [...new Map(completed.map((event) => [`${event.metadata?.reviewerId || event.metadata?.reviewer || event.actor}:${roleFor(event)}`, event])).values()];
   const latestDeepCode = completed.findLast((event) => roleFor(event) === "deep-code-review") || null;
   const latestStructural = completed.findLast((event) => roleFor(event) === "structural-challenge") || null;
   const requiredPasses = [latestDeepCode, latestStructural].filter(Boolean);

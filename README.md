@@ -91,7 +91,7 @@ Legacy `single-independent`, `delta`, and `none` policy records remain readable,
 
 Requires Node.js 20+ and `gh` on `PATH`. Agent Fixes is optional and is used only as a linked issue ledger when available.
 
-Installation never overwrites an unrelated repository pre-commit hook and never silently leaves a configured repository outside the local Codex commit gate. If any configured repository has an unmanaged hook, installation aborts before activating the new release so the hooks can be composed explicitly. This affects only the machine installing Field Report; teammates without the local installation remain unaffected.
+Installation never discards an unrelated repository pre-commit hook and never silently leaves a configured repository outside the local Codex commit gate. If a configured repository already has a hook, installation preserves it as an executable sibling and installs an exact wrapper that runs the preserved hook before Field Report. This affects only the machine installing Field Report; teammates without the local installation remain unaffected.
 
 ```bash
 npm run dev

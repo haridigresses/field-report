@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 import { createFieldReportStore } from "../src/store.mjs";
+import { contentDigest, preCommitHookText, releaseLauncherText } from "../src/hooks.mjs";
+import { materializeGitRelease, releasePayloadDigest } from "../src/release-integrity.mjs";
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -415,6 +417,111 @@ test("workstream-orchestrator onboarding requires durable assignment", async () 
     const env = { ...mock.env, CODEX_THREAD_ID: sessionId };
     await assert.rejects(exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env }), /requires the exact durable task assignment/);
   } finally {
+    await mock.close();
+  }
+});
+
+test("native reviewer onboarding does not require a commit-producing agent hook", async () => {
+  const mock = await localFixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000030";
+  try {
+    const result = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "reviewer"], {
+      env: { ...mock.env, CODEX_THREAD_ID: sessionId },
+      cwd: mock.root
+    });
+    assert.match(result.stdout, /Armed sample-stream as reviewer/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("native workstream onboarding requires the managed local commit gate", async () => {
+  const mock = await localFixture();
+  const sessionId = "019f0000-0000-7000-8000-000000000029";
+  const unrelated = await mkdtemp(path.join(os.tmpdir(), "field-report-unrelated-"));
+  let runtimeRoot = null;
+  try {
+    for (const entry of ["bin", "integrations", "scripts", "skills", "src", "package.json"]) {
+      await cp(path.join(root, entry), path.join(mock.root, entry), { recursive: true });
+    }
+    await exec("git", ["add", "bin", "integrations", "scripts", "skills", "src", "package.json"], { cwd: mock.root });
+    await exec("git", ["-c", "user.name=Field Report Test", "-c", "user.email=field-report@example.invalid", "commit", "-m", "installed release fixture"], { cwd: mock.root, env: { ...process.env, CODEX_CI: "0", CODEX_THREAD_ID: "" } });
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: sessionId, alias: "sample-agent", kind: "codex" }] }));
+    const streamPath = path.join(mock.root, "workstreams", "sample-stream.json");
+    const stream = JSON.parse(await readFile(streamPath, "utf8"));
+    await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: sessionId }, null, 2));
+    const revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    runtimeRoot = await materializeGitRelease(mock.root, revision);
+    const launcher = path.join(runtimeRoot, "fr");
+    await writeFile(path.join(runtimeRoot, "install-manifest.json"), JSON.stringify({
+      schemaVersion: 2,
+      revision,
+      stateRoot: mock.root,
+      nodeExecutable: process.execPath,
+      payloadDigest: await releasePayloadDigest(runtimeRoot)
+    }));
+    const launcherContents = releaseLauncherText({ stateRoot: mock.root, runtimeRoot, revision, nodeExecutable: process.execPath });
+    await writeFile(launcher, launcherContents, { mode: 0o755 });
+    const env = { ...mock.env, CODEX_THREAD_ID: sessionId, FIELD_REPORT_RUNTIME_ROOT: runtimeRoot, FIELD_REPORT_RELEASE_REVISION: revision };
+    const missing = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env, cwd: mock.root }).catch((error) => error);
+    assert.match(`${missing.stderr || ""}${missing.stdout || ""}`, /requires the managed local pre-commit gate/);
+    const hook = (await exec("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: mock.root })).stdout.trim();
+    await writeFile(hook, preCommitHookText("/wrong/field-report/fr"), { mode: 0o755 });
+    const wrongLauncher = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env, cwd: mock.root }).catch((error) => error);
+    assert.match(`${wrongLauncher.stderr || ""}${wrongLauncher.stdout || ""}`, /absent or replaced pre-commit gate/);
+    await writeFile(hook, preCommitHookText(launcher));
+    await chmod(hook, 0o644);
+    const notExecutable = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env, cwd: mock.root }).catch((error) => error);
+    assert.match(`${notExecutable.stderr || ""}${notExecutable.stdout || ""}`, /requires a regular executable pre-commit gate/);
+    await chmod(hook, 0o755);
+    await writeFile(launcher, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    const replacedLauncher = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env, cwd: mock.root }).catch((error) => error);
+    assert.match(`${replacedLauncher.stderr || ""}${replacedLauncher.stdout || ""}`, /requires an intact installed release/);
+    await writeFile(launcher, launcherContents, { mode: 0o755 });
+    const installedRuntime = await readFile(path.join(runtimeRoot, "bin", "fr.mjs"));
+    await writeFile(path.join(runtimeRoot, "bin", "fr.mjs"), "// replaced runtime\n");
+    const substitutedManifest = JSON.parse(await readFile(path.join(runtimeRoot, "install-manifest.json"), "utf8"));
+    substitutedManifest.payloadDigest = await releasePayloadDigest(runtimeRoot);
+    await writeFile(path.join(runtimeRoot, "install-manifest.json"), JSON.stringify(substitutedManifest));
+    const replacedRuntime = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env, cwd: mock.root }).catch((error) => error);
+    assert.match(`${replacedRuntime.stderr || ""}${replacedRuntime.stdout || ""}`, /requires an intact installed release/);
+    await writeFile(path.join(runtimeRoot, "bin", "fr.mjs"), installedRuntime);
+    substitutedManifest.payloadDigest = await releasePayloadDigest(runtimeRoot);
+    await writeFile(path.join(runtimeRoot, "install-manifest.json"), JSON.stringify(substitutedManifest));
+    await exec("git", ["init", "-b", "main"], { cwd: unrelated });
+    await writeFile(path.join(unrelated, "README.md"), "unrelated\n");
+    await exec("git", ["add", "README.md"], { cwd: unrelated });
+    await exec("git", ["-c", "user.name=Field Report Test", "-c", "user.email=field-report@example.invalid", "commit", "-m", "fixture"], { cwd: unrelated });
+    const unrelatedHook = (await exec("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: unrelated })).stdout.trim();
+    await writeFile(unrelatedHook, preCommitHookText(launcher), { mode: 0o755 });
+    const wrongRepo = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env: { ...env, FIELD_REPORT_CWD: mock.root }, cwd: unrelated }).catch((error) => error);
+    assert.match(`${wrongRepo.stderr || ""}${wrongRepo.stdout || ""}`, /requires a checkout of project sample/);
+    const nested = path.join(mock.root, "nested-unrelated");
+    await mkdir(nested);
+    await exec("git", ["init", "-b", "main"], { cwd: nested });
+    await writeFile(path.join(nested, "README.md"), "nested unrelated\n");
+    await exec("git", ["add", "README.md"], { cwd: nested });
+    await exec("git", ["-c", "user.name=Field Report Test", "-c", "user.email=field-report@example.invalid", "commit", "-m", "fixture"], { cwd: nested, env: { ...process.env, CODEX_CI: "0", CODEX_THREAD_ID: "" } });
+    const nestedHook = (await exec("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: nested })).stdout.trim();
+    await writeFile(nestedHook, preCommitHookText(launcher), { mode: 0o755 });
+    const nestedRepo = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env, cwd: nested }).catch((error) => error);
+    assert.match(`${nestedRepo.stderr || ""}${nestedRepo.stdout || ""}`, /requires a checkout of project sample/);
+    const preservedHook = `${hook}.field-report-preserved`;
+    const preservedContents = "#!/bin/sh\nexit 0\n";
+    await writeFile(preservedHook, preservedContents, { mode: 0o644 });
+    await writeFile(hook, preCommitHookText(launcher, preservedHook, contentDigest(preservedContents)), { mode: 0o755 });
+    const nonExecutablePreserved = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env, cwd: mock.root }).catch((error) => error);
+    assert.match(`${nonExecutablePreserved.stderr || ""}${nonExecutablePreserved.stdout || ""}`, /absent or replaced pre-commit gate/);
+    await chmod(preservedHook, 0o755);
+    await writeFile(preservedHook, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    const substitutedPreserved = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env, cwd: mock.root }).catch((error) => error);
+    assert.match(`${substitutedPreserved.stderr || ""}${substitutedPreserved.stdout || ""}`, /absent or replaced pre-commit gate/);
+    await writeFile(preservedHook, preservedContents, { mode: 0o755 });
+    const onboarded = await exec(process.execPath, [cli, "onboard", "sample-stream", "--role", "workstream-orchestrator"], { env, cwd: mock.root });
+    assert.match(onboarded.stdout, /Armed sample-stream/);
+  } finally {
+    if (runtimeRoot) await rm(runtimeRoot, { recursive: true, force: true });
+    await rm(unrelated, { recursive: true, force: true });
     await mock.close();
   }
 });
