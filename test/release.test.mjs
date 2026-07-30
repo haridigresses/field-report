@@ -14,8 +14,8 @@ function pass(role, model, reviewerId, extra = {}) {
 
 function fullFleet() {
   return [
-    pass("deep-code-review", "gpt-5.6-sol", "019f0000-0000-7000-8000-000000000101", { provider: "openai", reviewerIdentityVerified: true }),
-    pass("structural-challenge", "gpt-5.6-sol", "019f0000-0000-7000-8000-000000000102", { provider: "openai", reviewerIdentityVerified: true }),
+    pass("deep-code-review", "gpt-5.6-sol", "019f0000-0000-7000-8000-000000000101", { provider: "openai", reviewerIdentityVerified: true, provenanceVerified: true, evidenceDigest: "b".repeat(64) }),
+    pass("structural-challenge", "gpt-5.6-sol", "019f0000-0000-7000-8000-000000000102", { provider: "openai", reviewerIdentityVerified: true, provenanceVerified: true, evidenceDigest: "c".repeat(64) }),
     pass("structural-challenge", "anthropic.claude-fable-5", "019f0000-0000-7000-8000-000000000103", { provider: "anthropic", route: "claude-aws", provenanceVerified: true, evidenceDigest: "a".repeat(64) })
   ];
 }

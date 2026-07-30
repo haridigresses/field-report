@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -94,6 +95,30 @@ async function localFixture() {
     env,
     async close() { await rm(localRoot, { recursive: true, force: true }); }
   };
+}
+
+async function installFakeCodex(root) {
+  const binDir = path.join(root, "fake-bin");
+  await mkdir(binDir);
+  const packageRoot = path.join(root, "fake-codex-package");
+  await mkdir(path.join(packageRoot, "bin"), { recursive: true });
+  await writeFile(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@openai/codex", version: "test" }));
+  const executable = path.join(packageRoot, "bin", "codex.js");
+  await writeFile(executable, `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+const output = args[args.indexOf("--output-last-message") + 1];
+const prompt = args.at(-1);
+const value = (label) => prompt.match(new RegExp(label + " ([0-9a-f-]+)"))?.[1];
+const role = prompt.match(/independent (deep-code-review|structural-challenge) reviewer/)?.[1];
+const reviewer = role === "deep-code-review" ? "019f0000-0000-7000-8000-000000000093" : "019f0000-0000-7000-8000-000000000094";
+writeFileSync(output, JSON.stringify({ review_complete: true, independent: true, verdict: "GO", review_role: role, scope: "full", reviewed_sha: value("Head"), base_sha: value("Base"), staged_tree: value("Staged tree"), merge_readiness: 95, structural_risk: 5, findings: [], unresolved: [], summary: role + " clear" }));
+process.stdout.write(JSON.stringify({ type: "thread.started", thread_id: reviewer }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "turn.completed", usage: {} }) + "\\n");
+`);
+  await chmod(executable, 0o755);
+  await symlink(executable, path.join(binDir, "codex"));
+  return binDir;
 }
 
 test("fr pass record dispatches as a top-level command", async () => {
@@ -443,7 +468,7 @@ test("legacy orchestrator aliases resolve to UUID authority and new writes canon
     await store.updateWorkstream("sample-stream", { orchestrator: "019f0000-0000-7000-8000-000000000021" });
 
     await store.recordReviewPass("sample-stream", { head: baseHead, verdict: "GO", reviewRole: "deep-code-review", reviewerId: "019f0000-0000-7000-8000-000000000018", provider: "openai", model: "gpt-5.6-sol", independent: true, mergeReadiness: 95, structuralRisk: 5 });
-    await assert.rejects(store.updateWorkstream("sample-stream", { orchestrator: "019f0000-0000-7000-8000-000000000017", status: "complete" }), /orchestrator cannot count toward the independent MRR fleet/);
+    await assert.rejects(store.updateWorkstream("sample-stream", { orchestrator: "019f0000-0000-7000-8000-000000000017", status: "complete" }), /witnessed Sol|MRR completion gate/);
 
     const stream = await store.updateWorkstream("sample-stream", { orchestrator: "sample-agent" });
     assert.equal(stream.orchestrator, ownerId);
@@ -684,7 +709,14 @@ test("fr pass import cannot attest registered Sol task identities for absent rev
 test("only a Field Report-launched Fable process can mint Fable provenance", async () => {
   const mock = await localFixture();
   try {
+    const ownerId = "019f0000-0000-7000-8000-000000000033";
     const reviewerId = "019f0000-0000-7000-8000-000000000034";
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: ownerId, alias: "sample-agent", kind: "codex" }] }));
+    const streamPath = path.join(mock.root, "workstreams", "sample-stream.json");
+    const streamState = JSON.parse(await readFile(streamPath, "utf8"));
+    await writeFile(streamPath, JSON.stringify({ ...streamState, orchestrator: ownerId }, null, 2));
+    await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [ownerId]: { workstreamId: "sample-stream", role: "workstream-orchestrator" } } }));
     const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
     await exec("git", ["update-ref", "refs/remotes/origin/main", baseHead], { cwd: mock.root });
     await writeFile(path.join(mock.root, "fable-candidate.txt"), "review me\n");
@@ -724,7 +756,8 @@ test("only a Field Report-launched Fable process can mint Fable provenance", asy
     await writeFile(prompt, "Review the exact head and return JSON.\n");
     await writeFile(claude, `#!${process.execPath}\nconst args = process.argv.slice(2).join(" ");\nif (!args.includes("--permission-mode dontAsk") || !args.includes("--tools Read,Grep,Glob") || !args.includes("--disallowedTools Bash,Edit,Write")) process.exit(9);\nprocess.stdout.write(${JSON.stringify(stream)});\n`);
     await chmod(claude, 0o755);
-    const result = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", evidence], { env: { ...mock.env, HOME: mock.root } });
+    const fableEnv = { ...mock.env, HOME: mock.root, CODEX_THREAD_ID: ownerId };
+    const result = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", evidence], { env: fableEnv });
     assert.match(result.stdout, /Ran and recorded witnessed Fable review/);
     const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
     assert.equal(events.at(-1).metadata.provenanceVerified, true);
@@ -733,7 +766,7 @@ test("only a Field Report-launched Fable process can mint Fable provenance", asy
     assert.match(await readFile(`${evidence}.review-packet.txt`, "utf8"), new RegExp(`Base: ${baseHead}`));
     const failedEvidence = path.join(mock.root, "fable-failed.stream.jsonl");
     await writeFile(claude, `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(stream.split("\n")[0] + "\n")});\nprocess.exit(2);\n`);
-    const failed = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", failedEvidence], { env: { ...mock.env, HOME: mock.root } }).catch((error) => error);
+    const failed = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", failedEvidence], { env: fableEnv }).catch((error) => error);
     assert.match(`${failed.stderr || ""}${failed.stdout || ""}`, /partial evidence preserved/);
     assert.match(await readFile(failedEvidence, "utf8"), /anthropic\.claude-fable-5/);
     const afterFailure = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n");
@@ -799,10 +832,10 @@ test("fr commit-check requires two reviews of the exact staged tree", async () =
     await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "structural-challenge", "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", "Fallback identity spoof"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: "019f0000-0000-7000-8000-000000000011" } });
     await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "deep-code-review", "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", "Deep review clear"], { env: { ...mock.env, CODEX_THREAD_ID: "019f0000-0000-7000-8000-000000000010" } });
     const blocked = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env }).catch((error) => error);
-    assert.match(`${blocked.stderr || ""}${blocked.stdout || ""}`, /local structural-challenge review must come from a Sol agent/);
+    assert.match(`${blocked.stderr || ""}${blocked.stdout || ""}`, /missing local structural-challenge/);
     await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "structural-challenge", "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", "Structural review clear"], { env: { ...mock.env, CODEX_THREAD_ID: "019f0000-0000-7000-8000-000000000011" } });
-    const ready = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env });
-    assert.match(ready.stdout, /commit gate .* READY/);
+    const stillBlocked = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env }).catch((error) => error);
+    assert.match(`${stillBlocked.stderr || ""}${stillBlocked.stdout || ""}`, /missing local deep-code-review/);
     await writeFile(path.join(mock.root, "candidate.txt"), "changed\n");
     await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
     const changed = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env }).catch((error) => error);
@@ -837,13 +870,88 @@ test("fr commit creates a commit after the exact staged tree is reviewed", async
     await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
     const tree = (await exec("git", ["write-tree"], { cwd: mock.root })).stdout.trim();
     const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
-    for (const [reviewerId, role] of [[deepId, "deep-code-review"], [structuralId, "structural-challenge"]]) {
-      await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", role, "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", `${role} clear`], { env: { ...mock.env, CODEX_THREAD_ID: reviewerId } });
-    }
+    const fakeBin = await installFakeCodex(mock.root);
+    await writeFile(path.join(mock.root, "review.txt"), "Inspect the exact candidate without waiving the fixed rubric.\n");
+    const reviewEnv = { ...mock.env, CODEX_THREAD_ID: ownerId, PATH: `${fakeBin}:${process.env.PATH}` };
+    for (const role of ["deep-code-review", "structural-challenge"]) await exec(process.execPath, [cli, "commit-review", "run-sol", "sample-stream", "--role", role, "--prompt-file", path.join(mock.root, "review.txt"), "--evidence-file", path.join(mock.root, `commit-${role}.jsonl`)], { env: reviewEnv });
     const result = await exec(process.execPath, [cli, "commit", "sample-stream", "--message", "Reviewed candidate"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: ownerId } });
     assert.match(result.stdout, /Reviewed candidate/);
     assert.notEqual((await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim(), baseHead);
     assert.equal((await exec("git", ["show", "HEAD:candidate.txt"], { cwd: mock.root })).stdout, "candidate\n");
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr commit-review run-sol launches the fixed Sol executable and records both witnessed lanes", async () => {
+  const mock = await localFixture();
+  try {
+    const fakeBin = await installFakeCodex(mock.root);
+    const ownerId = "019f0000-0000-7000-8000-000000000020";
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: ownerId, alias: "sample-agent", kind: "codex" }] }));
+    const streamPath = path.join(mock.root, "workstreams", "sample-stream.json");
+    const stream = JSON.parse(await readFile(streamPath, "utf8"));
+    await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId }, null, 2));
+    await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [ownerId]: { workstreamId: "sample-stream", role: "workstream-orchestrator" } } }));
+    await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
+    await writeFile(path.join(mock.root, "review.txt"), "Review the exact packet. Report any correctness or structural defect. Return GO only with no findings.\n");
+    await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
+    const env = { ...mock.env, CODEX_THREAD_ID: ownerId, PATH: `${fakeBin}:${process.env.PATH}` };
+    const splitAuthority = await exec(process.execPath, [cli, "commit-review", "run-sol", "sample-stream", "--role", "deep-code-review", "--prompt-file", path.join(mock.root, "review.txt"), "--evidence-file", path.join(mock.root, "server-mode.jsonl")], { env: { ...env, FIELD_REPORT_URL: "http://127.0.0.1:1" } }).catch((error) => error);
+    assert.match(`${splitAuthority.stderr || ""}${splitAuthority.stdout || ""}`, /direct local Field Report authority/);
+    const setupFailurePath = path.join(mock.root, "missing-prompt.jsonl");
+    const setupFailure = await exec(process.execPath, [cli, "commit-review", "run-sol", "sample-stream", "--role", "deep-code-review", "--prompt-file", path.join(mock.root, "absent.txt"), "--evidence-file", setupFailurePath], { env }).catch((error) => error);
+    assert.match(`${setupFailure.stderr || ""}${setupFailure.stdout || ""}`, /ENOENT/);
+    for (const file of [setupFailurePath, `${setupFailurePath}.review-packet.txt`, `${setupFailurePath}.schema.json`, `${setupFailurePath}.result.json`]) await assert.rejects(readFile(file), { code: "ENOENT" });
+    for (const role of ["deep-code-review", "structural-challenge"]) {
+      const evidencePath = path.join(mock.root, `run-${role}.jsonl`);
+      const result = await exec(process.execPath, [cli, "commit-review", "run-sol", "sample-stream", "--role", role, "--prompt-file", path.join(mock.root, "review.txt"), "--evidence-file", evidencePath], { env });
+      assert.match(result.stdout, new RegExp(`witnessed Sol ${role}`));
+      assert.match(await readFile(evidencePath, "utf8"), /thread.started/);
+      const duplicate = await exec(process.execPath, [cli, "commit-review", "run-sol", "sample-stream", "--role", role, "--prompt-file", path.join(mock.root, "review.txt"), "--evidence-file", evidencePath], { env }).catch((error) => error);
+      assert.match(`${duplicate.stderr || ""}${duplicate.stdout || ""}`, /Refusing to overwrite witnessed Sol evidence sidecars/);
+    }
+    const ready = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env });
+    assert.match(ready.stdout, /commit gate .* READY/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr pass run-sol records exact-head witnessed MRR lanes and a head change invalidates them", async () => {
+  const mock = await localFixture();
+  try {
+    const ownerId = "019f0000-0000-7000-8000-000000000020";
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: ownerId, alias: "sample-agent", kind: "codex" }] }));
+    const streamPath = path.join(mock.root, "workstreams", "sample-stream.json");
+    const stream = JSON.parse(await readFile(streamPath, "utf8"));
+    await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId }, null, 2));
+    await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [ownerId]: { workstreamId: "sample-stream", role: "workstream-orchestrator" } } }));
+    const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    await exec("git", ["update-ref", "refs/remotes/origin/main", baseHead], { cwd: mock.root });
+    await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
+    await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
+    await exec("git", ["-c", "user.name=Field Report Test", "-c", "user.email=field-report@example.invalid", "commit", "-m", "candidate"], { cwd: mock.root });
+    const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    const fakeBin = await installFakeCodex(mock.root);
+    const prompt = path.join(mock.root, "mrr-review.txt");
+    await writeFile(prompt, "Review the exact branch candidate under the fixed rubric.\n");
+    const env = { ...mock.env, CODEX_THREAD_ID: ownerId, PATH: `${fakeBin}:${process.env.PATH}` };
+    for (const role of ["deep-code-review", "structural-challenge"]) await exec(process.execPath, [cli, "pass", "run-sol", "sample-stream", "--head", head, "--role", role, "--prompt-file", prompt, "--evidence-file", path.join(mock.root, `mrr-${role}.jsonl`)], { env });
+    const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse).filter((event) => event.type === "review_pass");
+    assert.deepEqual(events.slice(-2).map((event) => [event.metadata.reviewRole, event.metadata.head, event.metadata.provenanceVerified]), [["deep-code-review", head, true], ["structural-challenge", head, true]]);
+    assert.deepEqual(events.slice(-2).map((event) => path.basename(event.metadata.evidencePath)), ["mrr-deep-code-review.jsonl", "mrr-structural-challenge.jsonl"]);
+    const deepEvidence = path.join(mock.root, "mrr-deep-code-review.jsonl");
+    const boundDigest = createHash("sha256").update(await readFile(deepEvidence)).update("\0field-report-sol-result\0").update(await readFile(`${deepEvidence}.result.json`)).digest("hex");
+    assert.equal(events.at(-2).metadata.evidenceDigest, boundDigest);
+    assert.match((await exec(process.execPath, [cli, "mrr", "sample-stream"], { env }).catch((error) => error)).stdout || "", /Fable|NOT READY/);
+    await writeFile(path.join(mock.root, "candidate.txt"), "advanced\n");
+    await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
+    await exec("git", ["-c", "user.name=Field Report Test", "-c", "user.email=field-report@example.invalid", "commit", "-m", "advance"], { cwd: mock.root });
+    const stale = await exec(process.execPath, [cli, "mrr", "sample-stream"], { env }).catch((error) => error);
+    assert.match(`${stale.stderr || ""}${stale.stdout || ""}`, /missing completed deep-code-review/);
   } finally {
     await mock.close();
   }

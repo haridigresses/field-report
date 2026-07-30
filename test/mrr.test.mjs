@@ -22,7 +22,7 @@ function pass(model, verdict = "GO", unresolved = [], reasoning = null, reviewRo
 
 function solPass(reviewerId, reviewRole) {
   const result = pass("gpt-5.6-sol", "GO", [], "high", reviewRole);
-  Object.assign(result.metadata, { reviewerId, reviewerIdentityVerified: true, provider: "openai" });
+  Object.assign(result.metadata, { reviewerId, reviewerIdentityVerified: true, provenanceVerified: true, evidenceDigest: "b".repeat(64), provider: "openai" });
   return result;
 }
 
@@ -39,7 +39,7 @@ function fullFleet(...extra) {
 test("MRR requires both exact-head review lanes", () => {
   const result = evaluateMrr({ branch: "codex/sample", assessment: { currentHead: head }, reviewPasses: [pass("gpt-5.6-sol", "GO", [], "high")] });
   assert.equal(result.ready, false);
-  assert.equal(result.lanes.deepCode.verdict, "GO");
+  assert.equal(result.lanes.deepCode, null);
   assert.equal(result.lanes.structuralChallenge, null);
   assert.match(result.reasons.join(" "), /structural-challenge/);
 });
@@ -51,10 +51,21 @@ test("MRR accepts completed Codex sol and Fable passes", () => {
 });
 
 test("MRR remains blocked by current-head NO-GO or unresolved findings", () => {
-  const result = evaluateMrr({ branch: "codex/sample", assessment: { currentHead: head }, reviewPasses: [pass("gpt-5.6-sol", "NO_GO", [], "high"), pass("anthropic.claude-fable-5", "GO", ["contract gap"])] });
+  const fleet = fullFleet();
+  fleet[0].metadata.verdict = "NO_GO";
+  fleet[2].metadata.unresolved = ["contract gap"];
+  const result = evaluateMrr({ branch: "codex/sample", assessment: { currentHead: head }, reviewPasses: fleet });
   assert.equal(result.ready, false);
   assert.match(result.reasons.join(" "), /not GO/);
   assert.match(result.reasons.join(" "), /unresolved/);
+});
+
+test("MRR rejects GO until every reported finding is reconciled", () => {
+  const fleet = fullFleet();
+  fleet[0].metadata.findings = ["material defect"];
+  const result = evaluateMrr({ branch: "codex/sample", assessment: { currentHead: head }, reviewPasses: fleet });
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /unreconciled/);
 });
 
 test("latest completed pass supersedes an earlier same-lane verdict", () => {
@@ -153,6 +164,14 @@ test("full MRR fleet requires multiple Sol reviewers and Fable through claude-aw
   assert.match(blocked.reasons.join(" "), /Fable review through claude-aws/);
 });
 
+test("full MRR binds witnessed Sol reviewers to both required roles", () => {
+  const deepOne = solPass(ids.solDeep, "deep-code-review");
+  const deepTwo = solPass(ids.solStructural, "deep-code-review");
+  const result = evaluateMrr({ branch: "codex/sample", assessment: { currentHead: head }, reviewPasses: [deepOne, deepTwo, fablePass()] });
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /Sol structural-challenge lane/);
+});
+
 test("full MRR fleet does not accept another Anthropic model as Fable", () => {
   const deep = solPass(ids.solDeep, "deep-code-review");
   const secondSol = solPass(ids.solStructural, "structural-challenge");
@@ -184,7 +203,7 @@ test("full MRR reconciles every fleet reviewer and excludes the orchestrator", (
   assert.match(noGo.reasons.join(" "), /not GO/);
 });
 
-test("full fleet blocks every non-GO while reduced policies ignore unrelated fleet passes", () => {
+test("full fleet reconciles advisory contrary evidence while reduced policies ignore unrelated passes", () => {
   const deep = solPass(ids.solDeep, "deep-code-review");
   const secondSol = solPass(ids.solStructural, "structural-challenge");
   const fable = pass("anthropic.claude-fable-5", "GO", [], null, "structural-challenge");

@@ -28,7 +28,9 @@ function nonNegativeInteger(value) {
 function isSol(event) {
   return event.metadata?.model === "gpt-5.6-sol"
     && providerFor(event) === "openai"
-    && event.metadata?.reviewerIdentityVerified === true;
+    && event.metadata?.reviewerIdentityVerified === true
+    && event.metadata?.provenanceVerified === true
+    && /^[0-9a-f]{64}$/i.test(event.metadata?.evidenceDigest || "");
 }
 
 function isVerifiedFable(event) {
@@ -71,7 +73,10 @@ export function evaluateMrr(stream) {
   const policyValid = policy.mode === "full" || Boolean(policy.reason && policy.userAuthorized);
   const head = stream.assessment?.currentHead || (stream.prs || []).find((pr) => pr.state === "OPEN" && pr.headRefName === stream.branch)?.headRefOid || null;
   const current = (stream.reviewPasses || []).filter((event) => exactHead(event.metadata?.head, head)).sort((left, right) => new Date(left.at || 0) - new Date(right.at || 0));
-  const completed = current.filter((event) => event.metadata?.reviewComplete === true && event.metadata?.independent !== false);
+  const allCompleted = current.filter((event) => event.metadata?.reviewComplete === true && event.metadata?.independent !== false);
+  const latestAllByReviewer = [...new Map(allCompleted.map((event) => [event.metadata?.reviewerId || `${event.metadata?.reviewer || event.actor}:${roleFor(event)}`, event])).values()];
+  const eligible = policy.mode === "full" ? current.filter((event) => isSol(event) || isVerifiedFable(event)) : current;
+  const completed = eligible.filter((event) => event.metadata?.reviewComplete === true && event.metadata?.independent !== false);
   const latestByReviewer = [...new Map(completed.map((event) => [event.metadata?.reviewerId || `${event.metadata?.reviewer || event.actor}:${roleFor(event)}`, event])).values()];
   const latestDeepCode = completed.findLast((event) => roleFor(event) === "deep-code-review") || null;
   const latestStructural = completed.findLast((event) => roleFor(event) === "structural-challenge") || null;
@@ -79,14 +84,15 @@ export function evaluateMrr(stream) {
   const latestDelta = completed.findLast((event) => event.metadata?.reviewScope === "delta" && /^[0-9a-f]{40}$/i.test(event.metadata?.baseHead || "")) || null;
   const requiredPasses = policy.mode === "full" ? [latestDeepCode, latestStructural].filter(Boolean) : policy.mode === "delta" ? [latestDelta].filter(Boolean) : policy.mode === "single-independent" ? [latestIndependent].filter(Boolean) : [];
   const accepted = (event) => {
-    if (!event || event.metadata?.verdict !== "GO" || (event.metadata?.unresolved || []).length) return false;
+    if (!event || event.metadata?.verdict !== "GO" || (event.metadata?.findings || []).length || (event.metadata?.unresolved || []).length) return false;
     const hasOwnerProvenance = Object.hasOwn(event.metadata || {}, "orchestratorAtReview");
     return hasOwnerProvenance && event.metadata?.reviewerId !== event.metadata?.orchestratorAtReview;
   };
   const deepCode = accepted(latestDeepCode) ? latestDeepCode : null;
   const structuralChallenge = accepted(latestStructural) ? latestStructural : null;
-  const reconciledPasses = policy.mode === "full" ? latestByReviewer : requiredPasses;
+  const reconciledPasses = policy.mode === "full" ? latestAllByReviewer : requiredPasses;
   const blockingVerdicts = reconciledPasses.filter((event) => event.metadata?.verdict !== "GO");
+  const reconciledFindings = reconciledPasses.flatMap((event) => event.metadata?.findings || []);
   const reconciledUnresolved = reconciledPasses.flatMap((event) => event.metadata?.unresolved || []);
   const reasons = [];
   if (!head) reasons.push("current branch head is unresolved; refresh sources first");
@@ -109,13 +115,18 @@ export function evaluateMrr(stream) {
   if (policy.mode === "full" && orchestratorFleetPasses.length) reasons.push("the workstream orchestrator cannot count toward the independent MRR fleet");
   const solReviewerIds = new Set(acceptedFleet.filter(isSol).map((event) => event.metadata?.reviewerId).filter(durableReviewerId));
   if (policy.mode === "full" && solReviewerIds.size < policy.minSolReviewers) reasons.push(`full MRR requires ${policy.minSolReviewers} distinct Sol reviewers; found ${solReviewerIds.size}`);
+  const solDeepPass = acceptedFleet.findLast((event) => isSol(event) && roleFor(event) === "deep-code-review");
+  const solStructuralPass = acceptedFleet.findLast((event) => isSol(event) && roleFor(event) === "structural-challenge");
+  if (policy.mode === "full" && !solDeepPass) reasons.push("full MRR requires a witnessed Sol deep-code-review lane");
+  if (policy.mode === "full" && !solStructuralPass) reasons.push("full MRR requires a witnessed Sol structural-challenge lane");
   const fablePass = acceptedFleet.find((event) => isVerifiedFable(event) && durableReviewerId(event.metadata?.reviewerId));
   if (policy.mode === "full" && policy.requireFableViaClaudeAws && !fablePass) reasons.push("full MRR requires a completed Fable review through claude-aws");
   if (blockingVerdicts.length) reasons.push(`${blockingVerdicts.length} required current-head review verdict${blockingVerdicts.length === 1 ? " is" : "s are"} not GO`);
+  if (reconciledFindings.length) reasons.push(`${reconciledFindings.length} required current-head reviewer finding${reconciledFindings.length === 1 ? " remains" : "s remain"} unreconciled`);
   if (reconciledUnresolved.length) reasons.push(`${reconciledUnresolved.length} required current-head reviewer finding${reconciledUnresolved.length === 1 ? " remains" : "s remain"} unresolved`);
   return {
     required: true,
-    ready: Boolean(head && policyValid && (policy.mode === "none" || (policy.mode === "full" && deepCode && structuralChallenge) || (policy.mode === "single-independent" && accepted(latestIndependent)) || (policy.mode === "delta" && accepted(latestDelta))) && !blockingVerdicts.length && !reconciledUnresolved.length && !reasons.length),
+    ready: Boolean(head && policyValid && (policy.mode === "none" || (policy.mode === "full" && deepCode && structuralChallenge) || (policy.mode === "single-independent" && accepted(latestIndependent)) || (policy.mode === "delta" && accepted(latestDelta))) && !blockingVerdicts.length && !reconciledFindings.length && !reconciledUnresolved.length && !reasons.length),
     head,
     policy,
     reasons,
