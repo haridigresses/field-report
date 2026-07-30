@@ -4,11 +4,11 @@ import { evaluateRelease } from "../src/release.mjs";
 
 const head = "abcdef1234567890abcdef1234567890abcdef12";
 
-function pass(role) {
+function pass(role, reviewerId, model, provider, extra = {}) {
   return {
     at: "2026-07-25T18:00:00.000Z",
     actor: role,
-    metadata: { head, reviewer: role, verdict: "GO", reviewRole: role, reviewComplete: true, independent: true, unresolved: [], orchestratorAtReview: null }
+    metadata: { head, reviewer: role, reviewerId, model, provider, reviewerIdentityVerified: model === "gpt-5.6-sol", verdict: "GO", reviewRole: role, reviewComplete: true, independent: true, unresolved: [], orchestratorAtReview: null, ...extra }
   };
 }
 
@@ -17,7 +17,11 @@ function candidate(overrides = {}) {
     stream: {
       branch: "codex/sample",
       prs: [{ number: 42 }],
-      reviewPasses: [pass("deep-code-review"), pass("structural-challenge")]
+      reviewPasses: [
+        pass("deep-code-review", "019f0000-0000-7000-8000-000000000101", "gpt-5.6-sol", "openai"),
+        pass("structural-challenge", "019f0000-0000-7000-8000-000000000102", "gpt-5.6-sol", "openai"),
+        pass("structural-challenge", "019f0000-0000-7000-8000-000000000103", "anthropic.claude-fable-5", "anthropic", { route: "claude-aws", provenanceVerified: true, evidenceDigest: "a".repeat(64) })
+      ]
     },
     checkout: { branch: "codex/sample", head },
     remoteHead: head,

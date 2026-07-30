@@ -449,6 +449,7 @@ function patchFrom(flags) {
   let patch = {};
   if (flags.data) patch = JSON.parse(flags.data.startsWith("@") ? "{}" : flags.data);
   if (flags.data?.startsWith("@")) throw new Error("@file input is not supported yet; pass JSON directly");
+  if (Object.hasOwn(patch, "reviewPolicy")) throw new Error("Change review policy only with fr policy --user-authorized");
   if (flags.summary) patch.summary = flags.summary;
   if (flags.status) patch.status = flags.status;
   if (flags.gate) patch.reviewState = flags.gate;
@@ -734,8 +735,8 @@ async function main() {
     if (context.binding || context.who.kind !== "unknown" || !flags["user-authorized"]) throw new Error("Only the user may change review policy; run this outside a Codex task with --user-authorized");
     const mode = flags.mode;
     if (!mode) throw new Error("Specify --mode full|single-independent|delta|none");
-    const result = await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { reviewPolicy: { mode, reason: flags.reason || null, ...(flags["min-provider-families"] ? { minProviderFamilies: Number(flags["min-provider-families"]) } : {}), ...(flags["require-reviewer-ids"] === "true" ? { requireReviewerIds: true } : {}) }, updatedBy: context.who.actor, eventType: "review_policy", eventText: `Review policy set to ${mode}${flags.reason ? `: ${flags.reason}` : ""}` });
-    return process.stdout.write(`Set ${result.workstream.id} review policy to ${mode}${flags.reason ? ` — ${flags.reason}` : ""}.\n`);
+    const workstream = await store.setReviewPolicy(id, { mode, reason: flags.reason || null, ...(flags["min-provider-families"] ? { minProviderFamilies: Number(flags["min-provider-families"]) } : {}), ...(flags["require-reviewer-ids"] === "true" ? { requireReviewerIds: true } : {}), updatedBy: context.who.actor });
+    return process.stdout.write(`Set ${workstream.id} review policy to ${mode}${flags.reason ? ` — ${flags.reason}` : ""}.\n`);
   }
   if (command === "disarm") {
     if (!context.binding) return process.stdout.write("This session is not armed.\n");
