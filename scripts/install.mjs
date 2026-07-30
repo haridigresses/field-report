@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
 import {
   access,
   cp,
   mkdir,
   mkdtemp,
+  lstat,
   readFile,
   realpath,
   rename,
@@ -66,7 +68,7 @@ async function replaceSymlink(target, destination) {
   await atomicReplace(destination, (temporary) => symlink(target, temporary));
 }
 
-async function prepareClaudeHooks(home, launcher) {
+async function planClaudeHooks(home, launcher) {
   const file = path.join(home, ".claude", "settings.json");
   let settings = {};
   try {
@@ -92,7 +94,50 @@ async function prepareClaudeHooks(home, launcher) {
       hooks: [{ type: "command", command: `${shellQuote(launcher)} hook ${addition.action}`, timeout: addition.timeout }]
     });
   }
-  await atomicReplace(file, (temporary) => writeFile(temporary, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 }));
+  return { file, text: `${JSON.stringify(settings, null, 2)}\n` };
+}
+
+async function installClaudeHooks(plan) {
+  await atomicReplace(plan.file, (temporary) => writeFile(temporary, plan.text, { mode: 0o600 }));
+}
+
+async function writableAncestor(destination) {
+  let candidate = path.dirname(destination);
+  while (candidate !== path.dirname(candidate)) {
+    try {
+      const existing = await lstat(candidate);
+      if (!existing.isDirectory()) throw new Error(`Expected a directory while preflighting ${destination}: ${candidate}`);
+      await access(candidate, fsConstants.W_OK | fsConstants.X_OK);
+      return;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw new Error(`Cannot install Field Report surface at ${destination}: ${error.message}`);
+      candidate = path.dirname(candidate);
+    }
+  }
+  throw new Error(`Cannot resolve a writable parent for ${destination}`);
+}
+
+async function preflightFileDestination(destination) {
+  try {
+    const existing = await lstat(destination);
+    if (!(existing.isFile() || existing.isSymbolicLink())) throw new Error(`Refusing to replace unsupported Field Report surface: ${destination}`);
+  } catch (error) {
+    if (error.code === "ENOTDIR") throw new Error(`Expected a directory while preflighting ${destination}`);
+    if (error.code !== "ENOENT") throw error;
+  }
+  await writableAncestor(destination);
+}
+
+async function preflightSymlinks(destinations) {
+  for (const destination of destinations) {
+    try {
+      const existing = await lstat(destination);
+      if (!existing.isSymbolicLink()) throw new Error(`Refusing to replace non-symlink Field Report surface: ${destination}`);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    await writableAncestor(destination);
+  }
 }
 
 async function configuredPreCommitHooks(stateRoot) {
@@ -173,6 +218,17 @@ export async function installFieldReport(options = {}) {
   const installRoot = path.resolve(options.installRoot || path.join(home, ".local", "share", "field-report"));
   const releaseRoot = await copyRelease(sourceRoot, path.join(installRoot, "releases"), revision, stateRoot, nodeExecutable);
   const launcher = path.join(home, ".local", "bin", "fr");
+  const releaseLauncher = path.join(releaseRoot, "fr");
+  const skillLinks = ["field-report", "repo-coordinator", "workstream-orchestrator"].flatMap((skill) => [
+    { target: path.join(releaseRoot, "skills", skill), destination: path.join(home, ".codex", "skills", skill) },
+    { target: path.join(releaseRoot, "skills", skill), destination: path.join(home, ".claude", "skills", skill) }
+  ]);
+  skillLinks.push({ target: path.join(releaseRoot, "integrations", "claude", "commands", "fr.md"), destination: path.join(home, ".claude", "commands", "fr.md") });
+  const claudeHooks = await planClaudeHooks(home, releaseLauncher);
+  await preflightSymlinks(skillLinks.map((link) => link.destination));
+  await preflightFileDestination(launcher);
+  await preflightFileDestination(releaseLauncher);
+  await Promise.all([claudeHooks.file, ...preCommitHooks.map(({ hook }) => hook)].map(writableAncestor));
   const launcherText = [
     "#!/bin/sh",
     `export FIELD_REPORT_ROOT=${shellQuote(stateRoot)}`,
@@ -181,17 +237,13 @@ export async function installFieldReport(options = {}) {
     `exec ${shellQuote(nodeExecutable)} ${shellQuote(path.join(releaseRoot, "bin", "fr.mjs"))} "$@"`,
     ""
   ].join("\n");
+  await atomicReplace(releaseLauncher, (temporary) => writeFile(temporary, launcherText, { mode: 0o755 }));
+  await installClaudeHooks(claudeHooks);
+  await installPreCommitHooks(preCommitHooks, releaseLauncher);
+  for (const link of skillLinks) await replaceSymlink(link.target, link.destination);
   await atomicReplace(launcher, (temporary) => writeFile(temporary, launcherText, { mode: 0o755 }));
 
-  for (const skill of ["field-report", "repo-coordinator", "workstream-orchestrator"]) {
-    await replaceSymlink(path.join(releaseRoot, "skills", skill), path.join(home, ".codex", "skills", skill));
-    await replaceSymlink(path.join(releaseRoot, "skills", skill), path.join(home, ".claude", "skills", skill));
-  }
-  await replaceSymlink(path.join(releaseRoot, "integrations", "claude", "commands", "fr.md"), path.join(home, ".claude", "commands", "fr.md"));
-  await prepareClaudeHooks(home, launcher);
-  await installPreCommitHooks(preCommitHooks, launcher);
-
-  return { launcher, nodeExecutable, preCommitHooks, releaseRoot, revision, stateRoot };
+  return { launcher, nodeExecutable, preCommitHooks, releaseLauncher, releaseRoot, revision, stateRoot };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {

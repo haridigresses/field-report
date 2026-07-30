@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { execFile } from "node:child_process";
-import { access, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { access, mkdir, open, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,6 +51,7 @@ Usage:
     fr assess [workstream-id]
     fr pass record [workstream-id] --head <sha> --verdict <GO|CONDITIONAL_GO|NO_GO> [--role deep-code-review|structural-challenge] [--scope full|delta] [--base-head <sha>] [--reviewer <name>] [--model <model>] [--route <provider-route>] [--summary <text>]
     fr pass import [workstream-id] --data <json> | --file <path>
+    fr pass run-fable [workstream-id] --head <sha> --prompt-file <review-prompt> --evidence-file <new-raw-stream-jsonl>
   fr link issue|commit [workstream-id] <value> [--chunk <milestone-id>]
   fr reference [workstream-id] --path <repo-path> [--label <label>] [--kind plan|contract|decision|review] [--section <anchor>] [--quote <short context>]
   fr disarm
@@ -402,7 +404,7 @@ async function reviewEnvelope(flags) {
   return { envelope, passes };
 }
 
-function reviewPassBody(pass, envelope, context) {
+function reviewPassBody(pass, envelope, context, options = {}) {
   const complete = pass.reviewComplete ?? pass.review_complete ?? envelope.reviewComplete ?? envelope.review_complete;
   if (complete !== true) throw new Error("Review import requires explicit review_complete: true");
   const independent = pass.independent ?? envelope.independent;
@@ -412,16 +414,17 @@ function reviewPassBody(pass, envelope, context) {
   const provider = pass.provider || envelope.provider;
   const model = pass.model || envelope.model;
   const fableImport = ["anthropic.claude-fable-5", "claude-fable-5"].includes(model);
-  if (fableImport && !(provider === "anthropic" && route === "claude-aws" && /^[0-9a-f]{64}$/i.test(evidenceDigest || ""))) throw new Error("Fable import requires provider anthropic, route claude-aws, and a SHA-256 raw-evidence digest");
+  if (fableImport && !options.witnessedFable) throw new Error("Fable evidence requires `fr pass run-fable --prompt-file <review-prompt> --evidence-file <new-raw-stream-jsonl>`");
+  if (fableImport && !(provider === "anthropic" && route === "claude-aws" && /^[0-9a-f]{64}$/i.test(evidenceDigest || ""))) throw new Error("Fable import requires witnessed provider, route, and raw-evidence digest");
   return {
-    head: pass.head || envelope.head,
+    head: pass.head || pass.reviewed_sha || envelope.head || envelope.reviewed_sha,
     verdict: pass.verdict,
     reviewer: pass.reviewer || envelope.reviewer || context.who.actor,
     model,
     reasoning: pass.reasoning || envelope.reasoning,
     reviewRole: pass.reviewRole || pass.review_role || pass.role,
     reviewScope: pass.reviewScope || pass.review_scope || pass.scope,
-    baseHead: pass.baseHead || pass.base_head || envelope.baseHead || envelope.base_head,
+    baseHead: pass.baseHead || pass.base_head || pass.base_sha || envelope.baseHead || envelope.base_head || envelope.base_sha,
     summary: pass.summary,
     mergeReadiness: pass.mergeReadiness ?? pass.merge_readiness ?? pass.merge,
     structuralRisk: pass.structuralRisk ?? pass.structural_risk ?? pass.structural,
@@ -440,6 +443,88 @@ function reviewPassBody(pass, envelope, context) {
     findings: pass.findings,
     unresolved: pass.unresolved
   };
+}
+
+async function witnessedFableReview(flags, context) {
+  if (!flags.head || !flags["prompt-file"] || !flags["evidence-file"]) throw new Error("Use fr pass run-fable --head <sha> --prompt-file <review-prompt> --evidence-file <new-raw-stream-jsonl>");
+  if (!/^[0-9a-f]{40}$/i.test(flags.head)) throw new Error("Fable head must be an exact 40-character commit SHA");
+  const promptPath = path.resolve(process.cwd(), flags["prompt-file"]);
+  const evidencePath = path.resolve(process.cwd(), flags["evidence-file"]);
+  const packetPath = `${evidencePath}.review-packet.txt`;
+  const cwd = process.env.FIELD_REPORT_CWD || process.cwd();
+  const checkoutHead = (await exec("git", ["rev-parse", "HEAD"], { cwd, timeout: 10_000 })).stdout.trim();
+  if (checkoutHead !== flags.head) throw new Error(`Fable head ${flags.head} does not match checkout HEAD ${checkoutHead}`);
+  const baseHead = (await exec("git", ["merge-base", "refs/remotes/origin/main", flags.head], { cwd, timeout: 10_000 })).stdout.trim();
+  if (!/^[0-9a-f]{40}$/i.test(baseHead) || baseHead === flags.head) throw new Error("Fable review requires a non-empty branch diff from the repository's origin/main authority");
+  const [stat, diff] = await Promise.all([
+    exec("git", ["diff", "--stat", "--no-ext-diff", "--no-textconv", "--find-renames", baseHead, flags.head, "--"], { cwd, timeout: 30_000, maxBuffer: 8 * 1024 * 1024 }),
+    exec("git", ["diff", "--no-ext-diff", "--no-textconv", "--find-renames", baseHead, flags.head, "--"], { cwd, timeout: 30_000, maxBuffer: 8 * 1024 * 1024 })
+  ]);
+  await writeFile(packetPath, [`Field Report verified review packet`, `Head: ${flags.head}`, `Base: ${baseHead}`, "", "Diff stat:", stat.stdout, "", "Patch:", diff.stdout].join("\n"), { flag: "wx", mode: 0o600 }).catch((error) => {
+    if (error.code === "EEXIST") throw new Error(`Refusing to overwrite Fable review packet: ${packetPath}`);
+    throw error;
+  });
+  const home = os.homedir();
+  const executable = path.join(home, ".local", "bin", "claude");
+  const systemPrompt = path.join(home, ".claude", "my-rules.txt");
+  await Promise.all([access(executable), access(systemPrompt)]);
+  const prompt = `${await readFile(promptPath, "utf8")}\n\nField Report verified exact head ${flags.head} against the derived origin/main merge base ${baseHead}. You must read and review the complete trusted packet at ${packetPath}. Report these exact SHAs in the structured envelope.`;
+  const evidence = await open(evidencePath, "wx", 0o600).catch((error) => {
+    if (error.code === "EEXIST") throw new Error(`Refusing to overwrite Fable evidence: ${evidencePath}`);
+    throw error;
+  });
+  const child = spawn(executable, [
+    "--bare", "--model", "anthropic.claude-fable-5",
+    "--system-prompt-file", systemPrompt,
+    "--tools", "Read,Grep,Glob",
+    "--allowedTools", "Read,Grep,Glob",
+    "--disallowedTools", "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task,SendMessage",
+    "--permission-mode", "dontAsk",
+    "--print", "--output-format", "stream-json", "--verbose", prompt
+  ], {
+    env: { ...process.env, CLAUDE_CODE_USE_MANTLE: "1", CLAUDE_CODE_USE_BEDROCK: "0", AWS_REGION: process.env.AWS_REGION || "us-east-1" },
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 30 * 60_000
+  });
+  const chunks = [];
+  const errors = [];
+  const digest = createHash("sha256");
+  let writes = Promise.resolve();
+  child.stdout.on("data", (chunk) => {
+    chunks.push(chunk);
+    digest.update(chunk);
+    writes = writes.then(() => evidence.write(chunk));
+  });
+  child.stderr.on("data", (chunk) => errors.push(chunk));
+  const completion = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  }).finally(async () => {
+    await writes;
+    await evidence.close();
+  });
+  if (completion.code !== 0) throw new Error(`Fable review failed (${completion.signal || `exit ${completion.code}`}); partial evidence preserved at ${evidencePath}${errors.length ? `: ${Buffer.concat(errors).toString("utf8").trim()}` : ""}`);
+  const raw = Buffer.concat(chunks).toString("utf8");
+  const messages = raw.split(/\r?\n/).filter(Boolean).map((line, index) => {
+    try { return JSON.parse(line); }
+    catch { throw new Error(`Fable evidence line ${index + 1} is not valid stream-json`); }
+  });
+  const init = messages.find((message) => message.type === "system" && message.subtype === "init");
+  const completed = messages.findLast((message) => message.type === "result" && message.subtype === "success" && message.terminal_reason === "completed");
+  const usage = completed && Object.values(completed.modelUsage || {}).find((value) => value?.canonicalModel === "claude-fable-5" && value?.provider === "mantle");
+  if (init?.model !== "anthropic.claude-fable-5" || !completed || !usage || !completed.session_id) throw new Error("Raw evidence is not a completed canonical Fable review through claude-aws/Mantle");
+  const resultText = String(completed.result || "");
+  const start = resultText.indexOf("{");
+  const end = resultText.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("Completed Fable evidence has no structured review envelope");
+  let envelope;
+  try { envelope = JSON.parse(resultText.slice(start, end + 1)); }
+  catch { throw new Error("Completed Fable review envelope is not valid JSON"); }
+  const evidenceDigest = digest.digest("hex");
+  const witnessed = { ...envelope, reviewerId: completed.session_id, provider: "anthropic", model: "anthropic.claude-fable-5", route: "claude-aws", evidenceDigest };
+  const body = reviewPassBody(witnessed, witnessed, context, { witnessedFable: true });
+  if (body.head !== flags.head || body.baseHead !== baseHead) throw new Error("Completed Fable envelope does not attest the verified exact head and derived base");
+  return { body, evidenceDigest };
 }
 
 async function deterministicEvidence(stream, context) {
@@ -543,7 +628,7 @@ async function main() {
   const context = await armed();
   const id = streamId(positional, context.binding);
   if (command === "hook" && positional[0] === "pre-commit") {
-    if (context.who.kind !== "codex" || !context.binding?.workstreamId) return;
+    if (!context.who.native || context.who.kind !== "codex" || !context.binding?.workstreamId) return;
     await assertWorkstreamAuthority(context, context.binding.workstreamId);
     const { tree, result } = await commitPanelForCheckout(context, context.binding.workstreamId);
     if (!result.ready) throw new Error(`${context.binding.workstreamId} commit gate at staged tree ${tree.slice(0, 8)}: BLOCKED\n${result.reasons.map((reason) => `- ${reason}`).join("\n")}`);
@@ -740,10 +825,17 @@ async function main() {
     const targetId = positional[1] || envelope.workstreamId || envelope.workstream_id || context.binding?.workstreamId;
     if (!targetId) throw new Error("Specify a workstream ID in the command or review envelope");
     const bodies = passes.map((pass) => reviewPassBody(pass, envelope, context));
-    const result = await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/passes`, { passes: bodies });
-    const events = result.events;
-    const mrr = await api("GET", `/api/workstreams/${encodeURIComponent(targetId)}/mrr`);
+    const events = await store.recordReviewPasses(targetId, bodies);
+    const mrr = await store.mrrStatus(targetId);
     return process.stdout.write(`Imported ${events.length} review pass${events.length === 1 ? "" : "es"} for ${targetId}. MRR: ${mrr.ready ? "READY" : "NOT READY"}${mrr.reasons?.length ? ` — ${mrr.reasons.join("; ")}` : ""}.\n`);
+  }
+  if (command === "pass" && positional[0] === "run-fable") {
+    const targetId = positional[1] || context.binding?.workstreamId;
+    if (!targetId) throw new Error("Specify a workstream ID or arm this session");
+    const { body, evidenceDigest } = await witnessedFableReview(flags, context);
+    const event = await store.recordReviewPass(targetId, body, { fableEvidenceVerified: true });
+    const mrr = await store.mrrStatus(targetId);
+    return process.stdout.write(`Ran and recorded witnessed Fable review ${event.metadata.passId} for ${targetId}; evidence ${evidenceDigest.slice(0, 12)}. MRR: ${mrr.ready ? "READY" : "NOT READY"}${mrr.reasons?.length ? ` — ${mrr.reasons.join("; ")}` : ""}.\n`);
   }
   if (command === "mrr") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");

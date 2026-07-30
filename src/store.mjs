@@ -372,12 +372,19 @@ export function createFieldReportStore(root, options = {}) {
   async function recordReviewPasses(id, values, options = {}) {
     if (!Array.isArray(values) || !values.length) throw new Error("Review import requires at least one pass");
     const nativeReviewerId = sessionValue(options.nativeReviewerId);
+    const fableEvidenceVerified = options.fableEvidenceVerified === true;
     const normalized = await Promise.all(values.map(async (value) => {
       const reviewer = value.reviewerId ? await resolveSession(value.reviewerId) : null;
+      const verifiedFable = fableEvidenceVerified
+        && ["anthropic.claude-fable-5", "claude-fable-5"].includes(value.model)
+        && value.provider === "anthropic"
+        && value.route === "claude-aws"
+        && /^[0-9a-f]{64}$/i.test(value.evidenceDigest || "");
       return {
         ...value,
         ...(reviewer ? { reviewerId: reviewer.id } : {}),
-        reviewerIdentityVerified: reviewer?.kind === "codex" && nativeReviewerId === reviewer.id
+        reviewerIdentityVerified: reviewer?.kind === "codex" && nativeReviewerId === reviewer.id,
+        provenanceVerified: verifiedFable
       };
     }));
     return withWriteLock(async () => {

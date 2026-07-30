@@ -77,7 +77,7 @@ AF remains the linked issue ledger; Field Report links issue trees to durable ou
 
 Review passes record reviewer, model, verdict, exact head SHA, readiness/risk judgments, findings, and unresolved considerations. When the branch advances, prior passes remain in history but are counted as superseded rather than current-head evidence.
 
-Fable envelopes must explicitly record `review_complete: true`, `independent: true`, the canonical Fable model, `provider: "anthropic"`, `route: "claude-aws"`, and the SHA-256 digest of persisted raw evidence. A provider label alone is insufficient. This deliberately invalidates legacy Fable evidence lacking route/digest provenance; rerun it on the exact head.
+Run Fable with `fr pass run-fable <workstream-id> --head <sha> --prompt-file <review-prompt> --evidence-file <new-raw-stream-jsonl>`. Field Report verifies the checkout, derives the base from `origin/main`, rejects an empty branch diff, generates a durable diff/stat packet with fixed Git arguments, and launches Fable with only `Read`, `Grep`, and `Glob`. Provenance is recorded only after a completed envelope attests the exact head and derived base.
 
 For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles. AON and Arrusted require a full exact-head fleet containing at least two distinct Sol reviewers and one Fable reviewer verified through `claude-aws`; another Anthropic model is not a substitute. Only `GO` satisfies readiness.
 

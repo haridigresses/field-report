@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +74,87 @@ test("installer refuses an uncommitted installer", async () => {
   }
 });
 
+test("installer does not activate the new launcher when a later surface fails", async () => {
+  const fixture = await installFixture();
+  try {
+    await mkdir(path.join(fixture.home, ".claude"), { recursive: true });
+    await writeFile(path.join(fixture.home, ".claude", "settings.json"), "not json\n");
+    await assert.rejects(
+      installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }),
+      /Cannot preserve Claude settings/
+    );
+    await assert.rejects(readFile(path.join(fixture.home, ".local", "bin", "fr"), "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("installer preflights link conflicts before mutating hooks or launcher", async () => {
+  const fixture = await installFixture({ configuredProject: true });
+  try {
+    await mkdir(path.join(fixture.home, ".codex", "skills", "field-report"), { recursive: true });
+    await assert.rejects(
+      installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }),
+      /Refusing to replace non-symlink Field Report surface/
+    );
+    await assert.rejects(readFile(path.join(fixture.home, ".local", "bin", "fr"), "utf8"), { code: "ENOENT" });
+    await assert.rejects(readFile(path.join(fixture.sourceRoot, ".git", "hooks", "pre-commit"), "utf8"), { code: "ENOENT" });
+    await assert.rejects(readFile(path.join(fixture.home, ".claude", "settings.json"), "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("installer rejects a regular file where a managed parent directory is required", async () => {
+  const fixture = await installFixture({ configuredProject: true });
+  try {
+    await mkdir(path.join(fixture.home, ".local"), { recursive: true });
+    await writeFile(path.join(fixture.home, ".local", "bin"), "not a directory\n");
+    await assert.rejects(
+      installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }),
+      /Expected a directory while preflighting/
+    );
+    await assert.rejects(readFile(path.join(fixture.sourceRoot, ".git", "hooks", "pre-commit"), "utf8"), { code: "ENOENT" });
+    await assert.rejects(readFile(path.join(fixture.home, ".claude", "settings.json"), "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("installer rejects a directory at the launcher destination before mutation", async () => {
+  const fixture = await installFixture({ configuredProject: true });
+  try {
+    await mkdir(path.join(fixture.home, ".local", "bin", "fr"), { recursive: true });
+    await assert.rejects(
+      installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }),
+      /Refusing to replace unsupported Field Report surface/
+    );
+    await assert.rejects(readFile(path.join(fixture.sourceRoot, ".git", "hooks", "pre-commit"), "utf8"), { code: "ENOENT" });
+    await assert.rejects(readFile(path.join(fixture.home, ".claude", "settings.json"), "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("installer requires directory search permission before mutating surfaces", async () => {
+  const fixture = await installFixture({ configuredProject: true });
+  const blockedParent = path.join(fixture.home, ".codex", "skills");
+  try {
+    await mkdir(blockedParent, { recursive: true });
+    await chmod(blockedParent, 0o200);
+    await assert.rejects(
+      installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }),
+      /permission denied|Cannot install Field Report surface/
+    );
+    await assert.rejects(readFile(path.join(fixture.sourceRoot, ".git", "hooks", "pre-commit"), "utf8"), { code: "ENOENT" });
+    await assert.rejects(readFile(path.join(fixture.home, ".claude", "settings.json"), "utf8"), { code: "ENOENT" });
+    await assert.rejects(readFile(path.join(fixture.home, ".local", "bin", "fr"), "utf8"), { code: "ENOENT" });
+  } finally {
+    await chmod(blockedParent, 0o700).catch(() => {});
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("installer adds only a locally scoped managed pre-commit hook", async () => {
   const fixture = await installFixture({ configuredProject: true });
   try {
@@ -83,6 +164,7 @@ test("installer adds only a locally scoped managed pre-commit hook", async () =>
     assert.match(hook, /field-report-managed-pre-commit:v1/);
     assert.match(hook, /unset FIELD_REPORT_URL/);
     assert.match(hook, /hook pre-commit/);
+    assert.match(hook, new RegExp(installed.releaseLauncher.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     await exec(installed.preCommitHooks[0].hook, [], { env: { FIELD_REPORT_URL: "http://127.0.0.1:1" } });
   } finally {
     await rm(fixture.fixtureRoot, { recursive: true, force: true });

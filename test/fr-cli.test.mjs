@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -669,6 +669,68 @@ test("fr pass import cannot attest registered Sol task identities for absent rev
   }
 });
 
+test("only a Field Report-launched Fable process can mint Fable provenance", async () => {
+  const mock = await localFixture();
+  try {
+    const reviewerId = "019f0000-0000-7000-8000-000000000034";
+    const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    await exec("git", ["update-ref", "refs/remotes/origin/main", baseHead], { cwd: mock.root });
+    await writeFile(path.join(mock.root, "fable-candidate.txt"), "review me\n");
+    await exec("git", ["add", "fable-candidate.txt"], { cwd: mock.root });
+    await exec("git", ["-c", "user.name=Field Report Test", "-c", "user.email=field-report@example.invalid", "commit", "-m", "candidate"], { cwd: mock.root });
+    const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    const fable = {
+      head,
+      verdict: "GO",
+      reviewComplete: true,
+      independent: true,
+      reviewRole: "structural-challenge",
+      reviewerId,
+      provider: "anthropic",
+      model: "anthropic.claude-fable-5",
+      route: "claude-aws",
+      provenanceVerified: true,
+      evidenceDigest: "a".repeat(64),
+      mergeReadiness: 95,
+      structuralRisk: 5
+    };
+    const store = createFieldReportStore(mock.root);
+    const raw = await store.recordReviewPass("sample-stream", fable);
+    assert.equal(raw.metadata.provenanceVerified, false);
+    const envelope = { workstreamId: "sample-stream", review_complete: true, independent: true, reviewed_sha: head, base_sha: baseHead, ...fable };
+    await assert.rejects(exec(process.execPath, [cli, "pass", "import", "--data", JSON.stringify(envelope)], { env: mock.env }), /pass run-fable/);
+    const evidence = path.join(mock.root, "fable.stream.jsonl");
+    const prompt = path.join(mock.root, "fable.prompt.txt");
+    const stream = [
+      { type: "system", subtype: "init", model: "anthropic.claude-fable-5", session_id: reviewerId },
+      { type: "result", subtype: "success", terminal_reason: "completed", session_id: reviewerId, modelUsage: { fable: { canonicalModel: "claude-fable-5", provider: "mantle" } }, result: JSON.stringify(envelope) }
+    ].map(JSON.stringify).join("\n") + "\n";
+    const claude = path.join(mock.root, ".local", "bin", "claude");
+    await mkdir(path.dirname(claude), { recursive: true });
+    await mkdir(path.join(mock.root, ".claude"), { recursive: true });
+    await writeFile(path.join(mock.root, ".claude", "my-rules.txt"), "Review independently.\n");
+    await writeFile(prompt, "Review the exact head and return JSON.\n");
+    await writeFile(claude, `#!${process.execPath}\nconst args = process.argv.slice(2).join(" ");\nif (!args.includes("--permission-mode dontAsk") || !args.includes("--tools Read,Grep,Glob") || !args.includes("--disallowedTools Bash,Edit,Write")) process.exit(9);\nprocess.stdout.write(${JSON.stringify(stream)});\n`);
+    await chmod(claude, 0o755);
+    const result = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", evidence], { env: { ...mock.env, HOME: mock.root } });
+    assert.match(result.stdout, /Ran and recorded witnessed Fable review/);
+    const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(events.at(-1).metadata.provenanceVerified, true);
+    assert.notEqual(events.at(-1).metadata.evidenceDigest, "a".repeat(64));
+    assert.match(await readFile(`${evidence}.review-packet.txt`, "utf8"), new RegExp(`Head: ${head}`));
+    assert.match(await readFile(`${evidence}.review-packet.txt`, "utf8"), new RegExp(`Base: ${baseHead}`));
+    const failedEvidence = path.join(mock.root, "fable-failed.stream.jsonl");
+    await writeFile(claude, `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(stream.split("\n")[0] + "\n")});\nprocess.exit(2);\n`);
+    const failed = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", failedEvidence], { env: { ...mock.env, HOME: mock.root } }).catch((error) => error);
+    assert.match(`${failed.stderr || ""}${failed.stdout || ""}`, /partial evidence preserved/);
+    assert.match(await readFile(failedEvidence, "utf8"), /anthropic\.claude-fable-5/);
+    const afterFailure = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n");
+    assert.equal(afterFailure.length, events.length);
+  } finally {
+    await mock.close();
+  }
+});
+
 test("fr pass record attests only the invoking registered Codex task", async () => {
   const mock = await localFixture();
   try {
@@ -782,7 +844,8 @@ test("pre-commit hook is inert outside an armed Codex workstream and blocks an u
     await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [ownerId]: { workstreamId: "sample-stream", role: "workstream-orchestrator" } } }));
     await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
     await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
-    const blocked = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: ownerId } }).catch((error) => error);
+    await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: ownerId } });
+    const blocked = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } }).catch((error) => error);
     assert.match(`${blocked.stderr || ""}${blocked.stdout || ""}`, /commit gate .* BLOCKED/);
   } finally {
     await mock.close();
