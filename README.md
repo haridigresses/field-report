@@ -75,7 +75,7 @@ Review passes record reviewer, model, verdict, exact head SHA, readiness/risk ju
 
 Fable envelopes must explicitly record `review_complete: true`, `independent: true`, the canonical Fable model, `provider: "anthropic"`, `route: "claude-aws"`, and the SHA-256 digest of persisted raw evidence. A provider label alone is insufficient. This deliberately invalidates legacy Fable evidence lacking route/digest provenance; rerun it on the exact head.
 
-For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles. AON and Arrusted require a full exact-head fleet containing at least two distinct Sol reviewers and one Fable reviewer verified through `claude-aws`; another Anthropic model is not a substitute. Only `GO` satisfies readiness.
+For code outcomes, completion is guarded by the exact-head policy printed by `fr workflow`. Its canonical full-policy fleet floor is evaluator-enforced; repository and workstream configuration cannot weaken it. Only `GO` satisfies readiness.
 
 Every commit has a separate local staged-tree gate. Two distinct Sol reviewer tasks inspect the exact `{base HEAD, staged tree}` candidate and publish their own records. Agents commit through `fr commit`; changing the index or base invalidates the panel. Final fleet MRR, including verified Fable, is still required before declaring a PR ready.
 

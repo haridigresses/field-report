@@ -164,7 +164,7 @@ export function createFieldReportStore(root) {
     });
   }
 
-  function applyCanonicalPatch(stream, patch) {
+  function applyCanonicalPatch(stream, patch, allowReviewPolicy = false) {
     const next = { ...stream };
     if (patch.title != null) next.title = shortText(patch.title, "Title", 160);
     if (patch.summary != null) next.summary = shortText(patch.summary, "Summary", 1200);
@@ -175,6 +175,7 @@ export function createFieldReportStore(root) {
     if (patch.branch !== undefined) next.branch = patch.branch ? sessionValue(patch.branch) : null;
     if (patch.reviewState != null) next.reviewState = shortText(patch.reviewState, "Current gate", 500);
     if (patch.reviewPolicy != null) {
+      if (!allowReviewPolicy) throw new Error("Review policy changes require the dedicated user-authorized policy path");
       const mode = String(patch.reviewPolicy.mode || "");
       if (!["full", "single-independent", "delta", "none"].includes(mode)) throw new Error("Review policy must be full, single-independent, delta, or none");
       const reason = patch.reviewPolicy.reason ? shortText(patch.reviewPolicy.reason, "Review policy reason", 500) : null;
@@ -183,7 +184,7 @@ export function createFieldReportStore(root) {
       if (!Number.isInteger(minProviderFamilies) || minProviderFamilies < 0 || minProviderFamilies > 4) throw new Error("Minimum provider families must be between 0 and 4");
       const minSolReviewers = Number(patch.reviewPolicy.minSolReviewers || 0);
       if (!Number.isInteger(minSolReviewers) || minSolReviewers < 0 || minSolReviewers > 10) throw new Error("Minimum Sol reviewers must be between 0 and 10");
-      next.reviewPolicy = { mode, reason, ...(minProviderFamilies ? { minProviderFamilies } : {}), ...(patch.reviewPolicy.requireReviewerIds === true ? { requireReviewerIds: true } : {}), ...(minSolReviewers ? { minSolReviewers } : {}), ...(patch.reviewPolicy.requireFableViaClaudeAws === true ? { requireFableViaClaudeAws: true } : {}) };
+      next.reviewPolicy = { mode, reason, ...(patch.reviewPolicy.userAuthorized === true ? { userAuthorized: true } : {}), ...(minProviderFamilies ? { minProviderFamilies } : {}), ...(patch.reviewPolicy.requireReviewerIds === true ? { requireReviewerIds: true } : {}), ...(minSolReviewers ? { minSolReviewers } : {}), ...(patch.reviewPolicy.requireFableViaClaudeAws === true ? { requireFableViaClaudeAws: true } : {}) };
     }
     if (patch.publicationHold !== undefined) next.publicationHold = patch.publicationHold ? { reason: shortText(patch.publicationHold.reason, "Publication hold reason", 500) } : null;
     if (patch.chunks != null) next.chunks = normalizeChunks(patch.chunks);
@@ -219,6 +220,8 @@ export function createFieldReportStore(root) {
   }
 
   async function appendWorkstreamEvent(id, event) {
+    const type = String(event.type || "update").toLowerCase();
+    if (["review_pass", "commit_review", "review_policy"].includes(type)) throw new Error(`${type} evidence requires its dedicated validated path`);
     return withWriteLock(async () => { await findWorkstream(id); return appendEventUnlocked(id, event); });
   }
 
@@ -250,10 +253,17 @@ export function createFieldReportStore(root) {
     }
     currentHead ||= projected?.stream?.assessment?.currentHead || projected?.stream?.prs?.find((pr) => pr.current)?.headRefOid || null;
     const events = await readEvents(id);
+    const projectReviewPolicy = project?.reviewPolicy || {};
+    const projectReviewConstraints = {
+      ...(Number.isInteger(projectReviewPolicy.minProviderFamilies) ? { minProviderFamilies: projectReviewPolicy.minProviderFamilies } : {}),
+      ...(projectReviewPolicy.requireReviewerIds === true ? { requireReviewerIds: true } : {}),
+      ...(Number.isInteger(projectReviewPolicy.minSolReviewers) ? { minSolReviewers: projectReviewPolicy.minSolReviewers } : {}),
+      ...(projectReviewPolicy.requireFableViaClaudeAws === true ? { requireFableViaClaudeAws: true } : {})
+    };
     return {
       stream: {
         ...(projected?.stream || {}), ...canonical,
-        reviewPolicy: { ...(project?.reviewPolicy || {}), ...(canonical.reviewPolicy || {}) },
+        reviewPolicy: { ...projectReviewConstraints, ...(canonical.reviewPolicy || {}) },
         prs: projected?.stream?.prs || canonical.prs || [],
         reviewPasses: events.filter((event) => event.type === "review_pass").sort((left, right) => new Date(left.at) - new Date(right.at)),
         assessment: { ...(projected?.stream?.assessment || canonical.assessment || {}), currentHead }
@@ -300,6 +310,17 @@ export function createFieldReportStore(root) {
       }
       await writeJsonAtomic(streamFile, next);
       await appendEventUnlocked(id, { type: eventType, actor: patch.updatedBy, text: patch.eventText || patch.summary || patch.reviewState || `${eventType} checkpoint` });
+      return next;
+    });
+  }
+
+  async function setReviewPolicy(id, values) {
+    return withWriteLock(async () => {
+      const { streamFile, stream } = await findWorkstream(id);
+      const reviewPolicy = { ...values, userAuthorized: true };
+      const next = applyCanonicalPatch(stream, { reviewPolicy, updatedBy: values.updatedBy }, true);
+      await writeJsonAtomic(streamFile, next);
+      await appendEventUnlocked(id, { type: "review_policy", actor: values.updatedBy || "user", text: `Review policy set to ${reviewPolicy.mode}${reviewPolicy.reason ? `: ${reviewPolicy.reason}` : ""}` });
       return next;
     });
   }
@@ -351,14 +372,14 @@ export function createFieldReportStore(root) {
     if (!["full", "delta"].includes(reviewScope)) throw new Error("Review scope must be full or delta");
     const baseHead = values.baseHead || null;
     if (reviewScope === "delta" && !/^[0-9a-f]{40}$/i.test(baseHead || "")) throw new Error("A delta review requires --base-head with an exact 40-character SHA");
-    return { type: "review_pass", actor: values.reviewer || values.actor || "reviewer", text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`, metadata: { passId: values.passId || randomUUID(), head, verdict, reviewComplete: true, reviewer: values.reviewer || values.actor || "reviewer", reviewerId: sessionValue(values.reviewerId), provider: sessionValue(values.provider), route: sessionValue(values.route), provenanceVerified: values.provenanceVerified === true, evidenceDigest: sessionValue(values.evidenceDigest), model: values.model || "unknown", reasoning: values.reasoning || null, reviewRole, reviewScope, baseHead, independent: values.independent === true, findings: Array.isArray(values.findings) ? values.findings : [], unresolved: Array.isArray(values.unresolved) ? values.unresolved : [], mergeReadiness, structuralRisk, outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null, necessity: values.necessity || null, simplerPath: values.simplerPath || null, scopeDrift: values.scopeDrift || null, contractIntegrity: values.contractIntegrity || null, evidenceQuality: values.evidenceQuality || null } };
+    return { type: "review_pass", actor: values.reviewer || values.actor || "reviewer", text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`, metadata: { passId: values.passId || randomUUID(), head, verdict, reviewComplete: true, reviewer: values.reviewer || values.actor || "reviewer", reviewerId: sessionValue(values.reviewerId), reviewerIdentityVerified: values.reviewerIdentityVerified === true, provider: sessionValue(values.provider), route: sessionValue(values.route), provenanceVerified: values.provenanceVerified === true, evidenceDigest: sessionValue(values.evidenceDigest), model: values.model || "unknown", reasoning: values.reasoning || null, reviewRole, reviewScope, baseHead, independent: values.independent === true, findings: Array.isArray(values.findings) ? values.findings : [], unresolved: Array.isArray(values.unresolved) ? values.unresolved : [], mergeReadiness, structuralRisk, outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null, necessity: values.necessity || null, simplerPath: values.simplerPath || null, scopeDrift: values.scopeDrift || null, contractIntegrity: values.contractIntegrity || null, evidenceQuality: values.evidenceQuality || null } };
   }
 
   async function recordReviewPasses(id, values) {
     if (!Array.isArray(values) || !values.length) throw new Error("Review import requires at least one pass");
     const normalized = await Promise.all(values.map(async (value) => {
       const reviewer = value.reviewerId ? await resolveSession(value.reviewerId) : null;
-      return reviewer ? { ...value, reviewerId: reviewer.id } : value;
+      return { ...value, ...(reviewer ? { reviewerId: reviewer.id } : {}), reviewerIdentityVerified: reviewer?.kind === "codex" };
     }));
     return withWriteLock(async () => {
       const stream = await withCanonicalOrchestrator((await findWorkstream(id)).stream);
@@ -439,5 +460,5 @@ Explicitly test necessity, simpler designs, scope drift, ownership and failure c
     return results;
   }
 
-  return { appendWorkstreamEvent, commitPanelStatus, createWorkstream, currentStream, findWorkstream, listCanonicalWorkstreams, listSessions, mrrStatus, prepareAssessmentBriefs, recordCommitReview, recordDecision, recordQuestion, recordReviewPass, recordReviewPasses, resolveSession, saveSessionAlias, updateSessions, updateWorkstream, workflowContract };
+  return { appendWorkstreamEvent, commitPanelStatus, createWorkstream, currentStream, findWorkstream, listCanonicalWorkstreams, listSessions, mrrStatus, prepareAssessmentBriefs, recordCommitReview, recordDecision, recordQuestion, recordReviewPass, recordReviewPasses, resolveSession, saveSessionAlias, setReviewPolicy, updateSessions, updateWorkstream, workflowContract };
 }

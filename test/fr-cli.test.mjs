@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -191,8 +191,11 @@ test("MRR can evaluate an explicit live release head instead of a stale local re
   const liveHead = "abcdef1234567890abcdef1234567890abcdef12";
   const store = createFieldReportStore(mock.root);
   try {
-    await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "deep-code-review", reviewer: "deep", independent: true, mergeReadiness: 95, structuralRisk: 5 });
-    await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "structural-challenge", reviewer: "structural", independent: true, mergeReadiness: 95, structuralRisk: 5 });
+    await store.saveSessionAlias({ id: "019f0000-0000-7000-8000-000000000101", alias: "sol-deep", kind: "codex" });
+    await store.saveSessionAlias({ id: "019f0000-0000-7000-8000-000000000102", alias: "sol-structural", kind: "codex" });
+    await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "deep-code-review", reviewer: "deep", reviewerId: "019f0000-0000-7000-8000-000000000101", provider: "openai", model: "gpt-5.6-sol", independent: true, mergeReadiness: 95, structuralRisk: 5 });
+    await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "structural-challenge", reviewer: "structural", reviewerId: "019f0000-0000-7000-8000-000000000102", provider: "openai", model: "gpt-5.6-sol", independent: true, mergeReadiness: 95, structuralRisk: 5 });
+    await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "structural-challenge", reviewer: "fable", reviewerId: "019f0000-0000-7000-8000-000000000103", provider: "anthropic", route: "claude-aws", model: "anthropic.claude-fable-5", provenanceVerified: true, evidenceDigest: "a".repeat(64), independent: true, mergeReadiness: 95, structuralRisk: 5 });
     const stale = await store.mrrStatus("sample-stream");
     const live = await store.mrrStatus("sample-stream", liveHead);
     assert.equal(stale.ready, false);
@@ -203,15 +206,68 @@ test("MRR can evaluate an explicit live release head instead of a stale local re
   }
 });
 
-test("fr policy records a reasoned review exception", async () => {
-  const mock = await fixture();
+test("fr policy records a reasoned review exception through the guarded local path", async () => {
+  const mock = await localFixture();
   try {
     const env = { ...mock.env };
     delete env.CODEX_THREAD_ID;
     delete env.FIELD_REPORT_SESSION_ID;
     const result = await exec(process.execPath, [cli, "policy", "sample-stream", "--mode", "delta", "--reason", "Only a bounded fix changed", "--user-authorized"], { env });
     assert.match(result.stdout, /review policy to delta/);
-    assert.deepEqual(mock.requests[0].body.reviewPolicy, { mode: "delta", reason: "Only a bounded fix changed" });
+    const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-stream.json"), "utf8"));
+    assert.deepEqual(stream.reviewPolicy, { mode: "delta", reason: "Only a bounded fix changed", userAuthorized: true });
+  } finally {
+    await mock.close();
+  }
+});
+
+test("generic reconciliation cannot mutate review policy", async () => {
+  const mock = await fixture();
+  try {
+    const env = { ...mock.env };
+    delete env.CODEX_THREAD_ID;
+    delete env.FIELD_REPORT_SESSION_ID;
+    await assert.rejects(
+      exec(process.execPath, [cli, "reconcile", "sample-stream", "--data", JSON.stringify({ reviewPolicy: { mode: "none", reason: "bypass" } }), "--note", "attempted bypass"], { env }),
+      /Change review policy only with fr policy --user-authorized/
+    );
+    assert.equal(mock.requests.length, 0);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("store policy and Sol provenance cannot be forged through generic inputs", async () => {
+  const mock = await localFixture();
+  const store = createFieldReportStore(mock.root);
+  try {
+    await assert.rejects(
+      store.updateWorkstream("sample-stream", { reviewPolicy: { mode: "none", reason: "raw patch", userAuthorized: true } }),
+      /dedicated user-authorized policy path/
+    );
+    await assert.rejects(
+      store.appendWorkstreamEvent("sample-stream", { type: "review_pass", metadata: { reviewerIdentityVerified: true } }),
+      /dedicated validated path/
+    );
+    const configPath = path.join(mock.root, "config", "projects.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.projects[0].reviewPolicy = { mode: "none", reason: "config bypass", userAuthorized: true };
+    await writeFile(configPath, JSON.stringify(config));
+    const configured = await store.mrrStatus("sample-stream");
+    assert.equal(configured.policy.mode, "full");
+    assert.equal(configured.ready, false);
+
+    const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    await store.recordReviewPass("sample-stream", { head, verdict: "GO", reviewRole: "deep-code-review", reviewerId: "019f0000-0000-7000-8000-000000000201", provider: "openai", model: "gpt-5.6-sol", independent: true, mergeReadiness: 95, structuralRisk: 5 });
+    await store.recordReviewPass("sample-stream", { head, verdict: "GO", reviewRole: "structural-challenge", reviewerId: "019f0000-0000-7000-8000-000000000202", provider: "openai", model: "gpt-5.6-sol", independent: true, mergeReadiness: 95, structuralRisk: 5 });
+    const invented = await store.mrrStatus("sample-stream");
+    assert.equal(invented.fleet.solReviewers, 0);
+    assert.match(invented.reasons.join(" "), /2 distinct Sol reviewers/);
+
+    await store.setReviewPolicy("sample-stream", { mode: "none", reason: "direct user exception", updatedBy: "user" });
+    const authorized = await store.mrrStatus("sample-stream");
+    assert.equal(authorized.policy.userAuthorized, true);
+    assert.equal(authorized.ready, true);
   } finally {
     await mock.close();
   }
@@ -378,7 +434,7 @@ test("legacy orchestrator aliases resolve to UUID authority and new writes canon
     const tree = (await exec("git", ["write-tree"], { cwd: mock.root })).stdout.trim();
     await assert.rejects(store.recordCommitReview("sample-stream", { tree, baseHead, reviewRole: "deep-code-review", verdict: "GO", reviewerId: "sample-agent", summary: "Owner cannot review its own commit" }), /cannot record an independent review/);
     await assert.rejects(store.recordReviewPass("sample-stream", { head: baseHead, verdict: "GO", reviewRole: "deep-code-review", reviewerId: "sample-agent", provider: "openai", model: "gpt-5.6-sol", mergeReadiness: 95, structuralRisk: 5 }), /cannot record an independent review/);
-    await store.appendWorkstreamEvent("sample-stream", { type: "commit_review", actor: ownerId, text: "Legacy self-review evidence", metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole: "deep-code-review", reviewerId: ownerId } });
+    await appendFile(path.join(mock.root, "events", "sample-stream.jsonl"), `${JSON.stringify({ id: "legacy-commit-review", workstreamId: "sample-stream", at: new Date().toISOString(), type: "commit_review", actor: ownerId, text: "Legacy self-review evidence", metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole: "deep-code-review", reviewerId: ownerId } })}\n`);
     await store.recordCommitReview("sample-stream", { tree, baseHead, reviewRole: "structural-challenge", verdict: "GO", reviewerId: "019f0000-0000-7000-8000-000000000017", summary: "Independent structural review" });
     await store.updateWorkstream("sample-stream", { orchestrator: "019f0000-0000-7000-8000-000000000021" });
     const panel = await store.commitPanelStatus("sample-stream", tree, baseHead);
@@ -392,7 +448,7 @@ test("legacy orchestrator aliases resolve to UUID authority and new writes canon
     const config = JSON.parse(await readFile(configPath, "utf8"));
     config.projects[0].reviewPolicy = { requireReviewerIds: true };
     await writeFile(configPath, JSON.stringify(config));
-    await store.appendWorkstreamEvent("sample-stream", { type: "review_pass", actor: ownerId, text: "Legacy self-review pass", metadata: { head: baseHead, verdict: "GO", reviewComplete: true, reviewRole: "deep-code-review", reviewScope: "full", reviewerId: ownerId, provider: "openai", model: "gpt-5.6-sol", independent: true, unresolved: [] } });
+    await appendFile(path.join(mock.root, "events", "sample-stream.jsonl"), `${JSON.stringify({ id: "legacy-review-pass", workstreamId: "sample-stream", at: new Date().toISOString(), type: "review_pass", actor: ownerId, text: "Legacy self-review pass", metadata: { head: baseHead, verdict: "GO", reviewComplete: true, reviewRole: "deep-code-review", reviewScope: "full", reviewerId: ownerId, provider: "openai", model: "gpt-5.6-sol", independent: true, unresolved: [] } })}\n`);
     await store.recordReviewPass("sample-stream", { head: baseHead, verdict: "GO", reviewRole: "structural-challenge", reviewerId: "019f0000-0000-7000-8000-000000000017", provider: "anthropic", model: "claude-fable-5", independent: true, mergeReadiness: 95, structuralRisk: 5 });
     const mrr = await store.mrrStatus("sample-stream", baseHead);
     assert.equal(mrr.ready, false);
@@ -553,7 +609,7 @@ test("fr checkpoint infers the exact checkout head and suppresses duplicate chec
   }
 });
 
-test("fr pass import records a two-lane structured review envelope in one command", async () => {
+test("fr pass import records two lanes but cannot claim full MRR without the verified fleet", async () => {
   const mock = await localFixture();
   try {
     const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
@@ -569,7 +625,9 @@ test("fr pass import records a two-lane structured review envelope in one comman
     };
     const result = await exec(process.execPath, [cli, "pass", "import", "--data", JSON.stringify(envelope)], { env: mock.env });
     assert.match(result.stdout, /Imported 2 review passes/);
-    assert.match(result.stdout, /MRR: READY/);
+    assert.match(result.stdout, /MRR: NOT READY/);
+    assert.match(result.stdout, /2 distinct Sol reviewers/);
+    assert.match(result.stdout, /Fable review through claude-aws/);
     const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
     assert.deepEqual(events.slice(-2).map((event) => event.metadata.reviewRole), ["deep-code-review", "structural-challenge"]);
   } finally {
