@@ -4,9 +4,11 @@ import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createFieldReportStore } from "../src/store.mjs";
+import { writeAll } from "../src/evidence.mjs";
 import { evaluateRelease } from "../src/release.mjs";
 
 const exec = promisify(execFile);
@@ -507,37 +509,71 @@ async function witnessedFableReview(flags, context) {
   ], {
     cwd: snapshotDir,
     env: { ...process.env, CLAUDE_CODE_USE_MANTLE: "1", CLAUDE_CODE_USE_BEDROCK: "0", AWS_REGION: process.env.AWS_REGION || "us-east-1" },
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 30 * 60_000
+    stdio: ["ignore", "pipe", "pipe"]
   });
-  const chunks = [];
   const errors = [];
   const digest = createHash("sha256");
+  let rawBytes = 0;
+  let stderrBytes = 0;
+  let lineBuffer = "";
+  const decoder = new StringDecoder("utf8");
+  let init = null;
+  let completed = null;
+  let streamFailure = null;
+  let forceKill = null;
   let writes = Promise.resolve();
+  const stopChild = () => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    child.kill("SIGTERM");
+    if (!forceKill) { forceKill = setTimeout(() => child.kill("SIGKILL"), 5_000); forceKill.unref(); }
+  };
+  const configuredTimeout = Number(process.env.FIELD_REPORT_FABLE_TIMEOUT_MS);
+  const timeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? Math.min(30 * 60_000, Math.max(100, configuredTimeout)) : 30 * 60_000;
+  const timeout = setTimeout(() => { streamFailure ||= new Error(timeoutMs === 30 * 60_000 ? "Fable review exceeded 30 minutes" : "Fable review exceeded its bounded deadline"); stopChild(); }, timeoutMs);
+  timeout.unref();
+  const parseLine = (line) => {
+    let message;
+    try { message = JSON.parse(line); }
+    catch { streamFailure = new Error("Fable evidence contains invalid stream-json"); stopChild(); return; }
+    if (!init && message.type === "system" && message.subtype === "init") init = message;
+    if (message.type === "result" && message.subtype === "success" && message.terminal_reason === "completed") completed = message;
+  };
   child.stdout.on("data", (chunk) => {
-    chunks.push(chunk);
+    rawBytes += chunk.length;
+    if (rawBytes > 16 * 1024 * 1024) { streamFailure = new Error("Fable review evidence exceeded 16 MiB"); stopChild(); return; }
     digest.update(chunk);
-    writes = writes.then(() => evidence.write(chunk));
+    lineBuffer += decoder.write(chunk);
+    const lines = lineBuffer.split(/\r?\n/);
+    lineBuffer = lines.pop();
+    for (const line of lines) {
+      if (line) parseLine(line);
+      if (streamFailure) break;
+    }
+    writes = writes.then(() => writeAll(evidence, chunk)).catch((error) => { streamFailure = error; stopChild(); });
   });
-  child.stderr.on("data", (chunk) => errors.push(chunk));
+  child.stderr.on("data", (chunk) => {
+    if (stderrBytes >= 64 * 1024) return;
+    const kept = chunk.subarray(0, 64 * 1024 - stderrBytes);
+    errors.push(kept);
+    stderrBytes += kept.length;
+  });
   let completion;
   try {
     completion = await new Promise((resolve, reject) => {
       child.once("error", reject);
       child.once("close", (code, signal) => resolve({ code, signal }));
     }).finally(async () => {
+      clearTimeout(timeout);
       await writes;
       await evidence.close();
+      if (forceKill) clearTimeout(forceKill);
     });
   } finally { await rm(snapshotDir, { recursive: true, force: true }); }
+  if (streamFailure) throw new Error(`Fable review evidence failed; partial evidence preserved at ${evidencePath}: ${streamFailure.message}`);
   if (completion.code !== 0) throw new Error(`Fable review failed (${completion.signal || `exit ${completion.code}`}); partial evidence preserved at ${evidencePath}${errors.length ? `: ${Buffer.concat(errors).toString("utf8").trim()}` : ""}`);
-  const raw = Buffer.concat(chunks).toString("utf8");
-  const messages = raw.split(/\r?\n/).filter(Boolean).map((line, index) => {
-    try { return JSON.parse(line); }
-    catch { throw new Error(`Fable evidence line ${index + 1} is not valid stream-json`); }
-  });
-  const init = messages.find((message) => message.type === "system" && message.subtype === "init");
-  const completed = messages.findLast((message) => message.type === "result" && message.subtype === "success" && message.terminal_reason === "completed");
+  lineBuffer += decoder.end();
+  if (lineBuffer.trim()) parseLine(lineBuffer);
+  if (streamFailure) throw new Error(`Fable review evidence failed; partial evidence preserved at ${evidencePath}: ${streamFailure.message}`);
   const usage = completed && Object.values(completed.modelUsage || {}).find((value) => value?.canonicalModel === "claude-fable-5" && value?.provider === "mantle");
   if (init?.model !== "anthropic.claude-fable-5" || !completed || !usage || !completed.session_id) throw new Error("Raw evidence is not a completed canonical Fable review through claude-aws/Mantle");
   const resultText = String(completed.result || "");
@@ -680,7 +716,7 @@ async function witnessedSolReview(flags, context, kind) {
       try { const message = JSON.parse(line); if (message.type === "thread.started" && message.thread_id) reviewerId = message.thread_id; }
       catch { streamFailure = new Error("Witnessed Sol stream contains invalid JSONL"); stopChild(); break; }
     }
-    writes = writes.then(() => evidence.write(chunk)).catch((error) => { streamFailure = error; stopChild(); });
+    writes = writes.then(() => writeAll(evidence, chunk)).catch((error) => { streamFailure = error; stopChild(); });
   });
   let stderrBytes = 0;
   child.stderr.on("data", (chunk) => { if (stderrBytes < 64 * 1024) { const kept = chunk.subarray(0, 64 * 1024 - stderrBytes); errors.push(kept); stderrBytes += kept.length; } });

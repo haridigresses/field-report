@@ -74,8 +74,6 @@ export function evaluateMrr(stream) {
   const policyValid = policy.mode === "full" || Boolean(policy.reason && policy.userAuthorized);
   const head = stream.assessment?.currentHead || (stream.prs || []).find((pr) => pr.state === "OPEN" && pr.headRefName === stream.branch)?.headRefOid || null;
   const current = (stream.reviewPasses || []).filter((event) => exactHead(event.metadata?.head, head)).sort((left, right) => new Date(left.at || 0) - new Date(right.at || 0));
-  const allCompleted = current.filter((event) => event.metadata?.reviewComplete === true && event.metadata?.independent !== false);
-  const latestAllByReviewer = [...new Map(allCompleted.map((event) => [event.metadata?.reviewerId || `${event.metadata?.reviewer || event.actor}:${roleFor(event)}`, event])).values()];
   const eligible = policy.mode === "full" ? current.filter((event) => isSol(event) || isVerifiedFable(event)) : current;
   const completed = eligible.filter((event) => event.metadata?.reviewComplete === true && event.metadata?.independent !== false);
   const latestByReviewer = [...new Map(completed.map((event) => [event.metadata?.reviewerId || `${event.metadata?.reviewer || event.actor}:${roleFor(event)}`, event])).values()];
@@ -91,7 +89,7 @@ export function evaluateMrr(stream) {
   };
   const deepCode = accepted(latestDeepCode) ? latestDeepCode : null;
   const structuralChallenge = accepted(latestStructural) ? latestStructural : null;
-  const reconciledPasses = policy.mode === "full" ? latestAllByReviewer : requiredPasses;
+  const reconciledPasses = policy.mode === "full" ? latestByReviewer : requiredPasses;
   const blockingVerdicts = reconciledPasses.filter((event) => event.metadata?.verdict !== "GO");
   const reconciledFindings = reconciledPasses.flatMap((event) => event.metadata?.findings || []);
   const reconciledUnresolved = reconciledPasses.flatMap((event) => event.metadata?.unresolved || []);

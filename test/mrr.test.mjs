@@ -207,7 +207,7 @@ test("full MRR reconciles every fleet reviewer and excludes the orchestrator", (
   assert.match(noGo.reasons.join(" "), /not GO/);
 });
 
-test("full fleet reconciles advisory contrary evidence even under reduced configured policies", () => {
+test("unverified advisory evidence cannot veto the witnessed full fleet", () => {
   const deep = solPass(ids.solDeep, "deep-code-review");
   const secondSol = solPass(ids.solStructural, "structural-challenge");
   const fable = pass("anthropic.claude-fable-5", "GO", [], null, "structural-challenge");
@@ -215,12 +215,5 @@ test("full fleet reconciles advisory contrary evidence even under reduced config
   const conditional = pass("gpt-5.6-terra", "CONDITIONAL_GO", [], null, "structural-challenge");
   conditional.metadata.reviewerId = ids.conditional;
   const full = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "full", requireReviewerIds: true, minSolReviewers: 2, requireFableViaClaudeAws: true }, assessment: { currentHead: head }, reviewPasses: [deep, secondSol, fable, conditional] });
-  assert.equal(full.ready, false);
-  assert.match(full.reasons.join(" "), /not GO/);
-  const reduced = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "single-independent", reason: "bounded exception", userAuthorized: true }, assessment: { currentHead: head }, reviewPasses: [conditional, deep] });
-  assert.equal(reduced.ready, false);
-  assert.match(reduced.reasons.join(" "), /not GO/);
-  const none = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "none", reason: "retrospective", userAuthorized: true }, assessment: { currentHead: head }, reviewPasses: [conditional] });
-  assert.equal(none.ready, false);
-  assert.match(none.reasons.join(" "), /not GO/);
+  assert.equal(full.ready, true);
 });

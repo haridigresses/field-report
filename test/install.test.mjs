@@ -6,10 +6,27 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
-import { installFieldReport } from "../scripts/install.mjs";
+import { activateSurfaces, installFieldReport } from "../scripts/install.mjs";
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+test("activation rolls back every attempted surface after a late failure", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "field-report-activation-"));
+  try {
+    const existing = path.join(fixtureRoot, "existing");
+    const created = path.join(fixtureRoot, "created");
+    await writeFile(existing, "old\n", { mode: 0o600 });
+    await assert.rejects(activateSurfaces([
+      { destination: existing, write: () => writeFile(existing, "new\n", { mode: 0o755 }) },
+      { destination: created, write: async () => { await writeFile(created, "partial\n"); throw new Error("injected late failure"); } }
+    ]), /injected late failure/);
+    assert.equal(await readFile(existing, "utf8"), "old\n");
+    await assert.rejects(readFile(created), { code: "ENOENT" });
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
 
 async function installFixture({ configuredProject = false } = {}) {
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "field-report-install-"));

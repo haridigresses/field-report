@@ -8,6 +8,7 @@ import {
   mkdtemp,
   lstat,
   readFile,
+  readlink,
   realpath,
   rename,
   rm,
@@ -66,6 +67,46 @@ async function atomicReplace(destination, writer) {
 
 async function replaceSymlink(target, destination) {
   await atomicReplace(destination, (temporary) => symlink(target, temporary));
+}
+
+async function snapshotSurface(destination) {
+  try {
+    const existing = await lstat(destination);
+    if (existing.isSymbolicLink()) return { kind: "symlink", target: await readlink(destination) };
+    if (existing.isFile()) return { kind: "file", contents: await readFile(destination), mode: existing.mode & 0o777 };
+    throw new Error(`Cannot snapshot unsupported Field Report surface: ${destination}`);
+  } catch (error) {
+    if (error.code === "ENOENT") return { kind: "missing" };
+    throw error;
+  }
+}
+
+async function restoreSurface(destination, snapshot) {
+  if (snapshot.kind === "missing") return rm(destination, { force: true });
+  if (snapshot.kind === "symlink") return replaceSymlink(snapshot.target, destination);
+  return atomicReplace(destination, (temporary) => writeFile(temporary, snapshot.contents, { mode: snapshot.mode }));
+}
+
+export async function activateSurfaces(steps) {
+  const snapshots = new Map();
+  for (const { destination } of steps) {
+    if (!snapshots.has(destination)) snapshots.set(destination, await snapshotSurface(destination));
+  }
+  const attempted = [];
+  try {
+    for (const step of steps) {
+      attempted.push(step.destination);
+      await step.write();
+    }
+  } catch (error) {
+    const rollbackErrors = [];
+    for (const destination of [...new Set(attempted)].reverse()) {
+      try { await restoreSurface(destination, snapshots.get(destination)); }
+      catch (rollbackError) { rollbackErrors.push(`${destination}: ${rollbackError.message}`); }
+    }
+    if (rollbackErrors.length) throw new Error(`${error.message}; Field Report activation rollback also failed: ${rollbackErrors.join("; ")}`, { cause: error });
+    throw error;
+  }
 }
 
 async function planClaudeHooks(home, launcher) {
@@ -159,8 +200,8 @@ async function configuredPreCommitHooks(stateRoot) {
   return hooks;
 }
 
-async function installPreCommitHooks(hooks, launcher) {
-  const contents = [
+function preCommitHookText(launcher) {
+  return [
     "#!/bin/sh",
     managedPreCommitMarker,
     "unset FIELD_REPORT_URL",
@@ -168,9 +209,6 @@ async function installPreCommitHooks(hooks, launcher) {
     `exec ${shellQuote(launcher)} hook pre-commit`,
     ""
   ].join("\n");
-  for (const { hook } of hooks) {
-    await atomicReplace(hook, (temporary) => writeFile(temporary, contents, { mode: 0o755 }));
-  }
 }
 
 async function copyRelease(sourceRoot, releasesRoot, revision, stateRoot, nodeExecutable) {
@@ -260,11 +298,14 @@ export async function installFieldReport(options = {}) {
     `exec ${shellQuote(nodeExecutable)} ${shellQuote(path.join(releaseRoot, "bin", "fr.mjs"))} "$@"`,
     ""
   ].join("\n");
-  await atomicReplace(releaseLauncher, (temporary) => writeFile(temporary, launcherText, { mode: 0o755 }));
-  await installClaudeHooks(claudeHooks);
-  await installPreCommitHooks(preCommitHooks, releaseLauncher);
-  for (const link of skillLinks) await replaceSymlink(link.target, link.destination);
-  await atomicReplace(launcher, (temporary) => writeFile(temporary, launcherText, { mode: 0o755 }));
+  const hookText = preCommitHookText(releaseLauncher);
+  await activateSurfaces([
+    { destination: releaseLauncher, write: () => atomicReplace(releaseLauncher, (temporary) => writeFile(temporary, launcherText, { mode: 0o755 })) },
+    { destination: claudeHooks.file, write: () => installClaudeHooks(claudeHooks) },
+    ...preCommitHooks.map(({ hook }) => ({ destination: hook, write: () => atomicReplace(hook, (temporary) => writeFile(temporary, hookText, { mode: 0o755 })) })),
+    ...skillLinks.map((link) => ({ destination: link.destination, write: () => replaceSymlink(link.target, link.destination) })),
+    { destination: launcher, write: () => atomicReplace(launcher, (temporary) => writeFile(temporary, launcherText, { mode: 0o755 })) }
+  ]);
 
   return { launcher, nodeExecutable, preCommitHooks, releaseLauncher, releaseRoot, revision, stateRoot };
 }

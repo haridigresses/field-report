@@ -749,7 +749,7 @@ test("only a Field Report-launched Fable process can mint Fable provenance", asy
     assert.equal(raw.metadata.provenanceVerified, false);
     const envelope = { workstreamId: "sample-stream", review_complete: true, independent: true, reviewed_sha: head, base_sha: baseHead, ...fable };
     await assert.rejects(exec(process.execPath, [cli, "pass", "import", "--data", JSON.stringify(envelope)], { env: mock.env }), /pass run-fable/);
-    const fableEnvelope = { review_complete: true, independent: true, verdict: "GO", review_role: "structural-challenge", scope: "full", reviewed_sha: head, base_sha: baseHead, merge_readiness: 95, structural_risk: 5, findings: [], unresolved: [], summary: "No material findings." };
+    const fableEnvelope = { review_complete: true, independent: true, verdict: "GO", review_role: "structural-challenge", scope: "full", reviewed_sha: head, base_sha: baseHead, merge_readiness: 95, structural_risk: 5, findings: [], unresolved: [], summary: "No material findings at café." };
     const evidence = path.join(mock.root, "fable.stream.jsonl");
     const prompt = path.join(mock.root, "fable.prompt.txt");
     const stream = [
@@ -762,7 +762,7 @@ test("only a Field Report-launched Fable process can mint Fable provenance", asy
     await mkdir(path.dirname(claudeLink), { recursive: true });
     await symlink(claude, claudeLink);
     await writeFile(prompt, "Review the exact head and return JSON.\n");
-    await writeFile(claude, `#!${process.execPath}\nif (process.argv.includes("--version")) { process.stdout.write("2.1.220 (Claude Code)\\n"); process.exit(0); }\nconst args = process.argv.slice(2).join(" ");\nif (!args.includes("--permission-mode dontAsk") || !args.includes("--tools Read,Grep,Glob") || !args.includes("--disallowedTools Bash,Edit,Write") || !args.includes("--system-prompt")) process.exit(9);\nprocess.stdout.write(${JSON.stringify(stream)});\n`);
+    await writeFile(claude, `#!${process.execPath}\nif (process.argv.includes("--version")) { process.stdout.write("2.1.220 (Claude Code)\\n"); process.exit(0); }\nconst args = process.argv.slice(2).join(" ");\nif (!args.includes("--permission-mode dontAsk") || !args.includes("--tools Read,Grep,Glob") || !args.includes("--disallowedTools Bash,Edit,Write") || !args.includes("--system-prompt")) process.exit(9);\nconst output = Buffer.from(${JSON.stringify(stream)});\nconst splitAt = output.indexOf(Buffer.from("é")) + 1;\nprocess.stdout.write(output.subarray(0, splitAt));\nsetTimeout(() => process.stdout.write(output.subarray(splitAt)), 10);\n`);
     await chmod(claude, 0o755);
     const fableEnv = { ...mock.env, HOME: mock.root, CODEX_THREAD_ID: ownerId };
     const snapshotFailure = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", evidence], { env: { ...fableEnv, TMPDIR: path.join(mock.root, "missing-temp-root") } }).catch((error) => error);
@@ -773,6 +773,7 @@ test("only a Field Report-launched Fable process can mint Fable provenance", asy
     const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
     assert.equal(events.at(-1).metadata.provenanceVerified, true);
     assert.notEqual(events.at(-1).metadata.evidenceDigest, "a".repeat(64));
+    assert.equal(events.at(-1).metadata.evidenceDigest, createHash("sha256").update(await readFile(evidence)).digest("hex"));
     assert.match(await readFile(`${evidence}.review-packet.txt`, "utf8"), new RegExp(`Head: ${head}`));
     assert.match(await readFile(`${evidence}.review-packet.txt`, "utf8"), new RegExp(`Base: ${baseHead}`));
     const malformedEnvelope = { ...fableEnvelope, findings: "hidden finding" };
@@ -792,6 +793,17 @@ test("only a Field Report-launched Fable process can mint Fable provenance", asy
     assert.match(await readFile(failedEvidence, "utf8"), /anthropic\.claude-fable-5/);
     const afterFailure = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n");
     assert.equal(afterFailure.length, events.length);
+    const overflowEvidence = path.join(mock.root, "fable-overflow.stream.jsonl");
+    await writeFile(claude, `#!${process.execPath}\nif (process.argv.includes("--version")) { process.stdout.write("2.1.220 (Claude Code)\\n"); process.exit(0); }\nprocess.stdout.write(" ".repeat(17 * 1024 * 1024));\n`);
+    const overflow = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", overflowEvidence], { env: fableEnv }).catch((error) => error);
+    assert.match(`${overflow.stderr || ""}${overflow.stdout || ""}`, /evidence exceeded 16 MiB/);
+    assert.ok((await readFile(overflowEvidence)).length <= 16 * 1024 * 1024);
+    const timeoutEvidence = path.join(mock.root, "fable-timeout.stream.jsonl");
+    await writeFile(claude, `#!${process.execPath}\nif (process.argv.includes("--version")) { process.stdout.write("2.1.220 (Claude Code)\\n"); process.exit(0); }\nprocess.on("SIGTERM", () => {});\nsetInterval(() => {}, 1000);\n`);
+    const startedAt = Date.now();
+    const timedOut = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", timeoutEvidence], { env: { ...fableEnv, FIELD_REPORT_FABLE_TIMEOUT_MS: "100" } }).catch((error) => error);
+    assert.match(`${timedOut.stderr || ""}${timedOut.stdout || ""}`, /Fable review exceeded its bounded deadline/);
+    assert.ok(Date.now() - startedAt < 7_000);
   } finally {
     await mock.close();
   }
