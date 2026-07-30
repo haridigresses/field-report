@@ -369,11 +369,16 @@ export function createFieldReportStore(root, options = {}) {
     return { type: "review_pass", actor: values.reviewer || values.actor || "reviewer", text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`, metadata: { passId: values.passId || randomUUID(), head, verdict, reviewComplete: true, reviewer: values.reviewer || values.actor || "reviewer", reviewerId: sessionValue(values.reviewerId), reviewerIdentityVerified: values.reviewerIdentityVerified === true, provider: sessionValue(values.provider), route: sessionValue(values.route), provenanceVerified: values.provenanceVerified === true, evidenceDigest: sessionValue(values.evidenceDigest), model: values.model || "unknown", reasoning: values.reasoning || null, reviewRole, reviewScope, baseHead, independent: values.independent === true, findings: Array.isArray(values.findings) ? values.findings : [], unresolved: Array.isArray(values.unresolved) ? values.unresolved : [], mergeReadiness, structuralRisk, outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null, necessity: values.necessity || null, simplerPath: values.simplerPath || null, scopeDrift: values.scopeDrift || null, contractIntegrity: values.contractIntegrity || null, evidenceQuality: values.evidenceQuality || null } };
   }
 
-  async function recordReviewPasses(id, values) {
+  async function recordReviewPasses(id, values, options = {}) {
     if (!Array.isArray(values) || !values.length) throw new Error("Review import requires at least one pass");
+    const nativeReviewerId = sessionValue(options.nativeReviewerId);
     const normalized = await Promise.all(values.map(async (value) => {
       const reviewer = value.reviewerId ? await resolveSession(value.reviewerId) : null;
-      return { ...value, ...(reviewer ? { reviewerId: reviewer.id } : {}), reviewerIdentityVerified: reviewer?.kind === "codex" };
+      return {
+        ...value,
+        ...(reviewer ? { reviewerId: reviewer.id } : {}),
+        reviewerIdentityVerified: reviewer?.kind === "codex" && nativeReviewerId === reviewer.id
+      };
     }));
     return withWriteLock(async () => {
       const stream = await withCanonicalOrchestrator((await findWorkstream(id)).stream);
@@ -387,11 +392,11 @@ export function createFieldReportStore(root, options = {}) {
     });
   }
 
-  async function recordReviewPass(id, values) {
-    return (await recordReviewPasses(id, [values]))[0];
+  async function recordReviewPass(id, values, options = {}) {
+    return (await recordReviewPasses(id, [values], options))[0];
   }
 
-  async function recordCommitReview(id, values) {
+  async function recordCommitReview(id, values, options = {}) {
     const tree = String(values.tree || "").trim();
     if (!/^[0-9a-f]{40}$/i.test(tree)) throw new Error("Commit review requires the exact 40-character staged tree SHA");
     const baseHead = String(values.baseHead || "").trim();
@@ -401,12 +406,13 @@ export function createFieldReportStore(root, options = {}) {
     if (String(values.verdict || "").toUpperCase() !== "GO") throw new Error("Only a completed GO may satisfy a local commit panel");
     const registeredReviewer = values.reviewerId ? await resolveSession(values.reviewerId) : null;
     const reviewerId = registeredReviewer?.id || sessionValue(values.reviewerId);
+    const nativeReviewerId = sessionValue(options.nativeReviewerId);
     if (!reviewerId) throw new Error("Commit review requires a durable reviewer ID");
     if (reviewerId.startsWith("cwd:")) throw new Error("Commit review requires a task or provider-run ID, not checkout identity");
     return withWriteLock(async () => {
       const stream = await withCanonicalOrchestrator((await findWorkstream(id)).stream);
       if (stream.orchestrator && reviewerId === stream.orchestrator) throw new Error("The workstream orchestrator cannot record an independent review of their own work");
-      const event = { type: "commit_review", actor: values.reviewer || reviewerId, text: shortText(values.summary, "Commit review summary", 1200), metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole, reviewer: values.reviewer || reviewerId, reviewerId, reviewerIdentityVerified: registeredReviewer?.kind === "codex", orchestratorAtReview: stream.orchestrator || null, provider: sessionValue(values.provider), model: values.model || "unknown" } };
+      const event = { type: "commit_review", actor: values.reviewer || reviewerId, text: shortText(values.summary, "Commit review summary", 1200), metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole, reviewer: values.reviewer || reviewerId, reviewerId, reviewerIdentityVerified: registeredReviewer?.kind === "codex" && nativeReviewerId === reviewerId, orchestratorAtReview: stream.orchestrator || null, provider: sessionValue(values.provider), model: values.model || "unknown" } };
       return appendEventUnlocked(id, event);
     });
   }

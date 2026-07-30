@@ -56,9 +56,12 @@ async function fixture() {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const stateDir = await mkdtemp(path.join(os.tmpdir(), "field-report-cli-"));
   const address = server.address();
+  const env = { ...process.env, FIELD_REPORT_URL: `http://127.0.0.1:${address.port}`, FIELD_REPORT_STATE_DIR: stateDir };
+  delete env.CODEX_THREAD_ID;
+  delete env.FIELD_REPORT_SESSION_ID;
   return {
     requests,
-    env: { ...process.env, FIELD_REPORT_URL: `http://127.0.0.1:${address.port}`, FIELD_REPORT_STATE_DIR: stateDir },
+    env,
     async close() {
       await new Promise((resolve) => server.close(resolve));
       await rm(stateDir, { recursive: true, force: true });
@@ -626,6 +629,68 @@ test("fr pass import validates the entire envelope before recording any lane", a
   }
 });
 
+test("fr pass import cannot attest registered Sol task identities for absent reviewers", async () => {
+  const mock = await localFixture();
+  try {
+    const deepId = "019f0000-0000-7000-8000-000000000030";
+    const structuralId = "019f0000-0000-7000-8000-000000000031";
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [
+      { id: deepId, alias: "deep-review", kind: "codex" },
+      { id: structuralId, alias: "structural-review", kind: "codex" }
+    ] }));
+    const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    const envelope = {
+      workstreamId: "sample-stream",
+      head,
+      review_complete: true,
+      independent: true,
+      passes: [
+        { role: "deep-code-review", verdict: "GO", reviewer_id: deepId, provider: "openai", model: "gpt-5.6-sol", merge: 95, structural: 5 },
+        { role: "structural-challenge", verdict: "GO", reviewer_id: structuralId, provider: "openai", model: "gpt-5.6-sol", merge: 95, structural: 5 }
+      ]
+    };
+    const result = await exec(process.execPath, [cli, "pass", "import", "--data", JSON.stringify(envelope)], { env: mock.env });
+    assert.match(result.stdout, /full MRR requires 2 distinct Sol reviewers; found 0/);
+    const store = createFieldReportStore(mock.root);
+    await store.recordReviewPasses("sample-stream", envelope.passes.map((pass) => ({
+      ...pass,
+      head,
+      reviewComplete: true,
+      reviewRole: pass.role,
+      reviewerId: pass.reviewer_id,
+      nativeReviewerId: pass.reviewer_id,
+      mergeReadiness: pass.merge,
+      structuralRisk: pass.structural
+    })));
+    const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.deepEqual(events.slice(-4).map((event) => event.metadata.reviewerIdentityVerified), [false, false, false, false]);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr pass record attests only the invoking registered Codex task", async () => {
+  const mock = await localFixture();
+  try {
+    const reviewerId = "019f0000-0000-7000-8000-000000000032";
+    const claimedId = "019f0000-0000-7000-8000-000000000033";
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [
+      { id: reviewerId, alias: "deep-review", kind: "codex" },
+      { id: claimedId, alias: "claimed-review", kind: "codex" }
+    ] }));
+    const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    await exec(process.execPath, [cli, "pass", "record", "sample-stream", "--head", head, "--verdict", "GO", "--role", "deep-code-review", "--provider", "openai", "--model", "gpt-5.6-sol", "--merge", "95", "--structural", "5"], { env: { ...mock.env, CODEX_THREAD_ID: reviewerId, FIELD_REPORT_SESSION_ID: claimedId } });
+    await exec(process.execPath, [cli, "pass", "record", "sample-stream", "--head", head, "--verdict", "GO", "--role", "structural-challenge", "--provider", "openai", "--model", "gpt-5.6-sol", "--merge", "95", "--structural", "5"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: claimedId } });
+    const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(events.at(-2).metadata.reviewerId, reviewerId);
+    assert.equal(events.at(-2).metadata.reviewerIdentityVerified, true);
+    assert.equal(events.at(-1).metadata.reviewerId, claimedId);
+    assert.equal(events.at(-1).metadata.reviewerIdentityVerified, false);
+  } finally {
+    await mock.close();
+  }
+});
+
 test("fr pass refuses review evidence on an outcome without a code anchor", async () => {
   const mock = await localFixture();
   try {
@@ -653,10 +718,14 @@ test("fr commit-check requires two reviews of the exact staged tree", async () =
     await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
     const tree = (await exec("git", ["write-tree"], { cwd: mock.root })).stdout.trim();
     const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
-    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "deep-code-review", "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", "Deep review clear"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: "019f0000-0000-7000-8000-000000000010" } });
+    const store = createFieldReportStore(mock.root);
+    const spoofed = await store.recordCommitReview("sample-stream", { tree, baseHead, verdict: "GO", reviewRole: "structural-challenge", reviewerId: "019f0000-0000-7000-8000-000000000011", nativeReviewerId: "019f0000-0000-7000-8000-000000000011", provider: "openai", model: "gpt-5.6-sol", summary: "Caller-controlled spoof" });
+    assert.equal(spoofed.metadata.reviewerIdentityVerified, false);
+    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "structural-challenge", "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", "Fallback identity spoof"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: "019f0000-0000-7000-8000-000000000011" } });
+    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "deep-code-review", "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", "Deep review clear"], { env: { ...mock.env, CODEX_THREAD_ID: "019f0000-0000-7000-8000-000000000010" } });
     const blocked = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env }).catch((error) => error);
-    assert.match(`${blocked.stderr || ""}${blocked.stdout || ""}`, /missing local structural-challenge/);
-    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "structural-challenge", "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", "Structural review clear"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: "019f0000-0000-7000-8000-000000000011" } });
+    assert.match(`${blocked.stderr || ""}${blocked.stdout || ""}`, /local structural-challenge review must come from a Sol agent/);
+    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "structural-challenge", "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", "Structural review clear"], { env: { ...mock.env, CODEX_THREAD_ID: "019f0000-0000-7000-8000-000000000011" } });
     const ready = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env });
     assert.match(ready.stdout, /commit gate .* READY/);
     await writeFile(path.join(mock.root, "candidate.txt"), "changed\n");
@@ -689,7 +758,7 @@ test("fr commit creates a commit after the exact staged tree is reviewed", async
     const tree = (await exec("git", ["write-tree"], { cwd: mock.root })).stdout.trim();
     const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
     for (const [reviewerId, role] of [[deepId, "deep-code-review"], [structuralId, "structural-challenge"]]) {
-      await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", role, "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", `${role} clear`], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: reviewerId } });
+      await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", role, "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", `${role} clear`], { env: { ...mock.env, CODEX_THREAD_ID: reviewerId } });
     }
     const result = await exec(process.execPath, [cli, "commit", "sample-stream", "--message", "Reviewed candidate"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: ownerId } });
     assert.match(result.stdout, /Reviewed candidate/);

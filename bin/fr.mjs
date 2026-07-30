@@ -162,10 +162,11 @@ async function doctor() {
 
 async function identity() {
   const cwd = process.env.FIELD_REPORT_CWD || process.cwd();
-  const sessionId = process.env.FIELD_REPORT_SESSION_ID || process.env.CODEX_THREAD_ID || null;
-  if (!sessionId) return { key: `cwd:${cwd}`, actor: process.env.USER || "agent", kind: "unknown", cwd };
+  const nativeSessionId = process.env.CODEX_THREAD_ID || null;
+  const sessionId = nativeSessionId || process.env.FIELD_REPORT_SESSION_ID || null;
+  if (!sessionId) return { key: `cwd:${cwd}`, actor: process.env.USER || "agent", kind: "unknown", native: false, cwd };
   const registered = await store.resolveSession(sessionId);
-  return { key: sessionId, actor: registered?.alias || sessionId, kind: registered?.kind || "codex", cwd };
+  return { key: sessionId, actor: registered?.alias || sessionId, kind: registered?.kind || "codex", native: sessionId === nativeSessionId, cwd };
 }
 
 async function armed() {
@@ -685,7 +686,7 @@ async function main() {
   if (command === "pass" && positional[0] === "record") {
     const targetId = positional[1] || context.binding?.workstreamId;
     if (!targetId) throw new Error("Specify a workstream ID or arm this session");
-    const result = await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/passes`, {
+    const body = {
       head: flags.head,
       verdict: flags.verdict,
       reviewer: flags.reviewer || context.who.actor,
@@ -707,14 +708,20 @@ async function main() {
       provider: flags.provider
       ,route: flags.route
       ,independent: true
-    });
-    return process.stdout.write(`Recorded review pass ${result.event.metadata.passId} for ${targetId} at ${result.event.metadata.head.slice(0, 8)}.\n`);
+    };
+    const event = context.who.native
+      ? await store.recordReviewPass(targetId, body, { nativeReviewerId: context.who.key })
+      : (await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/passes`, body)).event;
+    return process.stdout.write(`Recorded review pass ${event.metadata.passId} for ${targetId} at ${event.metadata.head.slice(0, 8)}.\n`);
   }
   if (command === "commit-review" && positional[0] === "record") {
     const targetId = positional[1] || context.binding?.workstreamId;
     if (!targetId) throw new Error("Specify a workstream ID or arm this session");
-    const result = await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/commit-reviews`, { tree: flags.tree, baseHead: flags["base-head"], verdict: "GO", reviewRole: flags.role, reviewer: flags.reviewer || context.who.actor, reviewerId: context.who.key, provider: flags.provider, model: flags.model, summary: flags.summary });
-    return process.stdout.write(`Recorded local commit review ${result.event.metadata.reviewRole} for staged tree ${result.event.metadata.tree.slice(0, 8)}.\n`);
+    const body = { tree: flags.tree, baseHead: flags["base-head"], verdict: "GO", reviewRole: flags.role, reviewer: flags.reviewer || context.who.actor, reviewerId: context.who.key, provider: flags.provider, model: flags.model, summary: flags.summary };
+    const event = context.who.native
+      ? await store.recordCommitReview(targetId, body, { nativeReviewerId: context.who.key })
+      : (await api("POST", `/api/workstreams/${encodeURIComponent(targetId)}/commit-reviews`, body)).event;
+    return process.stdout.write(`Recorded local commit review ${event.metadata.reviewRole} for staged tree ${event.metadata.tree.slice(0, 8)}.\n`);
   }
   if (command === "commit-check" || command === "commit") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
