@@ -71,6 +71,19 @@ test("installer reuses an intact release idempotently", async () => {
   }
 });
 
+test("installer excludes ignored checkout files from the exact revision release", async () => {
+  const fixture = await installFixture();
+  try {
+    const ignored = path.join(fixture.sourceRoot, "src", "ignored-injected.mjs");
+    await writeFile(path.join(fixture.sourceRoot, ".git", "info", "exclude"), "src/ignored-injected.mjs\n");
+    await writeFile(ignored, "throw new Error('must not ship');\n");
+    const installed = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    await assert.rejects(readFile(path.join(installed.releaseRoot, "src", "ignored-injected.mjs")), { code: "ENOENT" });
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("installer refuses an uncommitted release payload", async () => {
   const fixture = await installFixture();
   try {
