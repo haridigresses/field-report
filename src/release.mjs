@@ -26,6 +26,7 @@ export function evaluateRelease({ stream, checkout, remoteHead, pr, prOwners = [
     if (!(stream.prs || []).some((candidate) => Number(candidate.number) === Number(pr.number))) reasons.push(`PR #${pr.number} is not linked to this workstream`);
     if (prOwners.length > 1) reasons.push(`PR #${pr.number} is linked to multiple workstreams: ${prOwners.join(", ")}`);
     if (String(pr.state || "").toUpperCase() !== "OPEN") reasons.push(`PR #${pr.number} is ${String(pr.state || "unknown").toLowerCase()}, not open`);
+    if (pr.isDraft !== true) reasons.push(`PR #${pr.number} is already marked ready; publication must remain draft until this release check passes`);
     if (branch && pr.headRefName !== branch) reasons.push(`PR #${pr.number} head branch ${pr.headRefName || "unknown"} does not match workstream branch ${branch}`);
     if (remoteHead && !exactHead(pr.headRefOid, remoteHead)) reasons.push(`PR #${pr.number} head ${String(pr.headRefOid || "unknown").slice(0, 8)} does not match remote head ${remoteHead.slice(0, 8)}`);
   }

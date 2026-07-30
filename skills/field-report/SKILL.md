@@ -33,7 +33,7 @@ Register a short global alias with `fr session alias <alias> [--id <task-uuid>]`
 - For MRR, start a separate role-specific review with truthful model/provider provenance, then let that reviewer record completed evidence with `fr pass record ...` or `fr pass import ...`.
 - Full MRR for a Field Report-managed code project requires at least two distinct registered native Sol reviewer tasks and at least one completed Fable review through the verified `claude-aws` route on the exact head. Run Fable only with `fr pass run-fable <id> --head <sha> --prompt-file <review-prompt> --evidence-file <new-raw-stream-jsonl>` so Field Report derives and packets the full `origin/main` branch diff before launching the read-only reviewer; generic pass import cannot mint Fable provenance.
 - Check the active gate with `fr mrr [id]`.
-- Before every commit, have two distinct Sol reviewer tasks record fresh base-and-staged-tree lanes with `fr commit-review record ... --model <sol-model>`, then commit through `fr commit [id] --message "..."`.
+- Before every commit, the assigned orchestrator registers each spawned reviewer with `fr session reviewer <alias> --id <task-uuid> --model gpt-5.6-sol --provider openai`. Then two distinct reviewers record fresh base-and-staged-tree lanes; review-command model flags cannot attest Sol. Commit through `fr commit [id] --message "..."`.
 - Use `fr hold [id] --reason "..."` and `fr unhold [id]` for publication blockers outside MRR.
 - Before marking a GitHub PR non-draft or ready, require `fr release-check [id]`. Branch pushes and draft PRs may precede MRR so remote evidence can run; non-draft publication may not.
 

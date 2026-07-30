@@ -40,6 +40,12 @@ test("release check accepts exact live heads with complete MRR", () => {
   assert.equal(result.reasons.length, 0);
 });
 
+test("release check rejects a PR already marked ready", () => {
+  const result = evaluateRelease(candidate({ pr: { number: 42, state: "OPEN", isDraft: false, headRefName: "codex/sample", headRefOid: head } }));
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /already marked ready/);
+});
+
 test("release check rejects a pushed head without fresh exact-head review", () => {
   const nextHead = "1234567890abcdef1234567890abcdef12345678";
   const result = evaluateRelease(candidate({

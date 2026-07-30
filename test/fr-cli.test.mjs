@@ -737,7 +737,7 @@ test("fr pass record attests only the invoking registered Codex task", async () 
     const reviewerId = "019f0000-0000-7000-8000-000000000032";
     const claimedId = "019f0000-0000-7000-8000-000000000033";
     await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [
-      { id: reviewerId, alias: "deep-review", kind: "codex" },
+      { id: reviewerId, alias: "deep-review", kind: "codex", model: "gpt-5.6-terra", provider: "openai", reviewerMetadataVerified: true },
       { id: claimedId, alias: "claimed-review", kind: "codex" }
     ] }));
     const head = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
@@ -746,6 +746,7 @@ test("fr pass record attests only the invoking registered Codex task", async () 
     const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
     assert.equal(events.at(-2).metadata.reviewerId, reviewerId);
     assert.equal(events.at(-2).metadata.reviewerIdentityVerified, true);
+    assert.equal(events.at(-2).metadata.model, "gpt-5.6-terra");
     assert.equal(events.at(-1).metadata.reviewerId, claimedId);
     assert.equal(events.at(-1).metadata.reviewerIdentityVerified, false);
   } finally {
@@ -773,8 +774,8 @@ test("fr commit-check requires two reviews of the exact staged tree", async () =
   const mock = await localFixture();
   try {
     await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [
-      { id: "019f0000-0000-7000-8000-000000000010", alias: "deep-review", kind: "codex" },
-      { id: "019f0000-0000-7000-8000-000000000011", alias: "structural-review", kind: "codex" }
+      { id: "019f0000-0000-7000-8000-000000000010", alias: "deep-review", kind: "codex", model: "gpt-5.6-sol", provider: "openai", reviewerMetadataVerified: true },
+      { id: "019f0000-0000-7000-8000-000000000011", alias: "structural-review", kind: "codex", model: "gpt-5.6-sol", provider: "openai", reviewerMetadataVerified: true }
     ] }));
     await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
     await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
@@ -815,6 +816,11 @@ test("fr commit creates a commit after the exact staged tree is reviewed", async
     await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId }, null, 2));
     await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
     await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [ownerId]: { workstreamId: "sample-stream", role: "workstream-orchestrator" } } }));
+    const spoof = await exec(process.execPath, [cli, "session", "reviewer", "deep-review", "--id", deepId, "--model", "gpt-5.6-sol", "--provider", "openai"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: ownerId } }).catch((error) => error);
+    assert.match(`${spoof.stderr || ""}${spoof.stdout || ""}`, /assigned native workstream orchestrator/);
+    for (const [reviewerId, alias] of [[deepId, "deep-review"], [structuralId, "structural-review"]]) {
+      await exec(process.execPath, [cli, "session", "reviewer", alias, "--id", reviewerId, "--model", "gpt-5.6-sol", "--provider", "openai"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } });
+    }
     await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
     await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
     const tree = (await exec("git", ["write-tree"], { cwd: mock.root })).stdout.trim();
@@ -845,8 +851,13 @@ test("pre-commit hook is inert outside an armed Codex workstream and blocks an u
     await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
     await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
     await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: ownerId } });
+    const currentPath = path.join(mock.root, "data", "current.json");
+    const current = JSON.parse(await readFile(currentPath, "utf8"));
+    await writeFile(currentPath, JSON.stringify({ ...current, workstreams: current.workstreams.map((candidate) => candidate.id === "sample-stream" ? { ...candidate, branch: "stale/projected-branch" } : candidate) }));
     const blocked = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } }).catch((error) => error);
     assert.match(`${blocked.stderr || ""}${blocked.stdout || ""}`, /commit gate .* BLOCKED/);
+    await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId, branch: "another/branch" }, null, 2));
+    await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } });
   } finally {
     await mock.close();
   }

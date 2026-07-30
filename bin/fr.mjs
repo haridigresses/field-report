@@ -42,6 +42,7 @@ Usage:
   fr show [workstream-id]
   fr create --repo <id> --title <title> --outcome <text> [--orchestrator <codex-task-uuid>]
   fr session alias <alias> [--id <codex-task-uuid>]
+  fr session reviewer <alias> --id <codex-task-uuid> --model gpt-5.6-sol --provider openai
   fr session list
   fr assign [workstream-id] --session <alias-or-uuid>
   fr ask [workstream-id] <question>
@@ -629,6 +630,9 @@ async function main() {
   const id = streamId(positional, context.binding);
   if (command === "hook" && positional[0] === "pre-commit") {
     if (!context.who.native || context.who.kind !== "codex" || !context.binding?.workstreamId) return;
+    const inferred = await inferredContext(context);
+    const canonical = (await store.currentStream(context.binding.workstreamId)).stream;
+    if (inferred.project?.id !== canonical.project || inferred.checkout.branch !== canonical.branch) return;
     await assertWorkstreamAuthority(context, context.binding.workstreamId);
     const { tree, result } = await commitPanelForCheckout(context, context.binding.workstreamId);
     if (!result.ready) throw new Error(`${context.binding.workstreamId} commit gate at staged tree ${tree.slice(0, 8)}: BLOCKED\n${result.reasons.map((reason) => `- ${reason}`).join("\n")}`);
@@ -671,10 +675,19 @@ async function main() {
     const result = await api("POST", "/api/sessions", { id: sessionId, alias, kind: "codex" });
     return process.stdout.write(`Saved ${result.session.alias} for Codex task ${result.session.id}.\n`);
   }
+  if (command === "session" && positional[0] === "reviewer") {
+    const alias = positional[1];
+    const sessionId = flags.id;
+    if (!alias || !sessionId || !flags.model || !flags.provider) throw new Error("Use fr session reviewer <alias> --id <codex-task-uuid> --model <model> --provider <provider>");
+    if (!context.who.native || context.binding?.role !== "workstream-orchestrator" || !context.binding.workstreamId) throw new Error("Only the assigned native workstream orchestrator may register reviewer model provenance");
+    await assertWorkstreamAuthority(context, context.binding.workstreamId);
+    const session = await store.saveSessionAlias({ id: sessionId, alias, kind: "codex", model: flags.model, provider: flags.provider }, { reviewerMetadataVerified: true });
+    return process.stdout.write(`Registered reviewer ${session.alias} (${session.id}) as ${session.provider}/${session.model}.\n`);
+  }
   if (command === "session" && positional[0] === "list") {
     const result = await api("GET", "/api/sessions");
     if (!result.sessions.length) return process.stdout.write("No Codex session aliases recorded.\n");
-    return process.stdout.write(`${result.sessions.map((session) => `${session.alias}\t${session.id}`).join("\n")}\n`);
+    return process.stdout.write(`${result.sessions.map((session) => `${session.alias}\t${session.id}${session.reviewerMetadataVerified ? `\t${session.provider}/${session.model}` : ""}`).join("\n")}\n`);
   }
   if (command === "assign") {
     if (!id || !flags.session) throw new Error("Use fr assign [workstream-id] --session <alias-or-uuid>");

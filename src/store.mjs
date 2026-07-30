@@ -79,7 +79,7 @@ export function createFieldReportStore(root, options = {}) {
     return registered ? { ...stream, orchestrator: registered.id } : stream;
   }
 
-  async function saveSessionAlias(values) {
+  async function saveSessionAlias(values, options = {}) {
     return withWriteLock(async () => {
       const id = sessionValue(values.id);
       const alias = sessionValue(values.alias);
@@ -91,7 +91,10 @@ export function createFieldReportStore(root, options = {}) {
       if (sessions.some((session) => (session.alias === alias || session.aliases?.includes(alias)) && session.id !== id)) throw new Error(`Session alias ${alias} is already assigned`);
       const existing = sessions.find((session) => session.id === id);
       const aliases = [...new Set([...(existing?.aliases || []), ...(existing?.alias && existing.alias !== alias ? [existing.alias] : [])])].filter((value) => value !== alias);
-      const record = { id, alias, ...(aliases.length ? { aliases } : {}), kind: values.kind || existing?.kind || "codex", updatedAt: new Date().toISOString() };
+      const reviewerMetadata = options.reviewerMetadataVerified === true
+        ? { model: sessionValue(values.model), provider: sessionValue(values.provider), reviewerMetadataVerified: true }
+        : { model: existing?.model || null, provider: existing?.provider || null, reviewerMetadataVerified: existing?.reviewerMetadataVerified === true };
+      const record = { id, alias, ...(aliases.length ? { aliases } : {}), kind: values.kind || existing?.kind || "codex", ...reviewerMetadata, updatedAt: new Date().toISOString() };
       const next = [...sessions.filter((session) => session.id !== id), record].sort((left, right) => left.alias.localeCompare(right.alias));
       await writeJsonAtomic(sessionsFile, { sessions: next });
       return record;
@@ -380,10 +383,12 @@ export function createFieldReportStore(root, options = {}) {
         && value.provider === "anthropic"
         && value.route === "claude-aws"
         && /^[0-9a-f]{64}$/i.test(value.evidenceDigest || "");
+      const reviewerIdentityVerified = reviewer?.kind === "codex" && nativeReviewerId === reviewer.id;
       return {
         ...value,
         ...(reviewer ? { reviewerId: reviewer.id } : {}),
-        reviewerIdentityVerified: reviewer?.kind === "codex" && nativeReviewerId === reviewer.id,
+        ...(reviewerIdentityVerified ? { model: reviewer?.reviewerMetadataVerified ? reviewer.model : "unknown", provider: reviewer?.reviewerMetadataVerified ? reviewer.provider : null } : {}),
+        reviewerIdentityVerified,
         provenanceVerified: verifiedFable
       };
     }));
@@ -419,7 +424,11 @@ export function createFieldReportStore(root, options = {}) {
     return withWriteLock(async () => {
       const stream = await withCanonicalOrchestrator((await findWorkstream(id)).stream);
       if (stream.orchestrator && reviewerId === stream.orchestrator) throw new Error("The workstream orchestrator cannot record an independent review of their own work");
-      const event = { type: "commit_review", actor: values.reviewer || reviewerId, text: shortText(values.summary, "Commit review summary", 1200), metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole, reviewer: values.reviewer || reviewerId, reviewerId, reviewerIdentityVerified: registeredReviewer?.kind === "codex" && nativeReviewerId === reviewerId, orchestratorAtReview: stream.orchestrator || null, provider: sessionValue(values.provider), model: values.model || "unknown" } };
+      const reviewerIdentityVerified = registeredReviewer?.kind === "codex" && nativeReviewerId === reviewerId;
+      const verifiedMetadata = reviewerIdentityVerified
+        ? (registeredReviewer?.reviewerMetadataVerified ? { provider: registeredReviewer.provider, model: registeredReviewer.model } : { provider: null, model: "unknown" })
+        : { provider: sessionValue(values.provider), model: values.model || "unknown" };
+      const event = { type: "commit_review", actor: values.reviewer || reviewerId, text: shortText(values.summary, "Commit review summary", 1200), metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole, reviewer: values.reviewer || reviewerId, reviewerId, reviewerIdentityVerified, orchestratorAtReview: stream.orchestrator || null, ...verifiedMetadata } };
       return appendEventUnlocked(id, event);
     });
   }
