@@ -246,6 +246,18 @@ test("generic reconciliation cannot weaken review policy", async () => {
   }
 });
 
+test("generic store updates cannot set review policy or erase code anchors on completion", async () => {
+  const mock = await localFixture();
+  try {
+    const store = createFieldReportStore(mock.root);
+    await assert.rejects(store.updateWorkstream("sample-stream", { reviewPolicy: { mode: "none", reason: "bypass", userAuthorized: true } }), /user-authorized policy command/);
+    await assert.rejects(store.updateWorkstream("sample-stream", { branch: null, prs: [], commits: [] }), /cannot clear all branch, PR, and commit anchors/);
+    assert.equal((await store.currentStream("sample-stream")).stream.branch, "sample/import-authority");
+  } finally {
+    await mock.close();
+  }
+});
+
 test("armed repository coordinators cannot answer decisions or mutate workstream authority", async () => {
   const mock = await fixture();
   const sessionId = "019f0000-0000-7000-8000-000000000002";
@@ -856,6 +868,9 @@ test("pre-commit hook is inert outside an armed Codex workstream and blocks an u
     await writeFile(currentPath, JSON.stringify({ ...current, workstreams: current.workstreams.map((candidate) => candidate.id === "sample-stream" ? { ...candidate, branch: "stale/projected-branch" } : candidate) }));
     const blocked = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } }).catch((error) => error);
     assert.match(`${blocked.stderr || ""}${blocked.stdout || ""}`, /commit gate .* BLOCKED/);
+    await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId, branch: null }, null, 2));
+    const unresolved = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } }).catch((error) => error);
+    assert.match(`${unresolved.stderr || ""}${unresolved.stdout || ""}`, /has no canonical branch/);
     await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId, branch: "another/branch" }, null, 2));
     await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } });
   } finally {

@@ -294,13 +294,22 @@ export function createFieldReportStore(root, options = {}) {
   async function updateWorkstream(id, patch, eventType = "updated") {
     return withWriteLock(async () => {
       const { streamFile, stream } = await findWorkstream(id);
+      if (patch.reviewPolicy !== undefined) throw new Error("Review policy may be changed only through the user-authorized policy command");
       if (patch.orchestrator !== undefined) patch = { ...patch, orchestrator: await sessionIdFor(patch.orchestrator) };
-      const semanticKeys = ["title", "summary", "status", "branch", "reviewState", "reviewPolicy", "publicationHold", "chunks", "prs", "references", "issuePrefixes", "commits", "questions", "orchestrator"];
+      const semanticKeys = ["title", "summary", "status", "branch", "reviewState", "publicationHold", "chunks", "prs", "references", "issuePrefixes", "commits", "questions", "orchestrator"];
       const requestedKeys = semanticKeys.filter((key) => patch[key] !== undefined);
       if (!requestedKeys.some((key) => JSON.stringify(stream[key]) !== JSON.stringify(patch[key]))) return stream;
       const next = applyCanonicalPatch(stream, patch);
-      if (stream.status !== "complete" && next.status === "complete" && (next.branch || (next.prs || []).length || (next.commits || []).length)) {
-        const current = await currentStream(id);
+      const current = await currentStream(id);
+      const hadCodeAnchor = [stream, current.stream].some((candidate) => candidate.branch || (candidate.prs || []).length || (candidate.commits || []).length);
+      const keepsCodeAnchor = next.branch || (next.prs || []).length || (next.commits || []).length;
+      if (hadCodeAnchor && !keepsCodeAnchor) throw new Error("A code workstream cannot clear all branch, PR, and commit anchors");
+      if (stream.status !== "complete" && next.status === "complete") {
+        if (!hadCodeAnchor) {
+          await writeJsonAtomic(streamFile, next);
+          await appendEventUnlocked(id, { type: eventType, actor: patch.updatedBy, text: patch.eventText || patch.summary || patch.reviewState || `${eventType} checkpoint` });
+          return next;
+        }
         const mrrStream = await withCanonicalOrchestrator({ ...current.stream, orchestrator: next.orchestrator, branch: next.branch, prs: current.stream.prs?.length ? current.stream.prs : next.prs, commits: next.commits, reviewPolicy: { ...(current.stream.reviewPolicy || {}), ...(next.reviewPolicy || {}) } });
         const mrr = evaluateMrr(mrrStream);
         if (!mrr.ready) throw new Error(`MRR completion gate is not satisfied: ${mrr.reasons.join("; ")}. Run fr mrr ${id}.`);

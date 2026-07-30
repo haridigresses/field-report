@@ -632,7 +632,9 @@ async function main() {
     if (!context.who.native || context.who.kind !== "codex" || !context.binding?.workstreamId) return;
     const inferred = await inferredContext(context);
     const canonical = (await store.currentStream(context.binding.workstreamId)).stream;
-    if (inferred.project?.id !== canonical.project || inferred.checkout.branch !== canonical.branch) return;
+    if (inferred.project?.id !== canonical.project) return;
+    if (!canonical.branch) throw new Error(`${canonical.id} has no canonical branch; checkpoint the current branch before committing`);
+    if (inferred.checkout.branch !== canonical.branch) return;
     await assertWorkstreamAuthority(context, context.binding.workstreamId);
     const { tree, result } = await commitPanelForCheckout(context, context.binding.workstreamId);
     if (!result.ready) throw new Error(`${context.binding.workstreamId} commit gate at staged tree ${tree.slice(0, 8)}: BLOCKED\n${result.reasons.map((reason) => `- ${reason}`).join("\n")}`);
