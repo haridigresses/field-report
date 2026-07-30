@@ -2,7 +2,12 @@ function exactHead(left, right) {
   return Boolean(left && right && String(left).toLowerCase() === String(right).toLowerCase());
 }
 
-const DEFAULT_POLICY = { mode: "full", reason: null };
+const FULL_FLEET_POLICY = Object.freeze({
+  requireReviewerIds: true,
+  minSolReviewers: 2,
+  requireFableViaClaudeAws: true
+});
+const DEFAULT_POLICY = Object.freeze({ mode: "full", reason: null, ...FULL_FLEET_POLICY });
 
 function providerFor(event) {
   const explicit = String(event.metadata?.provider || "").toLowerCase();
@@ -12,11 +17,18 @@ function providerFor(event) {
 }
 
 function durableReviewerId(value) {
-  return Boolean(value && !String(value).startsWith("cwd:"));
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
+function nonNegativeInteger(value) {
+  const number = Number(value || 0);
+  return Number.isInteger(number) && number >= 0 ? number : 0;
 }
 
 function isSol(event) {
-  return event.metadata?.model === "gpt-5.6-sol";
+  return event.metadata?.model === "gpt-5.6-sol"
+    && providerFor(event) === "openai"
+    && event.metadata?.reviewerIdentityVerified === true;
 }
 
 function isVerifiedFable(event) {
@@ -37,14 +49,17 @@ function roleFor(event) {
 }
 
 function policyFor(stream) {
-  const policy = stream.reviewPolicy || DEFAULT_POLICY;
+  const policy = stream.reviewPolicy || {};
+  const mode = policy.mode || "full";
+  const full = mode === "full";
   return {
-    mode: policy.mode || "full",
+    mode,
     reason: policy.reason || null,
-    minProviderFamilies: Number(policy.minProviderFamilies || 0),
-    requireReviewerIds: policy.requireReviewerIds === true,
-    minSolReviewers: Number(policy.minSolReviewers || 0),
-    requireFableViaClaudeAws: policy.requireFableViaClaudeAws === true
+    userAuthorized: policy.userAuthorized === true,
+    minProviderFamilies: nonNegativeInteger(policy.minProviderFamilies),
+    requireReviewerIds: full || policy.requireReviewerIds === true,
+    minSolReviewers: full ? Math.max(FULL_FLEET_POLICY.minSolReviewers, nonNegativeInteger(policy.minSolReviewers)) : nonNegativeInteger(policy.minSolReviewers),
+    requireFableViaClaudeAws: full || policy.requireFableViaClaudeAws === true
   };
 }
 
@@ -53,7 +68,7 @@ export function evaluateMrr(stream) {
   if (!codeOutcome) return { required: false, ready: true, head: null, reasons: [], policy: DEFAULT_POLICY, lanes: { deepCode: null, structuralChallenge: null } };
 
   const policy = policyFor(stream);
-  const policyValid = policy.mode === "full" || Boolean(policy.reason);
+  const policyValid = policy.mode === "full" || Boolean(policy.reason && policy.userAuthorized);
   const head = stream.assessment?.currentHead || (stream.prs || []).find((pr) => pr.state === "OPEN" && pr.headRefName === stream.branch)?.headRefOid || null;
   const current = (stream.reviewPasses || []).filter((event) => exactHead(event.metadata?.head, head)).sort((left, right) => new Date(left.at || 0) - new Date(right.at || 0));
   const completed = current.filter((event) => event.metadata?.reviewComplete === true && event.metadata?.independent !== false);
@@ -75,7 +90,8 @@ export function evaluateMrr(stream) {
   const reconciledUnresolved = reconciledPasses.flatMap((event) => event.metadata?.unresolved || []);
   const reasons = [];
   if (!head) reasons.push("current branch head is unresolved; refresh sources first");
-  if (!policyValid) reasons.push(`review policy ${policy.mode} requires an explicit reason`);
+  if (policy.mode !== "full" && !policy.reason) reasons.push(`review policy ${policy.mode} requires an explicit reason`);
+  if (policy.mode !== "full" && !policy.userAuthorized) reasons.push(`review policy ${policy.mode} requires durable user authorization`);
   if (policy.mode === "full" && !deepCode) reasons.push("missing completed deep-code-review exact-head pass");
   if (policy.mode === "full" && !structuralChallenge) reasons.push("missing completed structural-challenge exact-head pass");
   if (policy.mode === "single-independent" && !accepted(latestIndependent)) reasons.push("missing completed independent exact-head pass");

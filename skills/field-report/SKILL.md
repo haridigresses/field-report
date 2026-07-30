@@ -31,6 +31,7 @@ Register a short global alias with `fr session alias <alias> [--id <task-uuid>]`
 - Governing git context: `fr reference --path <repo-relative-path> --kind plan|contract|decision|review --quote "<short exact excerpt>"`.
 - Prepare non-gating advisory judgment with `fr assess <id>` and deliver the brief through native Codex task tooling.
 - For MRR, start a separate role-specific review with truthful model/provider provenance, then let that reviewer record completed evidence with `fr pass record ...` or `fr pass import ...`.
+- Full MRR for a Field Report-managed code project requires at least two distinct registered native Sol reviewer tasks and at least one completed Fable review through the verified `claude-aws` route on the exact head. Project or workstream configuration cannot weaken this floor, and another Anthropic model does not substitute for Fable.
 - Check the active gate with `fr mrr [id]`.
 - Before every commit, have two distinct Sol reviewer tasks record fresh base-and-staged-tree lanes with `fr commit-review record ... --model <sol-model>`, then commit through `fr commit [id] --message "..."`.
 - Use `fr hold [id] --reason "..."` and `fr unhold [id]` for publication blockers outside MRR.

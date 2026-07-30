@@ -117,6 +117,18 @@ test("fr assess prepares a native Codex review brief", async () => {
   }
 });
 
+test("fr doctor is a non-gating compatibility diagnostic", async () => {
+  const mock = await localFixture();
+  try {
+    const { stdout } = await exec(process.execPath, [cli, "doctor"], { env: mock.env });
+    assert.match(stdout, /^Field Report doctor: OK/m);
+    assert.match(stdout, /Canonical data:/);
+    assert.match(stdout, /diagnostic only; onboarding remains the work prerequisite/);
+  } finally {
+    await mock.close();
+  }
+});
+
 test("fr stores a readable alias and assigns the exact Codex task UUID", async () => {
   const mock = await localFixture();
   const sessionId = "019f0000-0000-7000-8000-000000000002";
@@ -191,6 +203,7 @@ test("MRR can evaluate an explicit live release head instead of a stale local re
   const liveHead = "abcdef1234567890abcdef1234567890abcdef12";
   const store = createFieldReportStore(mock.root);
   try {
+    await store.setReviewPolicy("sample-stream", { mode: "single-independent", reason: "Exercise explicit live-head selection", updatedBy: "test-user" });
     await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "deep-code-review", reviewer: "deep", independent: true, mergeReadiness: 95, structuralRisk: 5 });
     await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "structural-challenge", reviewer: "structural", independent: true, mergeReadiness: 95, structuralRisk: 5 });
     const stale = await store.mrrStatus("sample-stream");
@@ -204,14 +217,27 @@ test("MRR can evaluate an explicit live release head instead of a stale local re
 });
 
 test("fr policy records a reasoned review exception", async () => {
-  const mock = await fixture();
+  const mock = await localFixture();
   try {
     const env = { ...mock.env };
     delete env.CODEX_THREAD_ID;
     delete env.FIELD_REPORT_SESSION_ID;
     const result = await exec(process.execPath, [cli, "policy", "sample-stream", "--mode", "delta", "--reason", "Only a bounded fix changed", "--user-authorized"], { env });
     assert.match(result.stdout, /review policy to delta/);
-    assert.deepEqual(mock.requests[0].body.reviewPolicy, { mode: "delta", reason: "Only a bounded fix changed" });
+    const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-stream.json"), "utf8"));
+    assert.deepEqual(stream.reviewPolicy, { mode: "delta", reason: "Only a bounded fix changed", userAuthorized: true });
+  } finally {
+    await mock.close();
+  }
+});
+
+test("generic reconciliation cannot weaken review policy", async () => {
+  const mock = await localFixture();
+  try {
+    const result = await exec(process.execPath, [cli, "reconcile", "sample-stream", "--data", '{"reviewPolicy":{"mode":"none","reason":"bypass"}}', "--note", "attempt"], { env: mock.env }).catch((error) => error);
+    assert.match(`${result.stderr || ""}${result.stdout || ""}`, /Change review policy only with fr policy/);
+    const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-stream.json"), "utf8"));
+    assert.equal(stream.reviewPolicy, undefined);
   } finally {
     await mock.close();
   }
@@ -378,7 +404,7 @@ test("legacy orchestrator aliases resolve to UUID authority and new writes canon
     const tree = (await exec("git", ["write-tree"], { cwd: mock.root })).stdout.trim();
     await assert.rejects(store.recordCommitReview("sample-stream", { tree, baseHead, reviewRole: "deep-code-review", verdict: "GO", reviewerId: "sample-agent", summary: "Owner cannot review its own commit" }), /cannot record an independent review/);
     await assert.rejects(store.recordReviewPass("sample-stream", { head: baseHead, verdict: "GO", reviewRole: "deep-code-review", reviewerId: "sample-agent", provider: "openai", model: "gpt-5.6-sol", mergeReadiness: 95, structuralRisk: 5 }), /cannot record an independent review/);
-    await store.appendWorkstreamEvent("sample-stream", { type: "commit_review", actor: ownerId, text: "Legacy self-review evidence", metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole: "deep-code-review", reviewerId: ownerId } });
+    await writeFile(path.join(mock.root, "events", "sample-stream.jsonl"), `${JSON.stringify({ id: "legacy-commit-review", workstreamId: "sample-stream", at: new Date().toISOString(), type: "commit_review", actor: ownerId, text: "Legacy self-review evidence", metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole: "deep-code-review", reviewerId: ownerId } })}\n`, { flag: "a" });
     await store.recordCommitReview("sample-stream", { tree, baseHead, reviewRole: "structural-challenge", verdict: "GO", reviewerId: "019f0000-0000-7000-8000-000000000017", summary: "Independent structural review" });
     await store.updateWorkstream("sample-stream", { orchestrator: "019f0000-0000-7000-8000-000000000021" });
     const panel = await store.commitPanelStatus("sample-stream", tree, baseHead);
@@ -392,7 +418,7 @@ test("legacy orchestrator aliases resolve to UUID authority and new writes canon
     const config = JSON.parse(await readFile(configPath, "utf8"));
     config.projects[0].reviewPolicy = { requireReviewerIds: true };
     await writeFile(configPath, JSON.stringify(config));
-    await store.appendWorkstreamEvent("sample-stream", { type: "review_pass", actor: ownerId, text: "Legacy self-review pass", metadata: { head: baseHead, verdict: "GO", reviewComplete: true, reviewRole: "deep-code-review", reviewScope: "full", reviewerId: ownerId, provider: "openai", model: "gpt-5.6-sol", independent: true, unresolved: [] } });
+    await writeFile(path.join(mock.root, "events", "sample-stream.jsonl"), `${JSON.stringify({ id: "legacy-review-pass", workstreamId: "sample-stream", at: new Date().toISOString(), type: "review_pass", actor: ownerId, text: "Legacy self-review pass", metadata: { head: baseHead, verdict: "GO", reviewComplete: true, reviewRole: "deep-code-review", reviewScope: "full", reviewerId: ownerId, provider: "openai", model: "gpt-5.6-sol", independent: true, unresolved: [] } })}\n`, { flag: "a" });
     await store.recordReviewPass("sample-stream", { head: baseHead, verdict: "GO", reviewRole: "structural-challenge", reviewerId: "019f0000-0000-7000-8000-000000000017", provider: "anthropic", model: "claude-fable-5", independent: true, mergeReadiness: 95, structuralRisk: 5 });
     const mrr = await store.mrrStatus("sample-stream", baseHead);
     assert.equal(mrr.ready, false);
@@ -569,7 +595,9 @@ test("fr pass import records a two-lane structured review envelope in one comman
     };
     const result = await exec(process.execPath, [cli, "pass", "import", "--data", JSON.stringify(envelope)], { env: mock.env });
     assert.match(result.stdout, /Imported 2 review passes/);
-    assert.match(result.stdout, /MRR: READY/);
+    assert.match(result.stdout, /MRR: NOT READY/);
+    assert.match(result.stdout, /2 distinct Sol reviewers/);
+    assert.match(result.stdout, /Fable review through claude-aws/);
     const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
     assert.deepEqual(events.slice(-2).map((event) => event.metadata.reviewRole), ["deep-code-review", "structural-challenge"]);
   } finally {
@@ -617,20 +645,76 @@ test("fr pass refuses review evidence on an outcome without a code anchor", asyn
 test("fr commit-check requires two reviews of the exact staged tree", async () => {
   const mock = await localFixture();
   try {
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [
+      { id: "019f0000-0000-7000-8000-000000000010", alias: "deep-review", kind: "codex" },
+      { id: "019f0000-0000-7000-8000-000000000011", alias: "structural-review", kind: "codex" }
+    ] }));
     await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
     await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
     const tree = (await exec("git", ["write-tree"], { cwd: mock.root })).stdout.trim();
     const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
-    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "deep-code-review", "--model", "gpt-5.6-sol", "--summary", "Deep review clear"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: "019f0000-0000-7000-8000-000000000010" } });
+    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "deep-code-review", "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", "Deep review clear"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: "019f0000-0000-7000-8000-000000000010" } });
     const blocked = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env }).catch((error) => error);
     assert.match(`${blocked.stderr || ""}${blocked.stdout || ""}`, /missing local structural-challenge/);
-    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--summary", "Structural review clear"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: "019f0000-0000-7000-8000-000000000011" } });
+    await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", "structural-challenge", "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", "Structural review clear"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: "019f0000-0000-7000-8000-000000000011" } });
     const ready = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env });
     assert.match(ready.stdout, /commit gate .* READY/);
     await writeFile(path.join(mock.root, "candidate.txt"), "changed\n");
     await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
     const changed = await exec(process.execPath, [cli, "commit-check", "sample-stream"], { env: mock.env }).catch((error) => error);
     assert.match(`${changed.stderr || ""}${changed.stdout || ""}`, /missing local deep-code-review/);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("fr commit creates a commit after the exact staged tree is reviewed", async () => {
+  const mock = await localFixture();
+  try {
+    const ownerId = "019f0000-0000-7000-8000-000000000020";
+    const deepId = "019f0000-0000-7000-8000-000000000021";
+    const structuralId = "019f0000-0000-7000-8000-000000000022";
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [
+      { id: ownerId, alias: "sample-agent", kind: "codex" },
+      { id: deepId, alias: "deep-review", kind: "codex" },
+      { id: structuralId, alias: "structural-review", kind: "codex" }
+    ] }));
+    const streamPath = path.join(mock.root, "workstreams", "sample-stream.json");
+    const stream = JSON.parse(await readFile(streamPath, "utf8"));
+    await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId }, null, 2));
+    await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [ownerId]: { workstreamId: "sample-stream", role: "workstream-orchestrator" } } }));
+    await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
+    await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
+    const tree = (await exec("git", ["write-tree"], { cwd: mock.root })).stdout.trim();
+    const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim();
+    for (const [reviewerId, role] of [[deepId, "deep-code-review"], [structuralId, "structural-challenge"]]) {
+      await exec(process.execPath, [cli, "commit-review", "record", "sample-stream", "--tree", tree, "--base-head", baseHead, "--role", role, "--provider", "openai", "--model", "gpt-5.6-sol", "--summary", `${role} clear`], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: reviewerId } });
+    }
+    const result = await exec(process.execPath, [cli, "commit", "sample-stream", "--message", "Reviewed candidate"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: ownerId } });
+    assert.match(result.stdout, /Reviewed candidate/);
+    assert.notEqual((await exec("git", ["rev-parse", "HEAD"], { cwd: mock.root })).stdout.trim(), baseHead);
+    assert.equal((await exec("git", ["show", "HEAD:candidate.txt"], { cwd: mock.root })).stdout, "candidate\n");
+  } finally {
+    await mock.close();
+  }
+});
+
+test("pre-commit hook is inert outside an armed Codex workstream and blocks an unreviewed armed tree", async () => {
+  const mock = await localFixture();
+  try {
+    await exec(process.execPath, [cli, "hook", "pre-commit"], { env: mock.env });
+    const ownerId = "019f0000-0000-7000-8000-000000000020";
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: ownerId, alias: "sample-agent", kind: "codex" }] }));
+    const streamPath = path.join(mock.root, "workstreams", "sample-stream.json");
+    const stream = JSON.parse(await readFile(streamPath, "utf8"));
+    await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId }, null, 2));
+    await mkdir(mock.env.FIELD_REPORT_STATE_DIR, { recursive: true });
+    await writeFile(path.join(mock.env.FIELD_REPORT_STATE_DIR, "state.json"), JSON.stringify({ sessions: { [ownerId]: { workstreamId: "sample-stream", role: "workstream-orchestrator" } } }));
+    await writeFile(path.join(mock.root, "candidate.txt"), "candidate\n");
+    await exec("git", ["add", "candidate.txt"], { cwd: mock.root });
+    const blocked = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, FIELD_REPORT_SESSION_ID: ownerId } }).catch((error) => error);
+    assert.match(`${blocked.stderr || ""}${blocked.stdout || ""}`, /commit gate .* BLOCKED/);
   } finally {
     await mock.close();
   }

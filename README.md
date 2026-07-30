@@ -16,7 +16,11 @@ Field Report stores durable Codex task UUIDs separately from their human-readabl
 node scripts/install.mjs
 ```
 
-This installs `fr` in `~/.local/bin`, the shared Field Report and coordination-role skills for Codex and Claude, Claude's `/fr` command, and quiet Claude session-start/stop hooks. Hooks automatically arm only when the repository and branch match exactly; otherwise they do nothing.
+This copies the clean exact local `origin/main` Field Report commit into an immutable, commit-addressed release under `~/.local/share/field-report/releases`, writes an `fr` launcher with the absolute Node executable and release path, and keeps canonical workstream data in the main Field Report checkout. It also points the shared Field Report and coordination-role skills for Codex and Claude, Claude's `/fr` command, and quiet Claude session hooks at that exact release. Hooks automatically arm only when the repository and branch match exactly; otherwise they do nothing. The installer refuses uncommitted runtime, workflow, or skill changes.
+
+The installer adds one local managed pre-commit hook to each configured repository. It refuses to overwrite an unrelated hook. The hook exits immediately for humans, unarmed Codex tasks, and work outside a Field Report workstream; an armed Codex workstream is blocked unless its exact base HEAD and staged tree have the required two-Sol panel. This is local protection only and does not add a GitHub check or affect teammates without Field Report.
+
+`fr doctor` reports the installed runtime, canonical data root, and Node executable. It is a compatibility diagnostic, not an onboarding prerequisite; assigned work still begins with the exact `fr onboard <outcome-id> --role <role>` flow.
 
 Common operations:
 

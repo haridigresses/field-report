@@ -4,12 +4,20 @@ import { evaluateRelease } from "../src/release.mjs";
 
 const head = "abcdef1234567890abcdef1234567890abcdef12";
 
-function pass(role) {
+function pass(role, model, reviewerId, extra = {}) {
   return {
     at: "2026-07-25T18:00:00.000Z",
     actor: role,
-    metadata: { head, reviewer: role, verdict: "GO", reviewRole: role, reviewComplete: true, independent: true, unresolved: [], orchestratorAtReview: null }
+    metadata: { head, reviewer: role, reviewerId, model, verdict: "GO", reviewRole: role, reviewComplete: true, independent: true, unresolved: [], orchestratorAtReview: null, ...extra }
   };
+}
+
+function fullFleet() {
+  return [
+    pass("deep-code-review", "gpt-5.6-sol", "019f0000-0000-7000-8000-000000000101", { provider: "openai", reviewerIdentityVerified: true }),
+    pass("structural-challenge", "gpt-5.6-sol", "019f0000-0000-7000-8000-000000000102", { provider: "openai", reviewerIdentityVerified: true }),
+    pass("structural-challenge", "anthropic.claude-fable-5", "019f0000-0000-7000-8000-000000000103", { provider: "anthropic", route: "claude-aws", provenanceVerified: true, evidenceDigest: "a".repeat(64) })
+  ];
 }
 
 function candidate(overrides = {}) {
@@ -17,7 +25,7 @@ function candidate(overrides = {}) {
     stream: {
       branch: "codex/sample",
       prs: [{ number: 42 }],
-      reviewPasses: [pass("deep-code-review"), pass("structural-challenge")]
+      reviewPasses: fullFleet()
     },
     checkout: { branch: "codex/sample", head },
     remoteHead: head,

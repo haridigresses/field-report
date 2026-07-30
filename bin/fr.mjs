@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
-import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +10,9 @@ import { evaluateRelease } from "../src/release.mjs";
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const store = createFieldReportStore(process.env.FIELD_REPORT_ROOT || root);
+const fieldReportRoot = process.env.FIELD_REPORT_ROOT || root;
+const runtimeRoot = process.env.FIELD_REPORT_RUNTIME_ROOT || root;
+const store = createFieldReportStore(fieldReportRoot, { workflowRoot: runtimeRoot });
 const baseUrl = process.env.FIELD_REPORT_URL || "http://127.0.0.1:4177";
 const stateDir = process.env.FIELD_REPORT_STATE_DIR || path.join(os.homedir(), ".local", "state", "field-report");
 const stateFile = path.join(stateDir, "state.json");
@@ -25,6 +27,7 @@ Usage:
     fr catchup [repo-id] [--peek] [--since <iso-time>]
     fr mrr [workstream-id]
     fr release-check [workstream-id]
+    fr doctor
     fr hold [workstream-id] --reason <publication blocker>
     fr unhold [workstream-id]
     fr commit-review record [workstream-id] --tree <staged-tree-sha> --base-head <sha> --role deep-code-review|structural-challenge --summary <text>
@@ -129,6 +132,32 @@ async function writeState(state) {
   const temp = `${stateFile}.${process.pid}.next`;
   await writeFile(temp, `${JSON.stringify(state, null, 2)}\n`);
   await rename(temp, stateFile);
+}
+
+async function doctor() {
+  const required = [
+    path.join(runtimeRoot, "bin", "fr.mjs"),
+    path.join(runtimeRoot, "docs", "fr-workflow.md"),
+    path.join(fieldReportRoot, "config", "projects.json"),
+    path.join(fieldReportRoot, "workstreams")
+  ];
+  for (const target of required) await access(target);
+  let revision = process.env.FIELD_REPORT_RELEASE_REVISION || null;
+  if (!revision) {
+    try {
+      revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: runtimeRoot, timeout: 10_000 })).stdout.trim();
+    } catch {
+      revision = "unrecorded";
+    }
+  }
+  process.stdout.write([
+    "Field Report doctor: OK",
+    `Runtime: ${runtimeRoot}${revision ? ` @ ${revision}` : ""}`,
+    `Canonical data: ${fieldReportRoot}`,
+    `Node: ${process.execPath}`,
+    "Doctor is diagnostic only; onboarding remains the work prerequisite for assigned Field Report work.",
+    ""
+  ].join("\n"));
 }
 
 async function identity() {
@@ -449,6 +478,7 @@ function patchFrom(flags) {
   let patch = {};
   if (flags.data) patch = JSON.parse(flags.data.startsWith("@") ? "{}" : flags.data);
   if (flags.data?.startsWith("@")) throw new Error("@file input is not supported yet; pass JSON directly");
+  if (Object.hasOwn(patch, "reviewPolicy")) throw new Error("Change review policy only with fr policy --user-authorized");
   if (flags.summary) patch.summary = flags.summary;
   if (flags.status) patch.status = flags.status;
   if (flags.gate) patch.reviewState = flags.gate;
@@ -495,12 +525,29 @@ async function nudge() {
   }
 }
 
+async function commitPanelForCheckout(context, id) {
+  const inferred = await inferredContext(context);
+  if (!inferred.checkout.repoRoot) throw new Error("Current checkout repository is unresolved");
+  const tree = (await exec("git", ["write-tree"], { cwd: inferred.checkout.repoRoot, timeout: 10_000 })).stdout.trim();
+  const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: inferred.checkout.repoRoot, timeout: 10_000 })).stdout.trim();
+  const result = await api("GET", `/api/workstreams/${encodeURIComponent(id)}/commit-panel?tree=${encodeURIComponent(tree)}&baseHead=${encodeURIComponent(baseHead)}`);
+  return { repoRoot: inferred.checkout.repoRoot, tree, baseHead, result };
+}
+
 async function main() {
   const command = process.argv[2] || "help";
   const { positional, flags } = parse(process.argv.slice(3));
+  if (["help", "--help", "-h"].includes(command)) return process.stdout.write(`${usage()}\n`);
+  if (command === "doctor") return doctor();
   const context = await armed();
   const id = streamId(positional, context.binding);
-  if (["help", "--help", "-h"].includes(command)) return process.stdout.write(`${usage()}\n`);
+  if (command === "hook" && positional[0] === "pre-commit") {
+    if (context.who.kind !== "codex" || !context.binding?.workstreamId) return;
+    await assertWorkstreamAuthority(context, context.binding.workstreamId);
+    const { tree, result } = await commitPanelForCheckout(context, context.binding.workstreamId);
+    if (!result.ready) throw new Error(`${context.binding.workstreamId} commit gate at staged tree ${tree.slice(0, 8)}: BLOCKED\n${result.reasons.map((reason) => `- ${reason}`).join("\n")}`);
+    return process.stdout.write(`${context.binding.workstreamId} commit gate at staged tree ${tree.slice(0, 8)}: READY\n`);
+  }
   enforceCoordinatorBoundary(context, command);
   if (command === "list") {
     const result = await api("GET", "/api/workstreams");
@@ -672,15 +719,11 @@ async function main() {
   if (command === "commit-check" || command === "commit") {
     if (!id) throw new Error("Specify a workstream ID or arm this session");
     if (command === "commit") await assertWorkstreamAuthority(context, id);
-    const inferred = await inferredContext(context);
-    if (!inferred.checkout.repoRoot) throw new Error("Current checkout repository is unresolved");
-    const tree = (await exec("git", ["write-tree"], { cwd: inferred.checkout.repoRoot, timeout: 10_000 })).stdout.trim();
-    const baseHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: inferred.checkout.repoRoot, timeout: 10_000 })).stdout.trim();
-    const result = await api("GET", `/api/workstreams/${encodeURIComponent(id)}/commit-panel?tree=${encodeURIComponent(tree)}&baseHead=${encodeURIComponent(baseHead)}`);
+    const { repoRoot, tree, result } = await commitPanelForCheckout(context, id);
     if (!result.ready) throw new Error(`${id} commit gate at staged tree ${tree.slice(0, 8)}: BLOCKED\n${result.reasons.map((reason) => `- ${reason}`).join("\n")}`);
     if (command === "commit") {
       if (!flags.message) throw new Error("fr commit requires --message");
-      const committed = await exec("git", ["commit", "-m", flags.message], { cwd: inferred.checkout.repoRoot, timeout: 120_000 });
+      const committed = await exec("git", ["commit", "-m", flags.message], { cwd: repoRoot, timeout: 120_000 });
       return process.stdout.write(committed.stdout);
     }
     return process.stdout.write(`${id} commit gate at staged tree ${tree.slice(0, 8)}: READY\nFresh local deep-code and structural reviews are recorded. Commit this staged tree without changing the index.\n`);
@@ -734,8 +777,8 @@ async function main() {
     if (context.binding || context.who.kind !== "unknown" || !flags["user-authorized"]) throw new Error("Only the user may change review policy; run this outside a Codex task with --user-authorized");
     const mode = flags.mode;
     if (!mode) throw new Error("Specify --mode full|single-independent|delta|none");
-    const result = await api("PATCH", `/api/workstreams/${encodeURIComponent(id)}`, { reviewPolicy: { mode, reason: flags.reason || null, ...(flags["min-provider-families"] ? { minProviderFamilies: Number(flags["min-provider-families"]) } : {}), ...(flags["require-reviewer-ids"] === "true" ? { requireReviewerIds: true } : {}) }, updatedBy: context.who.actor, eventType: "review_policy", eventText: `Review policy set to ${mode}${flags.reason ? `: ${flags.reason}` : ""}` });
-    return process.stdout.write(`Set ${result.workstream.id} review policy to ${mode}${flags.reason ? ` — ${flags.reason}` : ""}.\n`);
+    const workstream = await store.setReviewPolicy(id, { mode, reason: flags.reason || null, ...(flags["min-provider-families"] ? { minProviderFamilies: Number(flags["min-provider-families"]) } : {}), ...(flags["require-reviewer-ids"] === "true" ? { requireReviewerIds: true } : {}), updatedBy: context.who.actor });
+    return process.stdout.write(`Set ${workstream.id} review policy to ${mode}${flags.reason ? ` — ${flags.reason}` : ""}.\n`);
   }
   if (command === "disarm") {
     if (!context.binding) return process.stdout.write("This session is not armed.\n");
@@ -762,7 +805,7 @@ async function main() {
         } catch {}
       return;
     }
-    throw new Error("Hook must be session-start or stop");
+    throw new Error("Hook must be session-start, stop, or pre-commit");
   }
   throw new Error(`Unknown command: ${command}\n\n${usage()}`);
 }

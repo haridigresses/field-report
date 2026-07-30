@@ -15,7 +15,7 @@ Use independent native Codex review tasks in proportion to risk and persist only
 
 Before every commit, including every patch commit, freeze the index and obtain fresh local deep-code and structural-challenge reviews of the exact base HEAD and staged tree from two distinct Sol tasks. Each reviewer records its own native identity and Sol model with `fr commit-review record`; commit only through `fr commit`. Any staged or base change requires a new panel. This local gate does not replace final fleet MRR.
 
-For AON and Arrusted full MRR, staff multiple distinct Sol reviewers plus at least one Fable reviewer through verified `claude-aws`, all on the exact final SHA. Another Anthropic model or an unverified Fable invocation does not satisfy the fleet.
+For full MRR on a Field Report-managed code project, staff multiple distinct Sol reviewers plus at least one Fable reviewer through verified `claude-aws`, all on the exact final SHA. Another Anthropic model or an unverified Fable invocation does not satisfy the fleet.
 
 Direct user instructions to a workstream are controlling for that workstream. Repository-coordinator portfolio authority does not override them unless the user explicitly delegates the decision.
 

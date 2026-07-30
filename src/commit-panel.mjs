@@ -1,5 +1,7 @@
 const ROLES = ["deep-code-review", "structural-challenge"];
-const isSol = (event) => event.metadata?.model === "gpt-5.6-sol";
+const isSol = (event) => event.metadata?.model === "gpt-5.6-sol"
+  && event.metadata?.provider === "openai"
+  && event.metadata?.reviewerIdentityVerified === true;
 
 export function evaluateCommitPanel({ tree, baseHead, events = [], orchestrator = null }) {
   const current = events.filter((event) => event.type === "commit_review" && event.metadata?.tree === tree && event.metadata?.baseHead === baseHead && event.metadata?.reviewComplete === true);

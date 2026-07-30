@@ -4,8 +4,13 @@ import { evaluateCommitPanel } from "../src/commit-panel.mjs";
 
 const tree = "abcdef1234567890abcdef1234567890abcdef12";
 const baseHead = "1234567890abcdef1234567890abcdef12345678";
+const reviewerIds = {
+  deep: "019f0000-0000-7000-8000-000000000010",
+  structural: "019f0000-0000-7000-8000-000000000011",
+  same: "019f0000-0000-7000-8000-000000000012"
+};
 function review(role, reviewerId) {
-  return { type: "commit_review", metadata: { tree, baseHead, reviewRole: role, reviewerId, orchestratorAtReview: "implementer", model: "gpt-5.6-sol", verdict: "GO", reviewComplete: true } };
+  return { type: "commit_review", metadata: { tree, baseHead, reviewRole: role, reviewerId: reviewerIds[reviewerId] || reviewerId, reviewerIdentityVerified: true, orchestratorAtReview: "implementer", provider: "openai", model: "gpt-5.6-sol", verdict: "GO", reviewComplete: true } };
 }
 
 test("commit panel requires two distinct local reviewers for the staged tree", () => {
