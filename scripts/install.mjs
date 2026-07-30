@@ -179,6 +179,11 @@ async function copyRelease(sourceRoot, releasesRoot, revision, stateRoot, nodeEx
     if (manifest.revision !== revision || manifest.stateRoot !== stateRoot || manifest.nodeExecutable !== nodeExecutable) {
       throw new Error(`Existing Field Report release ${revision} has different runtime metadata`);
     }
+    for (const entry of releaseEntries) {
+      await exec("git", ["diff", "--no-index", "--quiet", "--", path.join(sourceRoot, entry), path.join(releaseRoot, entry)], { timeout: 30_000, maxBuffer: 1024 * 1024 }).catch(() => {
+        throw new Error(`Existing Field Report release ${revision} payload differs from the clean exact-main source`);
+      });
+    }
     return releaseRoot;
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
@@ -208,6 +213,20 @@ async function copyRelease(sourceRoot, releasesRoot, revision, stateRoot, nodeEx
   return releaseRoot;
 }
 
+async function materializeReleaseSource(sourceRoot, revision) {
+  const snapshot = await mkdtemp(path.join(os.tmpdir(), `field-report-source-${revision.slice(0, 12)}-`));
+  const archive = path.join(snapshot, "release.tar");
+  try {
+    await git(sourceRoot, ["archive", "--format=tar", "--output", archive, revision, "--", ...releaseEntries]);
+    await exec("tar", ["-xf", archive, "-C", snapshot], { timeout: 30_000, maxBuffer: 1024 * 1024 });
+    await rm(archive, { force: true });
+    return snapshot;
+  } catch (error) {
+    await rm(snapshot, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 export async function installFieldReport(options = {}) {
   const sourceRoot = path.resolve(options.sourceRoot || defaultSourceRoot);
   const home = path.resolve(options.home || os.homedir());
@@ -216,7 +235,10 @@ export async function installFieldReport(options = {}) {
   const { revision, stateRoot } = await sourceIdentity(sourceRoot);
   const preCommitHooks = await configuredPreCommitHooks(stateRoot);
   const installRoot = path.resolve(options.installRoot || path.join(home, ".local", "share", "field-report"));
-  const releaseRoot = await copyRelease(sourceRoot, path.join(installRoot, "releases"), revision, stateRoot, nodeExecutable);
+  const releaseSource = await materializeReleaseSource(sourceRoot, revision);
+  let releaseRoot;
+  try { releaseRoot = await copyRelease(releaseSource, path.join(installRoot, "releases"), revision, stateRoot, nodeExecutable); }
+  finally { await rm(releaseSource, { recursive: true, force: true }); }
   const launcher = path.join(home, ".local", "bin", "fr");
   const releaseLauncher = path.join(releaseRoot, "fr");
   const skillLinks = ["field-report", "repo-coordinator", "workstream-orchestrator"].flatMap((skill) => [

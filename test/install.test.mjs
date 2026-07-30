@@ -48,6 +48,29 @@ test("installer pins the launcher and skills to one clean exact commit", async (
   }
 });
 
+test("installer rejects a corrupted existing release payload", async () => {
+  const fixture = await installFixture();
+  try {
+    const installed = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    await writeFile(path.join(installed.releaseRoot, "bin", "fr.mjs"), "corrupted\n");
+    await assert.rejects(installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath }), /payload differs from the clean exact-main source/);
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("installer reuses an intact release idempotently", async () => {
+  const fixture = await installFixture();
+  try {
+    const first = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    const second = await installFieldReport({ sourceRoot: fixture.sourceRoot, home: fixture.home, nodeExecutable: process.execPath });
+    assert.equal(second.releaseRoot, first.releaseRoot);
+    assert.equal(second.revision, first.revision);
+  } finally {
+    await rm(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("installer refuses an uncommitted release payload", async () => {
   const fixture = await installFixture();
   try {

@@ -226,34 +226,40 @@ test("workflow routes decisions directly to the user and coordinator messages on
   assert.doesNotMatch(coordinatorSkill, /relay between the user and persistent workstreams/);
 });
 
-test("MRR can evaluate an explicit live release head instead of a stale local ref", async () => {
+test("MRR evaluates an explicit live release head without allowing a reduced code policy", async () => {
   const mock = await localFixture();
   const liveHead = "abcdef1234567890abcdef1234567890abcdef12";
   const store = createFieldReportStore(mock.root);
   try {
-    await store.setReviewPolicy("sample-stream", { mode: "single-independent", reason: "Exercise explicit live-head selection", updatedBy: "test-user" });
+    const streamPath = path.join(mock.root, "workstreams", "sample-stream.json");
+    const stream = JSON.parse(await readFile(streamPath, "utf8"));
+    await writeFile(streamPath, JSON.stringify({ ...stream, reviewPolicy: { mode: "single-independent", reason: "Legacy reduced policy" } }, null, 2));
     await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "deep-code-review", reviewer: "deep", independent: true, mergeReadiness: 95, structuralRisk: 5 });
     await store.recordReviewPass("sample-stream", { head: liveHead, verdict: "GO", reviewRole: "structural-challenge", reviewer: "structural", independent: true, mergeReadiness: 95, structuralRisk: 5 });
     const stale = await store.mrrStatus("sample-stream");
     const live = await store.mrrStatus("sample-stream", liveHead);
     assert.equal(stale.ready, false);
-    assert.equal(live.ready, true);
+    assert.equal(live.ready, false);
     assert.equal(live.head, liveHead);
+    assert.equal(live.policy.mode, "full");
+    assert.match(live.reasons.join(" "), /2 distinct Sol reviewers/);
   } finally {
     await mock.close();
   }
 });
 
-test("fr policy records a reasoned review exception", async () => {
+test("fr policy accepts only the full code review policy", async () => {
   const mock = await localFixture();
   try {
     const env = { ...mock.env };
     delete env.CODEX_THREAD_ID;
     delete env.FIELD_REPORT_SESSION_ID;
-    const result = await exec(process.execPath, [cli, "policy", "sample-stream", "--mode", "delta", "--reason", "Only a bounded fix changed", "--user-authorized"], { env });
-    assert.match(result.stdout, /review policy to delta/);
+    const reduced = await exec(process.execPath, [cli, "policy", "sample-stream", "--mode", "delta", "--reason", "Only a bounded fix changed", "--user-authorized"], { env }).catch((error) => error);
+    assert.match(`${reduced.stderr || ""}${reduced.stdout || ""}`, /cannot be reduced/);
+    const result = await exec(process.execPath, [cli, "policy", "sample-stream", "--mode", "full", "--user-authorized"], { env });
+    assert.match(result.stdout, /review policy to full/);
     const stream = JSON.parse(await readFile(path.join(mock.root, "workstreams", "sample-stream.json"), "utf8"));
-    assert.deepEqual(stream.reviewPolicy, { mode: "delta", reason: "Only a bounded fix changed", userAuthorized: true });
+    assert.deepEqual(stream.reviewPolicy, { mode: "full", reason: null, userAuthorized: true });
   } finally {
     await mock.close();
   }
@@ -743,20 +749,25 @@ test("only a Field Report-launched Fable process can mint Fable provenance", asy
     assert.equal(raw.metadata.provenanceVerified, false);
     const envelope = { workstreamId: "sample-stream", review_complete: true, independent: true, reviewed_sha: head, base_sha: baseHead, ...fable };
     await assert.rejects(exec(process.execPath, [cli, "pass", "import", "--data", JSON.stringify(envelope)], { env: mock.env }), /pass run-fable/);
+    const fableEnvelope = { review_complete: true, independent: true, verdict: "GO", review_role: "structural-challenge", scope: "full", reviewed_sha: head, base_sha: baseHead, merge_readiness: 95, structural_risk: 5, findings: [], unresolved: [], summary: "No material findings." };
     const evidence = path.join(mock.root, "fable.stream.jsonl");
     const prompt = path.join(mock.root, "fable.prompt.txt");
     const stream = [
       { type: "system", subtype: "init", model: "anthropic.claude-fable-5", session_id: reviewerId },
-      { type: "result", subtype: "success", terminal_reason: "completed", session_id: reviewerId, modelUsage: { fable: { canonicalModel: "claude-fable-5", provider: "mantle" } }, result: JSON.stringify(envelope) }
+      { type: "result", subtype: "success", terminal_reason: "completed", session_id: reviewerId, modelUsage: { fable: { canonicalModel: "claude-fable-5", provider: "mantle" } }, result: JSON.stringify(fableEnvelope) }
     ].map(JSON.stringify).join("\n") + "\n";
-    const claude = path.join(mock.root, ".local", "bin", "claude");
+    const claude = path.join(mock.root, ".local", "share", "claude", "versions", "2.1.220");
+    const claudeLink = path.join(mock.root, ".local", "bin", "claude");
     await mkdir(path.dirname(claude), { recursive: true });
-    await mkdir(path.join(mock.root, ".claude"), { recursive: true });
-    await writeFile(path.join(mock.root, ".claude", "my-rules.txt"), "Review independently.\n");
+    await mkdir(path.dirname(claudeLink), { recursive: true });
+    await symlink(claude, claudeLink);
     await writeFile(prompt, "Review the exact head and return JSON.\n");
-    await writeFile(claude, `#!${process.execPath}\nconst args = process.argv.slice(2).join(" ");\nif (!args.includes("--permission-mode dontAsk") || !args.includes("--tools Read,Grep,Glob") || !args.includes("--disallowedTools Bash,Edit,Write")) process.exit(9);\nprocess.stdout.write(${JSON.stringify(stream)});\n`);
+    await writeFile(claude, `#!${process.execPath}\nif (process.argv.includes("--version")) { process.stdout.write("2.1.220 (Claude Code)\\n"); process.exit(0); }\nconst args = process.argv.slice(2).join(" ");\nif (!args.includes("--permission-mode dontAsk") || !args.includes("--tools Read,Grep,Glob") || !args.includes("--disallowedTools Bash,Edit,Write") || !args.includes("--system-prompt")) process.exit(9);\nprocess.stdout.write(${JSON.stringify(stream)});\n`);
     await chmod(claude, 0o755);
     const fableEnv = { ...mock.env, HOME: mock.root, CODEX_THREAD_ID: ownerId };
+    const snapshotFailure = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", evidence], { env: { ...fableEnv, TMPDIR: path.join(mock.root, "missing-temp-root") } }).catch((error) => error);
+    assert.match(`${snapshotFailure.stderr || ""}${snapshotFailure.stdout || ""}`, /ENOENT/);
+    await assert.rejects(readFile(`${evidence}.review-packet.txt`), { code: "ENOENT" });
     const result = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", evidence], { env: fableEnv });
     assert.match(result.stdout, /Ran and recorded witnessed Fable review/);
     const events = (await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
@@ -764,8 +775,18 @@ test("only a Field Report-launched Fable process can mint Fable provenance", asy
     assert.notEqual(events.at(-1).metadata.evidenceDigest, "a".repeat(64));
     assert.match(await readFile(`${evidence}.review-packet.txt`, "utf8"), new RegExp(`Head: ${head}`));
     assert.match(await readFile(`${evidence}.review-packet.txt`, "utf8"), new RegExp(`Base: ${baseHead}`));
+    const malformedEnvelope = { ...fableEnvelope, findings: "hidden finding" };
+    const malformedStream = [
+      { type: "system", subtype: "init", model: "anthropic.claude-fable-5", session_id: reviewerId },
+      { type: "result", subtype: "success", terminal_reason: "completed", session_id: reviewerId, modelUsage: { fable: { canonicalModel: "claude-fable-5", provider: "mantle" } }, result: JSON.stringify(malformedEnvelope) }
+    ].map(JSON.stringify).join("\n") + "\n";
+    await writeFile(claude, `#!${process.execPath}\nif (process.argv.includes("--version")) { process.stdout.write("2.1.220 (Claude Code)\\n"); process.exit(0); }\nprocess.stdout.write(${JSON.stringify(malformedStream)});\n`);
+    const malformedEvidence = path.join(mock.root, "fable-malformed.stream.jsonl");
+    const malformed = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", malformedEvidence], { env: fableEnv }).catch((error) => error);
+    assert.match(`${malformed.stderr || ""}${malformed.stdout || ""}`, /invalid review fields/);
+    assert.equal((await readFile(path.join(mock.root, "events", "sample-stream.jsonl"), "utf8")).trim().split("\n").length, events.length);
     const failedEvidence = path.join(mock.root, "fable-failed.stream.jsonl");
-    await writeFile(claude, `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(stream.split("\n")[0] + "\n")});\nprocess.exit(2);\n`);
+    await writeFile(claude, `#!${process.execPath}\nif (process.argv.includes("--version")) { process.stdout.write("2.1.220 (Claude Code)\\n"); process.exit(0); }\nprocess.stdout.write(${JSON.stringify(stream.split("\n")[0] + "\n")});\nprocess.exit(2);\n`);
     const failed = await exec(process.execPath, [cli, "pass", "run-fable", "sample-stream", "--head", head, "--prompt-file", prompt, "--evidence-file", failedEvidence], { env: fableEnv }).catch((error) => error);
     assert.match(`${failed.stderr || ""}${failed.stdout || ""}`, /partial evidence preserved/);
     assert.match(await readFile(failedEvidence, "utf8"), /anthropic\.claude-fable-5/);
@@ -957,12 +978,17 @@ test("fr pass run-sol records exact-head witnessed MRR lanes and a head change i
   }
 });
 
-test("pre-commit hook is inert outside an armed Codex workstream and blocks an unreviewed armed tree", async () => {
+test("pre-commit hook is inert for humans and blocks unarmed, mismatched, or unreviewed Codex commits", async () => {
   const mock = await localFixture();
   try {
     await exec(process.execPath, [cli, "hook", "pre-commit"], { env: mock.env });
     const ownerId = "019f0000-0000-7000-8000-000000000020";
-    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: ownerId, alias: "sample-agent", kind: "codex" }] }));
+    const staleKindId = "019f0000-0000-7000-8000-000000000021";
+    await writeFile(path.join(mock.root, "config", "sessions.json"), JSON.stringify({ sessions: [{ id: ownerId, alias: "sample-agent", kind: "codex" }, { id: staleKindId, alias: "stale-kind", kind: "other" }] }));
+    const staleKind = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: staleKindId } }).catch((error) => error);
+    assert.match(`${staleKind.stderr || ""}${staleKind.stdout || ""}`, /require an armed Field Report workstream/);
+    const unarmed = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } }).catch((error) => error);
+    assert.match(`${unarmed.stderr || ""}${unarmed.stdout || ""}`, /require an armed Field Report workstream/);
     const streamPath = path.join(mock.root, "workstreams", "sample-stream.json");
     const stream = JSON.parse(await readFile(streamPath, "utf8"));
     await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId }, null, 2));
@@ -980,7 +1006,11 @@ test("pre-commit hook is inert outside an armed Codex workstream and blocks an u
     const unresolved = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } }).catch((error) => error);
     assert.match(`${unresolved.stderr || ""}${unresolved.stdout || ""}`, /has no canonical branch/);
     await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId, branch: "another/branch" }, null, 2));
-    await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } });
+    const mismatched = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } }).catch((error) => error);
+    assert.match(`${mismatched.stderr || ""}${mismatched.stdout || ""}`, /bound to another\/branch/);
+    await writeFile(streamPath, JSON.stringify({ ...stream, orchestrator: ownerId, project: "another-project" }, null, 2));
+    const wrongProject = await exec(process.execPath, [cli, "hook", "pre-commit"], { env: { ...mock.env, CODEX_THREAD_ID: ownerId } }).catch((error) => error);
+    assert.match(`${wrongProject.stderr || ""}${wrongProject.stdout || ""}`, /belongs to project another-project, not checkout project sample/);
   } finally {
     await mock.close();
   }

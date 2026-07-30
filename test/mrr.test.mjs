@@ -87,29 +87,33 @@ test("explicit reviewer roles do not bypass the global fleet floor", () => {
   assert.match(result.reasons.join(" "), /2 distinct Sol reviewers/);
 });
 
-test("single-independent policy requires a reason and one accepted pass", () => {
+test("single-independent policy cannot waive the full code fleet", () => {
   const result = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "single-independent", reason: "Low-risk docs-adjacent change", userAuthorized: true }, assessment: { currentHead: head }, reviewPasses: [pass("independent-reviewer")] });
-  assert.equal(result.ready, true);
-  assert.equal(result.policy.mode, "single-independent");
+  assert.equal(result.ready, false);
+  assert.equal(result.policy.mode, "full");
+  assert.match(result.reasons.join(" "), /2 distinct Sol reviewers/);
 });
 
-test("delta policy requires an exact-base delta pass", () => {
+test("delta policy cannot waive the full code fleet", () => {
   const baseHead = "1234567890abcdef1234567890abcdef12345678";
   const missing = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "delta", reason: "Only a bounded fix changed", userAuthorized: true }, assessment: { currentHead: head }, reviewPasses: [pass("independent-reviewer")] });
   assert.equal(missing.ready, false);
   const ready = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "delta", reason: "Only a bounded fix changed", userAuthorized: true }, assessment: { currentHead: head }, reviewPasses: [pass("independent-reviewer", "GO", [], null, null, "delta", baseHead)] });
-  assert.equal(ready.ready, true);
+  assert.equal(ready.ready, false);
+  assert.equal(ready.policy.mode, "full");
 });
 
-test("none policy records the explicit exception and skips review passes", () => {
+test("none policy cannot waive the full code fleet", () => {
   const result = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "none", reason: "Generated metadata-only branch", userAuthorized: true }, assessment: { currentHead: head }, reviewPasses: [] });
-  assert.equal(result.ready, true);
+  assert.equal(result.ready, false);
+  assert.equal(result.policy.mode, "full");
 });
 
-test("non-full policy without a reason cannot bypass the gate", () => {
+test("non-full policy is normalized to the full code fleet", () => {
   const result = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "none" }, assessment: { currentHead: head }, reviewPasses: [] });
   assert.equal(result.ready, false);
-  assert.match(result.reasons.join(" "), /explicit reason/);
+  assert.equal(result.policy.mode, "full");
+  assert.match(result.reasons.join(" "), /Fable review through claude-aws/);
 });
 
 test("CONDITIONAL_GO does not satisfy readiness", () => {
@@ -127,7 +131,7 @@ test("configured review provenance requires distinct reviewer IDs and providers"
   assert.match(duplicate.reasons.join(" "), /2 distinct Sol reviewers/);
 });
 
-test("provider diversity rejects arbitrary labels and remains satisfiable for reduced policies", () => {
+test("provider diversity rejects arbitrary labels and reduced policies remain blocked", () => {
   const deep = pass("future-model-a", "GO", [], null, "deep-code-review");
   const structural = pass("future-model-b", "GO", [], null, "structural-challenge");
   deep.metadata.provider = "vendor-a";
@@ -139,9 +143,9 @@ test("provider diversity rejects arbitrary labels and remains satisfiable for re
   const one = pass("gpt-5.6-sol", "GO", [], null, "deep-code-review");
   one.metadata.reviewerId = ids.solDeep;
   const reduced = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "single-independent", reason: "bounded exception", userAuthorized: true, minProviderFamilies: 2, requireReviewerIds: true }, assessment: { currentHead: head }, reviewPasses: [one] });
-  assert.equal(reduced.ready, true);
+  assert.equal(reduced.ready, false);
   const none = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "none", reason: "retrospective", userAuthorized: true, minProviderFamilies: 2, requireReviewerIds: true }, assessment: { currentHead: head }, reviewPasses: [] });
-  assert.equal(none.ready, true);
+  assert.equal(none.ready, false);
 });
 
 test("full MRR fleet requires multiple Sol reviewers and Fable through claude-aws", () => {
@@ -203,7 +207,7 @@ test("full MRR reconciles every fleet reviewer and excludes the orchestrator", (
   assert.match(noGo.reasons.join(" "), /not GO/);
 });
 
-test("full fleet reconciles advisory contrary evidence while reduced policies ignore unrelated passes", () => {
+test("full fleet reconciles advisory contrary evidence even under reduced configured policies", () => {
   const deep = solPass(ids.solDeep, "deep-code-review");
   const secondSol = solPass(ids.solStructural, "structural-challenge");
   const fable = pass("anthropic.claude-fable-5", "GO", [], null, "structural-challenge");
@@ -214,7 +218,9 @@ test("full fleet reconciles advisory contrary evidence while reduced policies ig
   assert.equal(full.ready, false);
   assert.match(full.reasons.join(" "), /not GO/);
   const reduced = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "single-independent", reason: "bounded exception", userAuthorized: true }, assessment: { currentHead: head }, reviewPasses: [conditional, deep] });
-  assert.equal(reduced.ready, true);
+  assert.equal(reduced.ready, false);
+  assert.match(reduced.reasons.join(" "), /not GO/);
   const none = evaluateMrr({ branch: "codex/sample", reviewPolicy: { mode: "none", reason: "retrospective", userAuthorized: true }, assessment: { currentHead: head }, reviewPasses: [conditional] });
-  assert.equal(none.ready, true);
+  assert.equal(none.ready, false);
+  assert.match(none.reasons.join(" "), /not GO/);
 });

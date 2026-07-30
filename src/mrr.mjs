@@ -69,7 +69,8 @@ export function evaluateMrr(stream) {
   const codeOutcome = Boolean(stream.branch || (stream.prs || []).length || (stream.commits || []).length);
   if (!codeOutcome) return { required: false, ready: true, head: null, reasons: [], policy: DEFAULT_POLICY, lanes: { deepCode: null, structuralChallenge: null } };
 
-  const policy = policyFor(stream);
+  const configuredPolicy = policyFor(stream);
+  const policy = { ...configuredPolicy, mode: "full", reason: null, userAuthorized: false, minSolReviewers: Math.max(FULL_FLEET_POLICY.minSolReviewers, configuredPolicy.minSolReviewers), requireFableViaClaudeAws: true, requireReviewerIds: true };
   const policyValid = policy.mode === "full" || Boolean(policy.reason && policy.userAuthorized);
   const head = stream.assessment?.currentHead || (stream.prs || []).find((pr) => pr.state === "OPEN" && pr.headRefName === stream.branch)?.headRefOid || null;
   const current = (stream.reviewPasses || []).filter((event) => exactHead(event.metadata?.head, head)).sort((left, right) => new Date(left.at || 0) - new Date(right.at || 0));

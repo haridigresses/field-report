@@ -184,9 +184,8 @@ export function createFieldReportStore(root, options = {}) {
     if (patch.reviewPolicy != null) {
       if (!allowReviewPolicy) throw new Error("Review policy changes require the dedicated user-authorized policy path");
       const mode = String(patch.reviewPolicy.mode || "");
-      if (!["full", "single-independent", "delta", "none"].includes(mode)) throw new Error("Review policy must be full, single-independent, delta, or none");
+      if (mode !== "full") throw new Error("Code review policy can only be set to full");
       const reason = patch.reviewPolicy.reason ? shortText(patch.reviewPolicy.reason, "Review policy reason", 500) : null;
-      if (mode !== "full" && !reason) throw new Error("A non-full review policy requires an explicit reason");
       const minProviderFamilies = Number(patch.reviewPolicy.minProviderFamilies || 0);
       if (!Number.isInteger(minProviderFamilies) || minProviderFamilies < 0 || minProviderFamilies > 4) throw new Error("Minimum provider families must be between 0 and 4");
       const minSolReviewers = Number(patch.reviewPolicy.minSolReviewers || 0);
