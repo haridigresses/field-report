@@ -13,9 +13,9 @@ Use the routing and authority boundaries in the projected canonical contract; do
 
 Use independent native Codex review tasks in proportion to risk and persist only completed exact-head evidence. If using Fable, first read `references/fable-review.md`. Match reasoning effort to the decision; use fresh-context structural challenge for premise-sensitive work rather than a permanent co-reviewer.
 
-Before every commit, including every patch commit, freeze the index and obtain fresh local deep-code and structural-challenge reviews of the exact base HEAD and staged tree from two distinct Sol tasks. Each reviewer records its own native identity and Sol model with `fr commit-review record`; commit only through `fr commit`. Any staged or base change requires a new panel. This local gate does not replace final fleet MRR.
+Before every commit, including every patch commit, freeze the index and run two fresh witnessed lanes with `fr commit-review run-sol`: one `deep-code-review` and one `structural-challenge`, each with its own prompt and evidence file. Field Report launches the fixed Sol model against the exact base HEAD and staged tree and derives reviewer provenance itself. `fr commit-review record` cannot satisfy this gate. Commit only through `fr commit`; any staged or base change requires a new panel. This local gate does not replace final fleet MRR.
 
-For AON and Arrusted full MRR, staff multiple distinct Sol reviewers plus at least one Fable reviewer through verified `claude-aws`, all on the exact final SHA. Another Anthropic model or an unverified Fable invocation does not satisfy the fleet.
+For full MRR on a Field Report-managed code project, staff multiple distinct Sol reviewers plus at least one Fable reviewer through verified `claude-aws`, all on the exact final SHA. Another Anthropic model or an unverified Fable invocation does not satisfy the fleet.
 
 Direct user instructions to a workstream are controlling for that workstream. Repository-coordinator portfolio authority does not override them unless the user explicitly delegates the decision.
 

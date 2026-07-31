@@ -4,8 +4,13 @@ import { evaluateCommitPanel } from "../src/commit-panel.mjs";
 
 const tree = "abcdef1234567890abcdef1234567890abcdef12";
 const baseHead = "1234567890abcdef1234567890abcdef12345678";
+const reviewerIds = {
+  deep: "019f0000-0000-7000-8000-000000000010",
+  structural: "019f0000-0000-7000-8000-000000000011",
+  same: "019f0000-0000-7000-8000-000000000012"
+};
 function review(role, reviewerId) {
-  return { type: "commit_review", metadata: { tree, baseHead, reviewRole: role, reviewerId, orchestratorAtReview: "implementer", model: "gpt-5.6-sol", verdict: "GO", reviewComplete: true } };
+  return { type: "commit_review", metadata: { tree, baseHead, reviewRole: role, reviewerId: reviewerIds[reviewerId] || reviewerId, reviewerIdentityVerified: true, provenanceVerified: true, evidenceDigest: "a".repeat(64), orchestratorAtReview: "implementer", provider: "openai", model: "gpt-5.6-sol", verdict: "GO", reviewComplete: true } };
 }
 
 test("commit panel requires two distinct local reviewers for the staged tree", () => {
@@ -32,7 +37,7 @@ test("commit panel rejects a non-Sol reviewer", () => {
   structural.metadata.model = "gpt-5.6-terra";
   const result = evaluateCommitPanel({ tree, baseHead, events: [review("deep-code-review", "deep"), structural] });
   assert.equal(result.ready, false);
-  assert.match(result.reasons.join(" "), /must come from a Sol agent/);
+  assert.match(result.reasons.join(" "), /missing local structural-challenge/);
 });
 
 test("commit panel rejects a fabricated Sol-like model name", () => {
@@ -40,4 +45,20 @@ test("commit panel rejects a fabricated Sol-like model name", () => {
   structural.metadata.model = "gpt-fake-sol";
   const result = evaluateCommitPanel({ tree, baseHead, events: [review("deep-code-review", "deep"), structural] });
   assert.equal(result.ready, false);
+});
+
+test("commit panel rejects malformed witnessed reviewer identities", () => {
+  const events = [review("deep-code-review", "not-a-native-task"), review("structural-challenge", "also-not-native")];
+  const result = evaluateCommitPanel({ tree, baseHead, events });
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /durable reviewer IDs/);
+});
+
+test("a newer witnessed NO_GO invalidates an older GO for the same tree", () => {
+  const noGo = review("deep-code-review", "019f0000-0000-7000-8000-000000000019");
+  noGo.metadata.verdict = "NO_GO";
+  noGo.metadata.findings = ["material defect"];
+  const result = evaluateCommitPanel({ tree, baseHead, events: [review("deep-code-review", "deep"), review("structural-challenge", "structural"), noGo] });
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /latest local deep-code-review review is not a finding-free GO/);
 });

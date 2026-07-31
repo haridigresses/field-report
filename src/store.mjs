@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { evaluateMrr } from "./mrr.mjs";
@@ -9,7 +10,10 @@ import { evaluateCommitPanel } from "./commit-panel.mjs";
 const exec = promisify(execFile);
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-export function createFieldReportStore(root) {
+export function createFieldReportStore(root, options = {}) {
+  const workflowRoot = options.workflowRoot || root;
+  let trustedCli = false;
+  try { trustedCli = realpathSync(process.argv[1]) === realpathSync(path.join(workflowRoot, "bin", "fr.mjs")); } catch {}
   const lockDir = path.join(root, ".field-report-write.lock");
   const sessionsFile = path.join(root, "config", "sessions.json");
 
@@ -78,7 +82,7 @@ export function createFieldReportStore(root) {
     return registered ? { ...stream, orchestrator: registered.id } : stream;
   }
 
-  async function saveSessionAlias(values) {
+  async function saveSessionAlias(values, options = {}) {
     return withWriteLock(async () => {
       const id = sessionValue(values.id);
       const alias = sessionValue(values.alias);
@@ -90,7 +94,10 @@ export function createFieldReportStore(root) {
       if (sessions.some((session) => (session.alias === alias || session.aliases?.includes(alias)) && session.id !== id)) throw new Error(`Session alias ${alias} is already assigned`);
       const existing = sessions.find((session) => session.id === id);
       const aliases = [...new Set([...(existing?.aliases || []), ...(existing?.alias && existing.alias !== alias ? [existing.alias] : [])])].filter((value) => value !== alias);
-      const record = { id, alias, ...(aliases.length ? { aliases } : {}), kind: values.kind || existing?.kind || "codex", updatedAt: new Date().toISOString() };
+      const reviewerMetadata = options.reviewerMetadataVerified === true
+        ? { model: sessionValue(values.model), provider: sessionValue(values.provider), reviewerMetadataVerified: true }
+        : { model: existing?.model || null, provider: existing?.provider || null, reviewerMetadataVerified: existing?.reviewerMetadataVerified === true };
+      const record = { id, alias, ...(aliases.length ? { aliases } : {}), kind: values.kind || existing?.kind || "codex", ...reviewerMetadata, updatedAt: new Date().toISOString() };
       const next = [...sessions.filter((session) => session.id !== id), record].sort((left, right) => left.alias.localeCompare(right.alias));
       await writeJsonAtomic(sessionsFile, { sessions: next });
       return record;
@@ -164,7 +171,7 @@ export function createFieldReportStore(root) {
     });
   }
 
-  function applyCanonicalPatch(stream, patch) {
+  function applyCanonicalPatch(stream, patch, allowReviewPolicy = false) {
     const next = { ...stream };
     if (patch.title != null) next.title = shortText(patch.title, "Title", 160);
     if (patch.summary != null) next.summary = shortText(patch.summary, "Summary", 1200);
@@ -175,15 +182,15 @@ export function createFieldReportStore(root) {
     if (patch.branch !== undefined) next.branch = patch.branch ? sessionValue(patch.branch) : null;
     if (patch.reviewState != null) next.reviewState = shortText(patch.reviewState, "Current gate", 500);
     if (patch.reviewPolicy != null) {
+      if (!allowReviewPolicy) throw new Error("Review policy changes require the dedicated user-authorized policy path");
       const mode = String(patch.reviewPolicy.mode || "");
-      if (!["full", "single-independent", "delta", "none"].includes(mode)) throw new Error("Review policy must be full, single-independent, delta, or none");
+      if (mode !== "full") throw new Error("Code review policy can only be set to full");
       const reason = patch.reviewPolicy.reason ? shortText(patch.reviewPolicy.reason, "Review policy reason", 500) : null;
-      if (mode !== "full" && !reason) throw new Error("A non-full review policy requires an explicit reason");
       const minProviderFamilies = Number(patch.reviewPolicy.minProviderFamilies || 0);
       if (!Number.isInteger(minProviderFamilies) || minProviderFamilies < 0 || minProviderFamilies > 4) throw new Error("Minimum provider families must be between 0 and 4");
       const minSolReviewers = Number(patch.reviewPolicy.minSolReviewers || 0);
       if (!Number.isInteger(minSolReviewers) || minSolReviewers < 0 || minSolReviewers > 10) throw new Error("Minimum Sol reviewers must be between 0 and 10");
-      next.reviewPolicy = { mode, reason, ...(minProviderFamilies ? { minProviderFamilies } : {}), ...(patch.reviewPolicy.requireReviewerIds === true ? { requireReviewerIds: true } : {}), ...(minSolReviewers ? { minSolReviewers } : {}), ...(patch.reviewPolicy.requireFableViaClaudeAws === true ? { requireFableViaClaudeAws: true } : {}) };
+      next.reviewPolicy = { mode, reason, ...(patch.reviewPolicy.userAuthorized === true ? { userAuthorized: true } : {}), ...(minProviderFamilies ? { minProviderFamilies } : {}), ...(patch.reviewPolicy.requireReviewerIds === true ? { requireReviewerIds: true } : {}), ...(minSolReviewers ? { minSolReviewers } : {}), ...(patch.reviewPolicy.requireFableViaClaudeAws === true ? { requireFableViaClaudeAws: true } : {}) };
     }
     if (patch.publicationHold !== undefined) next.publicationHold = patch.publicationHold ? { reason: shortText(patch.publicationHold.reason, "Publication hold reason", 500) } : null;
     if (patch.chunks != null) next.chunks = normalizeChunks(patch.chunks);
@@ -219,6 +226,8 @@ export function createFieldReportStore(root) {
   }
 
   async function appendWorkstreamEvent(id, event) {
+    const type = String(event.type || "update").toLowerCase();
+    if (["review_pass", "commit_review", "review_policy"].includes(type)) throw new Error(`${type} evidence requires its dedicated validated path`);
     return withWriteLock(async () => { await findWorkstream(id); return appendEventUnlocked(id, event); });
   }
 
@@ -287,19 +296,39 @@ export function createFieldReportStore(root) {
   async function updateWorkstream(id, patch, eventType = "updated") {
     return withWriteLock(async () => {
       const { streamFile, stream } = await findWorkstream(id);
+      if (patch.reviewPolicy !== undefined) throw new Error("Review policy may be changed only through the user-authorized policy command");
       if (patch.orchestrator !== undefined) patch = { ...patch, orchestrator: await sessionIdFor(patch.orchestrator) };
-      const semanticKeys = ["title", "summary", "status", "branch", "reviewState", "reviewPolicy", "publicationHold", "chunks", "prs", "references", "issuePrefixes", "commits", "questions", "orchestrator"];
+      const semanticKeys = ["title", "summary", "status", "branch", "reviewState", "publicationHold", "chunks", "prs", "references", "issuePrefixes", "commits", "questions", "orchestrator"];
       const requestedKeys = semanticKeys.filter((key) => patch[key] !== undefined);
       if (!requestedKeys.some((key) => JSON.stringify(stream[key]) !== JSON.stringify(patch[key]))) return stream;
       const next = applyCanonicalPatch(stream, patch);
-      if (stream.status !== "complete" && next.status === "complete" && (next.branch || (next.prs || []).length || (next.commits || []).length)) {
-        const current = await currentStream(id);
+      const current = await currentStream(id);
+      const hadCodeAnchor = [stream, current.stream].some((candidate) => candidate.branch || (candidate.prs || []).length || (candidate.commits || []).length);
+      const keepsCodeAnchor = next.branch || (next.prs || []).length || (next.commits || []).length;
+      if (hadCodeAnchor && !keepsCodeAnchor) throw new Error("A code workstream cannot clear all branch, PR, and commit anchors");
+      if (stream.status !== "complete" && next.status === "complete") {
+        if (!hadCodeAnchor) {
+          await writeJsonAtomic(streamFile, next);
+          await appendEventUnlocked(id, { type: eventType, actor: patch.updatedBy, text: patch.eventText || patch.summary || patch.reviewState || `${eventType} checkpoint` });
+          return next;
+        }
         const mrrStream = await withCanonicalOrchestrator({ ...current.stream, orchestrator: next.orchestrator, branch: next.branch, prs: current.stream.prs?.length ? current.stream.prs : next.prs, commits: next.commits, reviewPolicy: { ...(current.stream.reviewPolicy || {}), ...(next.reviewPolicy || {}) } });
         const mrr = evaluateMrr(mrrStream);
         if (!mrr.ready) throw new Error(`MRR completion gate is not satisfied: ${mrr.reasons.join("; ")}. Run fr mrr ${id}.`);
       }
       await writeJsonAtomic(streamFile, next);
       await appendEventUnlocked(id, { type: eventType, actor: patch.updatedBy, text: patch.eventText || patch.summary || patch.reviewState || `${eventType} checkpoint` });
+      return next;
+    });
+  }
+
+  async function setReviewPolicy(id, values) {
+    return withWriteLock(async () => {
+      const { streamFile, stream } = await findWorkstream(id);
+      const reviewPolicy = { ...values, userAuthorized: true };
+      const next = applyCanonicalPatch(stream, { reviewPolicy, updatedBy: values.updatedBy }, true);
+      await writeJsonAtomic(streamFile, next);
+      await appendEventUnlocked(id, { type: "review_policy", actor: values.updatedBy || "user", text: `Review policy set to ${reviewPolicy.mode}${reviewPolicy.reason ? `: ${reviewPolicy.reason}` : ""}` });
       return next;
     });
   }
@@ -351,17 +380,36 @@ export function createFieldReportStore(root) {
     if (!["full", "delta"].includes(reviewScope)) throw new Error("Review scope must be full or delta");
     const baseHead = values.baseHead || null;
     if (reviewScope === "delta" && !/^[0-9a-f]{40}$/i.test(baseHead || "")) throw new Error("A delta review requires --base-head with an exact 40-character SHA");
-    return { type: "review_pass", actor: values.reviewer || values.actor || "reviewer", text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`, metadata: { passId: values.passId || randomUUID(), head, verdict, reviewComplete: true, reviewer: values.reviewer || values.actor || "reviewer", reviewerId: sessionValue(values.reviewerId), provider: sessionValue(values.provider), route: sessionValue(values.route), provenanceVerified: values.provenanceVerified === true, evidenceDigest: sessionValue(values.evidenceDigest), model: values.model || "unknown", reasoning: values.reasoning || null, reviewRole, reviewScope, baseHead, independent: values.independent === true, findings: Array.isArray(values.findings) ? values.findings : [], unresolved: Array.isArray(values.unresolved) ? values.unresolved : [], mergeReadiness, structuralRisk, outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null, necessity: values.necessity || null, simplerPath: values.simplerPath || null, scopeDrift: values.scopeDrift || null, contractIntegrity: values.contractIntegrity || null, evidenceQuality: values.evidenceQuality || null } };
+    return { type: "review_pass", actor: values.reviewer || values.actor || "reviewer", text: values.summary || `${verdict} review pass at ${head.slice(0, 8)}`, metadata: { passId: values.passId || randomUUID(), head, verdict, reviewComplete: true, reviewer: values.reviewer || values.actor || "reviewer", reviewerId: sessionValue(values.reviewerId), reviewerIdentityVerified: values.reviewerIdentityVerified === true, provider: sessionValue(values.provider), route: sessionValue(values.route), provenanceVerified: values.provenanceVerified === true, evidenceDigest: sessionValue(values.evidenceDigest), evidencePath: sessionValue(values.evidencePath), model: values.model || "unknown", reasoning: values.reasoning || null, reviewRole, reviewScope, baseHead, independent: values.independent === true, findings: Array.isArray(values.findings) ? values.findings : [], unresolved: Array.isArray(values.unresolved) ? values.unresolved : [], mergeReadiness, structuralRisk, outcomeConfidence: Number.isFinite(Number(values.outcomeConfidence)) ? Number(values.outcomeConfidence) : null, necessity: values.necessity || null, simplerPath: values.simplerPath || null, scopeDrift: values.scopeDrift || null, contractIntegrity: values.contractIntegrity || null, evidenceQuality: values.evidenceQuality || null } };
   }
 
-  async function recordReviewPasses(id, values) {
+  async function recordReviewPasses(id, values, options = {}) {
     if (!Array.isArray(values) || !values.length) throw new Error("Review import requires at least one pass");
+    const nativeReviewerId = sessionValue(options.nativeReviewerId);
+    const witnessedFable = trustedCli ? options.witnessedFable : null;
+    const witnessedSol = trustedCli ? options.witnessedSol : null;
     const normalized = await Promise.all(values.map(async (value) => {
       const reviewer = value.reviewerId ? await resolveSession(value.reviewerId) : null;
-      return reviewer ? { ...value, reviewerId: reviewer.id } : value;
+      const verifiedFable = witnessedFable
+        && witnessedFable.reviewerId === value.reviewerId
+        && witnessedFable.evidenceDigest === value.evidenceDigest;
+      const verifiedSol = witnessedSol
+        && witnessedSol.reviewerId === value.reviewerId
+        && witnessedSol.evidenceDigest === value.evidenceDigest
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.reviewerId || "");
+      const reviewerIdentityVerified = reviewer?.kind === "codex" && nativeReviewerId === reviewer.id;
+      return {
+        ...value,
+        ...(reviewer ? { reviewerId: reviewer.id } : {}),
+        ...(verifiedSol ? { model: "gpt-5.6-sol", provider: "openai" } : reviewerIdentityVerified ? { model: reviewer?.reviewerMetadataVerified ? reviewer.model : "unknown", provider: reviewer?.reviewerMetadataVerified ? reviewer.provider : null } : {}),
+        reviewerIdentityVerified: verifiedSol || reviewerIdentityVerified,
+        provenanceVerified: verifiedFable || verifiedSol,
+        ...((verifiedFable || verifiedSol) ? { evidencePath: witnessedFable?.evidencePath || witnessedSol?.evidencePath } : {})
+      };
     }));
     return withWriteLock(async () => {
       const stream = await withCanonicalOrchestrator((await findWorkstream(id)).stream);
+      if ((witnessedFable || witnessedSol) && (!options.initiatorId || stream.orchestrator !== options.initiatorId)) throw new Error("Witnessed review initiator is no longer the assigned workstream orchestrator");
       const hasCodeAnchor = Boolean(stream.branch || stream.commits?.length || stream.prs?.length);
       if (!hasCodeAnchor) throw new Error("Review passes require a code workstream anchored by a branch, commit, or PR");
       const events = normalized.map(reviewPassEvent).map((event) => ({ ...event, metadata: { ...event.metadata, orchestratorAtReview: stream.orchestrator || null } }));
@@ -372,26 +420,37 @@ export function createFieldReportStore(root) {
     });
   }
 
-  async function recordReviewPass(id, values) {
-    return (await recordReviewPasses(id, [values]))[0];
+  async function recordReviewPass(id, values, options = {}) {
+    return (await recordReviewPasses(id, [values], options))[0];
   }
 
-  async function recordCommitReview(id, values) {
+  async function recordCommitReview(id, values, options = {}) {
     const tree = String(values.tree || "").trim();
     if (!/^[0-9a-f]{40}$/i.test(tree)) throw new Error("Commit review requires the exact 40-character staged tree SHA");
     const baseHead = String(values.baseHead || "").trim();
     if (!/^[0-9a-f]{40}$/i.test(baseHead)) throw new Error("Commit review requires the exact 40-character base HEAD");
     const reviewRole = values.reviewRole;
     if (!["deep-code-review", "structural-challenge"].includes(reviewRole)) throw new Error("Commit review role must be deep-code-review or structural-challenge");
-    if (String(values.verdict || "").toUpperCase() !== "GO") throw new Error("Only a completed GO may satisfy a local commit panel");
+    const verdict = String(values.verdict || "").toUpperCase();
+    if (!["GO", "NO_GO"].includes(verdict)) throw new Error("Commit review requires GO or NO_GO");
     const registeredReviewer = values.reviewerId ? await resolveSession(values.reviewerId) : null;
     const reviewerId = registeredReviewer?.id || sessionValue(values.reviewerId);
+    const nativeReviewerId = sessionValue(options.nativeReviewerId);
     if (!reviewerId) throw new Error("Commit review requires a durable reviewer ID");
     if (reviewerId.startsWith("cwd:")) throw new Error("Commit review requires a task or provider-run ID, not checkout identity");
     return withWriteLock(async () => {
       const stream = await withCanonicalOrchestrator((await findWorkstream(id)).stream);
       if (stream.orchestrator && reviewerId === stream.orchestrator) throw new Error("The workstream orchestrator cannot record an independent review of their own work");
-      const event = { type: "commit_review", actor: values.reviewer || reviewerId, text: shortText(values.summary, "Commit review summary", 1200), metadata: { tree, baseHead, verdict: "GO", reviewComplete: true, reviewRole, reviewer: values.reviewer || reviewerId, reviewerId, orchestratorAtReview: stream.orchestrator || null, provider: sessionValue(values.provider), model: values.model || "unknown" } };
+      const solWitness = trustedCli ? options.witnessedSol : null;
+      const witnessedSol = solWitness?.reviewerId === reviewerId && solWitness?.evidenceDigest === values.evidenceDigest && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(reviewerId || "");
+      if (witnessedSol && (!options.initiatorId || stream.orchestrator !== options.initiatorId)) throw new Error("Witnessed review initiator is no longer the assigned workstream orchestrator");
+      const reviewerIdentityVerified = witnessedSol || (registeredReviewer?.kind === "codex" && nativeReviewerId === reviewerId);
+      const verifiedMetadata = witnessedSol
+        ? { provider: "openai", model: "gpt-5.6-sol", evidenceDigest: values.evidenceDigest, evidencePath: solWitness.evidencePath, provenanceVerified: true }
+        : reviewerIdentityVerified
+        ? (registeredReviewer?.reviewerMetadataVerified ? { provider: registeredReviewer.provider, model: registeredReviewer.model } : { provider: null, model: "unknown" })
+        : { provider: sessionValue(values.provider), model: values.model || "unknown" };
+      const event = { type: "commit_review", actor: values.reviewer || reviewerId, text: shortText(values.summary, "Commit review summary", 1200), metadata: { tree, baseHead, verdict, reviewComplete: true, reviewRole, reviewer: values.reviewer || reviewerId, reviewerId, reviewerIdentityVerified, findings: Array.isArray(values.findings) ? values.findings : [], unresolved: Array.isArray(values.unresolved) ? values.unresolved : [], orchestratorAtReview: stream.orchestrator || null, ...verifiedMetadata } };
       return appendEventUnlocked(id, event);
     });
   }
@@ -402,7 +461,7 @@ export function createFieldReportStore(root) {
   }
 
   async function workflowContract(role = "shared") {
-    const markdown = await readFile(path.join(root, "docs", "fr-workflow.md"), "utf8");
+    const markdown = await readFile(path.join(workflowRoot, "docs", "fr-workflow.md"), "utf8");
     if (role === "all") return markdown;
     const sections = markdown.split(/^## /m).slice(1).map((part) => { const newline = part.indexOf("\n"); return { title: part.slice(0, newline).trim(), body: part.slice(newline + 1).trim() }; });
     const titles = { "repo-coordinator": "Repository coordinator", "workstream-orchestrator": "Workstream orchestrator", executor: "Executor", reviewer: "Reviewer" };
@@ -439,5 +498,5 @@ Explicitly test necessity, simpler designs, scope drift, ownership and failure c
     return results;
   }
 
-  return { appendWorkstreamEvent, commitPanelStatus, createWorkstream, currentStream, findWorkstream, listCanonicalWorkstreams, listSessions, mrrStatus, prepareAssessmentBriefs, recordCommitReview, recordDecision, recordQuestion, recordReviewPass, recordReviewPasses, resolveSession, saveSessionAlias, updateSessions, updateWorkstream, workflowContract };
+  return { appendWorkstreamEvent, commitPanelStatus, createWorkstream, currentStream, findWorkstream, listCanonicalWorkstreams, listSessions, mrrStatus, prepareAssessmentBriefs, recordCommitReview, recordDecision, recordQuestion, recordReviewPass, recordReviewPasses, resolveSession, saveSessionAlias, setReviewPolicy, updateSessions, updateWorkstream, workflowContract };
 }

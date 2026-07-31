@@ -16,7 +16,11 @@ Field Report stores durable Codex task UUIDs separately from their human-readabl
 node scripts/install.mjs
 ```
 
-This installs `fr` in `~/.local/bin`, the shared Field Report and coordination-role skills for Codex and Claude, Claude's `/fr` command, and quiet Claude session-start/stop hooks. Hooks automatically arm only when the repository and branch match exactly; otherwise they do nothing.
+This copies the clean exact local `origin/main` Field Report commit into a stable, commit-addressed release under `~/.local/share/field-report/releases`, writes an `fr` launcher with the absolute Node executable and release path, and keeps canonical workstream data in the main Field Report checkout. It also points the shared Field Report and coordination-role skills for Codex and Claude, Claude's `/fr` command, and quiet Claude session hooks at that exact release. Hooks automatically arm only when the repository and branch match exactly; otherwise they do nothing. The installer refuses uncommitted runtime, workflow, or skill changes.
+
+The installer adds one local managed pre-commit hook to each configured repository. It refuses to overwrite an unrelated hook. The hook exits immediately for humans. A native Codex task is blocked when it is unarmed, assigned to another project or branch, or lacks the required two-Sol panel for the exact base HEAD and staged tree. This is local protection only and does not add a GitHub check or affect teammates without Field Report.
+
+`fr doctor` reports the installed runtime, canonical data root, and Node executable. It is a compatibility diagnostic, not an onboarding prerequisite; assigned work still begins with the exact `fr onboard <outcome-id> --role <role>` flow.
 
 Common operations:
 
@@ -65,7 +69,7 @@ AF remains the linked issue ledger; Field Report links issue trees to durable ou
 
 `fr context` infers the repository, workstream, branch, head, delivery artifact, next gate, and MRR state from the checkout. External Git worktrees, including Codex-managed worktrees outside the configured checkout path, resolve through their shared Git common directory. `fr coordinate` and `fr catchup` infer the repository when no ID is supplied and accept the configured ID or repository-directory name. `fr coordinate` runs an initial catch-up; later calls report changes since the durable repository cursor plus outcomes needing attention.
 
-`fr assess` prepares a bounded, target-specific advisory brief for native Codex delegation; it does not send through AF and does not create MRR evidence. Gating review requires a separate role-specific delegation with truthful model/provider provenance. That reviewer uses `fr pass record` for one lane or `fr pass import` for a structured envelope. Review passes require a code anchor on the outcome—a branch, commit, or PR—so audit-only outcomes cannot accumulate code-readiness evidence.
+`fr assess` prepares a bounded, target-specific advisory brief for native Codex delegation; it does not send through AF and does not create MRR evidence. Code MRR authority comes only from witnessed `fr pass run-sol` and `fr pass run-fable` lanes. Manual `fr pass record` and `fr pass import` records remain advisory history: they can be inspected and reconciled, but cannot satisfy or veto the witnessed fleet gate. Review passes require a code anchor on the outcome—a branch, commit, or PR—so audit-only outcomes cannot accumulate code-readiness evidence.
 
 `fr checkpoint` automatically records the current full commit and fills an unassigned branch when the checkout maps unambiguously to the workstream repository. It does not copy GitHub facts into canonical state, and a semantically identical checkpoint is skipped instead of adding timeline noise. Pass `--evidence false` only when the checkout must not contribute Git evidence.
 
@@ -73,19 +77,21 @@ AF remains the linked issue ledger; Field Report links issue trees to durable ou
 
 Review passes record reviewer, model, verdict, exact head SHA, readiness/risk judgments, findings, and unresolved considerations. When the branch advances, prior passes remain in history but are counted as superseded rather than current-head evidence.
 
-Fable envelopes must explicitly record `review_complete: true`, `independent: true`, the canonical Fable model, `provider: "anthropic"`, `route: "claude-aws"`, and the SHA-256 digest of persisted raw evidence. A provider label alone is insufficient. This deliberately invalidates legacy Fable evidence lacking route/digest provenance; rerun it on the exact head.
+Run Fable with `fr pass run-fable <workstream-id> --head <sha> --prompt-file <review-prompt> --evidence-file <new-raw-stream-jsonl>`. Field Report verifies the checkout, derives the base from `origin/main`, rejects an empty branch diff, generates a durable diff/stat packet with fixed Git arguments, and launches Fable with only `Read`, `Grep`, and `Glob`. Provenance is recorded only after a completed envelope attests the exact head and derived base.
 
 For code outcomes, completion is guarded by an exact-head review policy. The default `full` policy requires independent `deep-code-review` and `structural-challenge` roles. AON and Arrusted require a full exact-head fleet containing at least two distinct Sol reviewers and one Fable reviewer verified through `claude-aws`; another Anthropic model is not a substitute. Only `GO` satisfies readiness.
 
-Every commit has a separate local staged-tree gate. Two distinct Sol reviewer tasks inspect the exact `{base HEAD, staged tree}` candidate and publish their own records. Agents commit through `fr commit`; changing the index or base invalidates the panel. Final fleet MRR, including verified Fable, is still required before declaring a PR ready.
+Every commit has a separate local staged-tree gate. Run two distinct witnessed lanes with `fr commit-review run-sol <id> --role deep-code-review|structural-challenge --prompt-file ... --evidence-file ...`. Field Report packets the exact `{base HEAD, staged tree}`, launches fixed `gpt-5.6-sol` under a read-only sandbox, persists JSONL and a schema-validated envelope, and derives the native reviewer UUID itself. Reviewer flags and desktop-task environment IDs cannot mint gating provenance. Changing the index or base invalidates the panel.
 
 Remote publication before MRR is draft-only review infrastructure. `fr release-check <id>` compares the checkout, live origin branch, GitHub PR, and MRR-reviewed head and exits nonzero unless the PR may be marked ready. It does not authorize merge.
 
-`fr policy --user-authorized` supports `single-independent`, `delta`, or `none` exceptions with an explicit reason. Delta passes record `--scope delta --base-head <full-sha>`. Only direct user invocation may change policy; agents can recommend an exception but cannot select it. Field Report rejects the first transition to `complete` while the selected policy is unsatisfied. Non-code outcomes without a branch, PR, or commits are exempt.
+Legacy `single-independent`, `delta`, and `none` policy records remain readable, but new reduced policies cannot be written and old records cannot waive the full Sol + Fable fleet for a code outcome. Non-code outcomes without a branch, PR, or commits are exempt.
 
 ## Start
 
-Requires Node.js 20+, `af`, and `gh` on `PATH`.
+Requires Node.js 20+ and `gh` on `PATH`. Agent Fixes is optional and is used only as a linked issue ledger when available.
+
+Installation never discards an unrelated repository pre-commit hook and never silently leaves a configured repository outside the local Codex commit gate. If a configured repository already has a hook, installation preserves it as an executable sibling and installs an exact wrapper that runs the preserved hook before Field Report. This affects only the machine installing Field Report; teammates without the local installation remain unaffected.
 
 ```bash
 npm run dev
