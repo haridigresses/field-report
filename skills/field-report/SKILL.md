@@ -1,42 +1,20 @@
 ---
 name: field-report
-description: Maintain Field Report workstreams with the fr CLI. Use when the user says Field Report, fr, track this work, create a workstream, record a question or decision, reconcile a workstream, update the portfolio, request an assessment, checkpoint progress, or keep an orchestrator session synchronized with durable outcome state.
+description: Operate the Field Report software-factory harness for durable outcomes, native agent delegation, exact-target review evidence, commit gates, and PR publication gates.
 ---
 
 # Field Report
 
-Use `fr` instead of editing Field Report JSON. The CLI writes canonical state locally without requiring the dashboard server. `docs/fr-workflow.md`, delivered through `fr workflow`, is the single normative behavior contract; this skill only explains how to operate the CLI.
+Field Report defines policy and evaluates evidence. It does not launch Codex, Claude, or provider processes.
 
-## Orient and arm
+1. Start with `fr context [workstream-id]`.
+2. Read `fr workflow <role>` completely before role work.
+3. Use native Codex delegation for owners, workers, and Sol reviewers. Use the user's configured `claude-aws` route for Fable.
+4. Obtain immutable role/target briefs with `fr review brief`; do not invent delegation IDs.
+5. Bind every brief with `fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>`, then record its completed structured envelope with `fr review record`.
+6. Require `fr gate commit` before every commit in a managed repository.
+7. Require `fr gate publish` before ready-for-review publication; `fr publish` may perform only that transition.
+8. Keep scores explanatory and reconcile every finding. Exact target changes stale prior evidence.
+9. Record only material state. Do not create lifecycle chatter.
 
-Start with `fr status`. Then use the narrowest entry point:
-
-- `fr context` for checkout-aware orientation.
-- `fr auto-onboard` when the current branch already maps to a workstream.
-- `fr coordinate <repo-id>` for a persistent repository coordinator.
-- `fr onboard <id> --role workstream-orchestrator|reviewer|executor` for a known workstream.
-- `fr create ...` only when the user asks to track a new durable outcome.
-
-Arming must return the Shared and active-role workflow contract. Read it before role actions; if it is unavailable, do not mutate role-owned state. Run `fr workflow` again after compaction. Repository coordinators use `fr catchup` when resuming or before portfolio decisions.
-
-Register a short global alias with `fr session alias <alias> [--id <task-uuid>]` and assign it with `fr assign <workstream-id> --session <alias-or-uuid>`. Previous aliases remain fallbacks. Mirror the primary alias to the Codex sidebar when task-title management is available; UUID identity remains authoritative.
-
-## Record durable state
-
-- Situation or gate changed: `fr checkpoint --summary "..." --status active --gate "..." --note "..."`
-- Full consistency pass: `fr reconcile --data '<json patch>' --note "..."`
-- Durable question: `fr ask "..."`
-- Decision: `fr decide Q1 "..."`
-- Execution evidence: `fr link issue <issue-id>` and `fr link commit <sha> --chunk <milestone-id>`.
-- Governing git context: `fr reference --path <repo-relative-path> --kind plan|contract|decision|review --quote "<short exact excerpt>"`.
-- Prepare non-gating advisory judgment with `fr assess <id>` and deliver the brief through native Codex task tooling.
-- For Sol MRR, use two witnessed exact-head runs: `fr pass run-sol <id> --head <sha> --role deep-code-review|structural-challenge --prompt-file ... --evidence-file ...`. Desktop-task `pass record` is advisory and cannot satisfy witnessed Sol provenance.
-- Full MRR for a Field Report-managed code project requires distinct witnessed Sol deep-code and structural runs plus at least one completed Fable review through the verified `claude-aws` route on the exact head. Run Fable only with `fr pass run-fable <id> --head <sha> --prompt-file <review-prompt> --evidence-file <new-raw-stream-jsonl>` so Field Report derives and packets the full `origin/main` branch diff before launching the read-only reviewer; generic pass import cannot mint Fable provenance.
-- Check the active gate with `fr mrr [id]`.
-- Before every commit, run `fr commit-review run-sol` twice with distinct deep-code and structural roles and fresh evidence paths. Field Report launches fixed read-only Sol reviewers against the exact staged packet. Then commit through `fr commit [id] --message "..."` without changing the index.
-- Use `fr hold [id] --reason "..."` and `fr unhold [id]` for publication blockers outside MRR.
-- Before marking a GitHub PR non-draft or ready, require `fr release-check [id]`. Branch pushes and draft PRs may precede MRR so remote evidence can run; non-draft publication may not.
-
-Use `fr show --json` before broad reconciliation. Let `fr checkpoint` infer checkout branch/head evidence; use `fr link commit` only for distinct chunk evidence. Link only git documents that materially constrain scope or contracts. Use `fr watch --once` for outcomes needing native follow-up.
-
-At assignment end, reconcile material changes and run `fr disarm`. Run `fr help` for full syntax.
+Repository hooks are explicit: `fr hook install|status|uninstall <project-id>`.
