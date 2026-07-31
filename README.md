@@ -45,6 +45,8 @@ fr hook install aon
 fr hook status aon
 ```
 
+Agents may self-register an unbound branch with `fr create`, or bind the correct existing outcome with `fr update --branch <current> --owner-task <current-task>`. This requires no coordinator approval; the commit gate prints exact commands when registration is missing.
+
 The hook asks `fr gate commit` to verify exact staged-tree evidence for every commit in the managed repository.
 
 ## Factory flow

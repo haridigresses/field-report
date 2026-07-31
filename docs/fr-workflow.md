@@ -15,7 +15,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 ### Commit policy
 
 - Every commit in a managed repository requires fresh `deep-code-review` and `structural-challenge` Sol reviews of the exact `{base HEAD, staged tree}`.
-- A managed hook intentionally blocks branches that are not assigned to exactly one Field Report workstream. Create or assign the workstream before committing; there is no policy bypass.
+- A managed hook intentionally blocks branches that are not assigned to exactly one Field Report workstream. Any agent may create a workstream for its own branch or self-bind the correct existing outcome with `fr update`; no coordinator or persistent-owner approval is required. The hook error prints the exact commands. Registration is self-service, not a policy bypass.
 - The two reviews require distinct reviewer task or subagent IDs. The owner cannot satisfy either independent lane.
 - Any staged-tree or base-HEAD change invalidates the reviews.
 - Field Report issues role-specific delegation briefs, binds each to the native task or provider-run ID, and validates returned envelopes. It never launches Codex or provider processes.

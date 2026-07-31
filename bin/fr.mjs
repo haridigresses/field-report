@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { createStore } from "../src/store.mjs";
 import { evaluateGate, miniEligibility, publicationReasons, SOL_ROLES, validateReview } from "../src/policy.mjs";
 import { checkout, commitTarget, diffInventory, finalTarget, markReady, pullRequest } from "../src/repository.mjs";
-import { hookText, marker, shouldRunPreserved } from "../src/hooks.mjs";
+import { hookText, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 
 const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -78,7 +78,11 @@ async function streamForCheckout(explicit = null) {
   if (explicit) return store.workstream(explicit);
   const [project, state, streams] = await Promise.all([projectForCheckout(), checkout(), store.workstreams()]);
   const matches = streams.filter((stream) => stream.project === project.id && stream.branch === state.branch);
-  if (matches.length !== 1) throw new Error(matches.length ? "Multiple workstreams match this branch; specify an ID" : "No workstream matches this branch; specify an ID or update its branch");
+  if (matches.length !== 1) {
+    if (matches.length) throw new Error(`Multiple workstreams match ${state.branch}; keep one branch binding and move the others with fr update <id> --branch <branch>`);
+    const owner = process.env.CODEX_THREAD_ID || "<your-task-id>";
+    throw new Error(`No workstream matches ${project.id}/${state.branch}. Self-register without coordinator approval: fr create ${quote("<id>")} --project ${project.id} --title ${quote("<title>")} --outcome ${quote("<outcome>")} --branch ${quote(state.branch)} --owner-task ${quote(owner)}. To self-bind an existing outcome: fr update ${quote("<id>")} --branch ${quote(state.branch)} --owner-task ${quote(owner)}`);
+  }
   return matches[0];
 }
 

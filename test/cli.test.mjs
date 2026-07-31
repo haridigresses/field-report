@@ -25,6 +25,9 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await exec("git", ["commit", "-m", "initial"], { cwd: repo });
 
   await run(["project", "add", "sample", "--label", "Sample", "--repo", repo], repo, state);
+  await exec("git", ["branch", "-m", "unsafe'quote"], { cwd: repo });
+  await assert.rejects(run(["gate", "commit"], repo, state), (error) => /Self-register without coordinator approval/.test(error.stderr || "") && (error.stderr || "").includes(`--branch 'unsafe'"'"'quote'`));
+  await exec("git", ["branch", "-m", "main"], { cwd: repo });
   await run(["create", "outcome", "--project", "sample", "--title", "Outcome", "--outcome", "Ship bounded change", "--branch", "main", "--owner-task", "owner-1"], repo, state);
   const brief = JSON.parse(await run(["delegate", "brief", "outcome", "--role", "executor", "--slice", "Implement one bounded change"], repo, state));
   assert.equal(brief.delegation.type, "work");

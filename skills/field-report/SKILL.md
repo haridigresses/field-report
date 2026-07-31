@@ -7,7 +7,7 @@ description: Operate the Field Report software-factory harness for durable outco
 
 Field Report defines policy and evaluates evidence. It does not launch Codex, Claude, or provider processes.
 
-1. Start with `fr context [workstream-id]`.
+1. Start with `fr context [workstream-id]`. If the branch is unregistered, follow the printed `fr create` or `fr update` self-binding command; agents do not need coordinator approval to register their own branch.
 2. Read `fr workflow <role>` completely before role work.
 3. Use native Codex delegation for owners, workers, and Sol reviewers. Use the user's configured `claude-aws` route for Fable.
 4. Obtain immutable role/target briefs with `fr review brief`; do not invent delegation IDs.
