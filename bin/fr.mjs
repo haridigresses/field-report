@@ -20,6 +20,7 @@ function usage() {
 
 fr init
 fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main]
+fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main]
 fr project list
 fr create <id> --project <id> --title <title> --outcome <text> [--branch <branch>] [--owner-task <id>]
 fr list [--project <id>]
@@ -131,6 +132,10 @@ async function main() {
     const record = await store.saveProject({ id: positional[1], label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base });
     return process.stdout.write(`Saved project ${record.id}. Install its commit gate explicitly with: fr hook install ${record.id}\n`);
   }
+  if (command === "project" && positional[0] === "update") {
+    const record = await store.updateProject(positional[1], { label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base });
+    return process.stdout.write(`Updated project ${record.id}.\n`);
+  }
   if (command === "project" && positional[0] === "list") return process.stdout.write(`${(await store.projects()).map((project) => `${project.id}\t${project.baseBranch}\t${project.repoPath}`).join("\n")}\n`);
 
   if (command === "create") {
@@ -157,7 +162,8 @@ async function main() {
   if (command === "update") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
     const pullRequests = flags.prs ? flags.prs.split(",").map(Number) : stream.pullRequests;
-    const next = await store.saveWorkstream({ ...stream, status: flags.status || stream.status, summary: flags.summary || stream.summary, next: flags.next ?? stream.next, branch: flags.branch ?? stream.branch, ownerTaskId: flags["owner-task"] ?? stream.ownerTaskId, pullRequests }, { type: "status", text: flags.summary || flags.next || `Status set to ${flags.status}`, actor: process.env.CODEX_THREAD_ID });
+    const eventText = flags.summary || flags.next || (flags.status ? `Status set to ${flags.status}` : flags.prs ? `Linked PRs ${flags.prs}` : flags.branch ? `Branch set to ${flags.branch}` : flags["owner-task"] ? `Owner task set to ${flags["owner-task"]}` : "Updated workstream metadata");
+    const next = await store.saveWorkstream({ ...stream, status: flags.status || stream.status, summary: flags.summary || stream.summary, next: flags.next ?? stream.next, branch: flags.branch ?? stream.branch, ownerTaskId: flags["owner-task"] ?? stream.ownerTaskId, pullRequests }, { type: "status", text: eventText, actor: process.env.CODEX_THREAD_ID });
     return process.stdout.write(`Updated ${next.id}.\n`);
   }
 

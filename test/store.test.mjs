@@ -15,6 +15,9 @@ test("store keeps canonical runtime state outside application source", async () 
   assert.equal(stream.reviewClass, "full");
   assert.equal((await store.events(stream.id)).length, 0);
   await assert.rejects(store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Duplicate", outcome: "Duplicate", summary: "Duplicate" }), /already exists/);
+  const project = await store.updateProject("sample", { baseBranch: "develop" });
+  assert.equal(project.baseBranch, "develop");
+  assert.equal(project.revision, 2);
 });
 
 test("store records only explicit material events", async () => {

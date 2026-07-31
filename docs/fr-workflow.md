@@ -15,6 +15,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 ### Commit policy
 
 - Every commit in a managed repository requires fresh `deep-code-review` and `structural-challenge` Sol reviews of the exact `{base HEAD, staged tree}`.
+- A managed hook intentionally blocks branches that are not assigned to exactly one Field Report workstream. Create or assign the workstream before committing; there is no policy bypass.
 - The two reviews require distinct reviewer task or subagent IDs. The owner cannot satisfy either independent lane.
 - Any staged-tree or base-HEAD change invalidates the reviews.
 - Field Report issues role-specific delegation briefs, binds each to the native task or provider-run ID, and validates returned envelopes. It never launches Codex or provider processes.
@@ -24,6 +25,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 
 - Every final candidate requires fresh distinct Sol `deep-code-review` and `structural-challenge` reviews of the exact final head and derived base.
 - Full review additionally requires Fable `anthropic.claude-fable-5` through `claude-aws`. Another Anthropic model or route does not substitute.
+- The required model and route identifiers are deliberately pinned in the harness policy; changing that absolute fleet is a reviewed policy/code change, not mutable project configuration.
 - Mini review may omit Fable only when deterministic size/path rules pass, the owner records a reason, and both final Sol reviewers independently affirm mini eligibility. Commit review is never reduced.
 - Final-head changes make all prior final reviews and mini classifications stale.
 - Publication requires a finding-free policy gate, exact checkout/PR head agreement, a clean checkout, an open draft PR, and no failing or pending GitHub checks.

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -56,7 +56,6 @@ export function createStore(root = defaultStateRoot()) {
       try { await mkdir(lock); break; }
       catch (error) {
         if (error.code !== "EEXIST") throw error;
-        try { if (Date.now() - (await stat(lock)).mtimeMs > 30_000) { await rm(lock, { recursive: true }); continue; } } catch {}
         if (Date.now() >= deadline) throw new Error("Another Field Report writer is active");
         await sleep(50);
       }
@@ -85,6 +84,7 @@ export function createStore(root = defaultStateRoot()) {
   async function saveProject(value) {
     const project = {
       schemaVersion: 2,
+      revision: 1,
       id: id(value.id, "Project ID"),
       label: requiredString(value.label || value.id, "Project label", 160),
       repoPath: path.resolve(requiredString(value.repoPath, "Repository path", 1000)),
@@ -102,6 +102,25 @@ export function createStore(root = defaultStateRoot()) {
       await writeJson(path.join(root, "projects", `${project.id}.json`), project);
     });
     return project;
+  }
+
+  async function updateProject(projectId, value) {
+    return locked(async () => {
+      const file = path.join(root, "projects", `${id(projectId, "Project ID")}.json`);
+      const previous = await readJson(file, null);
+      if (!previous) throw new Error(`Unknown project: ${projectId}`);
+      const project = {
+        ...previous,
+        revision: (previous.revision || 0) + 1,
+        label: value.label == null ? previous.label : requiredString(value.label, "Project label", 160),
+        repoPath: value.repoPath == null ? previous.repoPath : path.resolve(requiredString(value.repoPath, "Repository path", 1000)),
+        githubRepo: value.githubRepo == null ? previous.githubRepo : optionalString(value.githubRepo, "GitHub repository", 300),
+        baseBranch: value.baseBranch == null ? previous.baseBranch : requiredString(value.baseBranch, "Base branch", 200),
+        updatedAt: new Date().toISOString()
+      };
+      await writeJson(file, project);
+      return project;
+    });
   }
 
   async function project(projectId) {
@@ -168,11 +187,12 @@ export function createStore(root = defaultStateRoot()) {
 
   async function addDelegationEvent(workstreamId, delegationId, value) {
     const stream = await workstream(workstreamId);
-    const created = (await lines("delegations", stream.id)).find((item) => item.event === "created" && item.id === delegationId);
-    if (!created) throw new Error(`Unknown delegation: ${delegationId}`);
     const event = { ...value, id: delegationId, workstreamId: stream.id, at: new Date().toISOString() };
-    await locked(() => append("delegations", stream.id, event));
-    return event;
+    return locked(async () => {
+      const created = (await lines("delegations", stream.id)).find((item) => item.event === "created" && item.id === delegationId);
+      if (!created) throw new Error(`Unknown delegation: ${delegationId}`);
+      return append("delegations", stream.id, event);
+    });
   }
 
   async function addReview(workstreamId, value) {
@@ -191,5 +211,5 @@ export function createStore(root = defaultStateRoot()) {
     return saveWorkstream({ ...stream, questions }, { type: "decision", text: `${questionId}: ${answer}`, actor });
   }
 
-  return { root, init, projects, project, saveProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), addDelegation, addDelegationEvent, addReview, addDecision };
+  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), addDelegation, addDelegationEvent, addReview, addDecision };
 }

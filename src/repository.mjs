@@ -38,6 +38,10 @@ export async function finalTarget(project, workstream, cwd = process.cwd()) {
   const state = await checkout(cwd);
   await assertProjectCheckout(project, workstream, state);
   const base = `refs/remotes/origin/${project.baseBranch || "main"}`;
+  const localBaseTip = await run("git", ["rev-parse", base], state.root);
+  const remote = await run("git", ["ls-remote", "--exit-code", "origin", `refs/heads/${project.baseBranch || "main"}`], state.root);
+  const remoteBaseTip = remote.split(/\s+/)[0];
+  if (localBaseTip !== remoteBaseTip) throw new Error(`Local origin/${project.baseBranch || "main"} is stale; fetch origin before deriving the final review target`);
   const baseHead = await run("git", ["merge-base", base, state.head], state.root);
   if (baseHead === state.head) throw new Error(`Final review requires a non-empty branch diff from origin/${project.baseBranch || "main"}`);
   return { kind: "final", head: state.head, baseHead, branch: state.branch, repoRoot: state.root };
