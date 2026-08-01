@@ -33,7 +33,9 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   assert.equal(brief.delegation.type, "work");
   await run(["delegate", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "native-task-7"], repo, state);
   const completion = path.join(root, "completion.json");
-  await writeFile(completion, JSON.stringify({ delegationId: brief.delegation.id, taskId: "native-task-7", completed: true, checksRun: ["npm test"], unresolved: [], summary: "Done" }));
+  await writeFile(completion, JSON.stringify({ delegationId: brief.delegation.id, taskId: "native-task-7", completed: true, checksRun: ["npm test"], unresolved: [], summary: "Incomplete evidence" }));
+  await assert.rejects(run(["delegate", "complete", "outcome", "--delegation", brief.delegation.id, "--file", completion], repo, state), /skippedChecks/);
+  await writeFile(completion, JSON.stringify({ delegationId: brief.delegation.id, taskId: "native-task-7", completed: true, checksRun: ["npm test"], skippedChecks: [], scopeDeviations: [], changedPremises: [], acceptanceEvidence: ["Expected file changed"], unresolved: [], summary: "Done" }));
   await run(["delegate", "complete", "outcome", "--delegation", brief.delegation.id, "--file", completion], repo, state);
   const events = (await readFile(path.join(state, "delegations", "outcome.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
   assert.deepEqual(events.map((item) => item.event), ["created", "bound", "completed"]);
@@ -42,6 +44,7 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await writeFile(path.join(repo, "README.md"), "review me\n");
   await exec("git", ["add", "README.md"], { cwd: repo });
   const briefReview = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
+  assert.equal(briefReview.delegation.ownerTaskIdAtBrief, "owner-1");
   await run(["review", "bind", "outcome", "--delegation", briefReview.delegation.id, "--task-id", "review-task-1"], repo, state);
   const reviewFile = path.join(root, "review.json");
   const review = { reviewComplete: true, independent: true, delegationId: briefReview.delegation.id, reviewerTaskId: "review-task-1", kind: "commit", role: "deep-code-review", head: briefReview.delegation.head, baseHead: briefReview.delegation.baseHead, tree: briefReview.delegation.tree, provider: "openai", model: "gpt-5.6-sol", verdict: "GO", findings: [], unresolved: [], summary: "Reviewed", miniEligible: true, scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 90, evidenceConfidence: 90 }, scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low", implementationQuality: "Strong", evidenceConfidence: "Direct" } };
@@ -49,4 +52,5 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
   const recorded = JSON.parse((await readFile(path.join(state, "reviews", "outcome.jsonl"), "utf8")).trim());
   assert.equal(recorded.reviewerTaskId, "review-task-1");
+  assert.equal(recorded.ownerTaskIdAtBrief, "owner-1");
 });

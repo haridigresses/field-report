@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createStore } from "../src/store.mjs";
-import { evaluateGate, miniEligibility, publicationReasons, SOL_ROLES, validateReview } from "../src/policy.mjs";
+import { evaluateGate, miniEligibility, publicationReasons, SOL_ROLES, validateReview, workstreamPublicationReasons } from "../src/policy.mjs";
 import { checkout, commitTarget, diffInventory, finalTarget, markReady, pullRequest } from "../src/repository.mjs";
 import { hookText, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 
@@ -123,6 +123,7 @@ async function publishGate(stream) {
   const state = await checkout();
   const pr = await pullRequest(result.project, stream);
   const reasons = [...result.gate.reasons, ...publicationReasons({ project: result.project, target: result.target, checkout: state, pr })];
+  reasons.push(...workstreamPublicationReasons({ workstream: stream, workstreams: await store.workstreams(), pr }));
   return { ...result, pr, reasons, ready: reasons.length === 0 };
 }
 
@@ -202,7 +203,7 @@ async function main() {
     if (!["workstream-owner", "executor"].includes(role)) throw new Error("Delegation role must be workstream-owner or executor");
     const slice = requireValue(flags.slice, "Specify the bounded --slice to delegate");
     const delegation = await store.addDelegation(stream.id, { type: "work", role, slice, coordinatorTaskId: process.env.CODEX_THREAD_ID || null });
-    const prompt = `Work on Field Report outcome ${stream.id}: ${stream.outcome}\n\nYour bounded ${role} slice is: ${slice}\n\nWhen done, return a completion object with delegationId=${delegation.id}, taskId, completed=true|false, finalHead when code changed, checksRun[], unresolved[], and summary.`;
+    const prompt = `Work on Field Report outcome ${stream.id}: ${stream.outcome}\n\nYour bounded ${role} slice is: ${slice}\n\nWhen done, return a completion object with delegationId=${delegation.id}, taskId, completed=true|false, finalHead when code changed, checksRun[], skippedChecks[], scopeDeviations[], changedPremises[], acceptanceEvidence[], unresolved[], and summary.`;
     return process.stdout.write(`${JSON.stringify({ delegation, prompt }, null, 2)}\n`);
   }
   if (command === "delegate" && positional[0] === "bind") {
@@ -217,9 +218,10 @@ async function main() {
     if (envelope.delegationId !== delegationId || !String(envelope.taskId || "").trim()) throw new Error("Completion must match the delegation and identify the native task");
     const bound = (await store.delegations(stream.id)).findLast((item) => item.id === delegationId && item.event === "bound");
     if (!bound || bound.taskId !== envelope.taskId) throw new Error("Completion taskId must match the delegation's bound native task");
-    if (typeof envelope.completed !== "boolean" || !Array.isArray(envelope.checksRun) || !Array.isArray(envelope.unresolved) || !String(envelope.summary || "").trim()) throw new Error("Completion requires completed, checksRun[], unresolved[], and summary");
+    const evidenceArrays = ["checksRun", "skippedChecks", "scopeDeviations", "changedPremises", "acceptanceEvidence", "unresolved"];
+    if (typeof envelope.completed !== "boolean" || evidenceArrays.some((key) => !Array.isArray(envelope[key]) || !envelope[key].every((item) => typeof item === "string")) || !String(envelope.summary || "").trim()) throw new Error(`Completion requires completed, ${evidenceArrays.map((key) => `${key}[]`).join(", ")}, and summary`);
     if (envelope.finalHead != null && !SHA.test(envelope.finalHead)) throw new Error("finalHead must be an exact SHA");
-    await store.addDelegationEvent(stream.id, delegationId, { event: "completed", taskId: envelope.taskId, completed: envelope.completed, finalHead: envelope.finalHead || null, checksRun: [...envelope.checksRun], unresolved: [...envelope.unresolved], summary: envelope.summary });
+    await store.addDelegationEvent(stream.id, delegationId, { event: "completed", taskId: envelope.taskId, completed: envelope.completed, finalHead: envelope.finalHead || null, ...Object.fromEntries(evidenceArrays.map((key) => [key, [...envelope[key]]])), summary: envelope.summary });
     return process.stdout.write(`Recorded completion for ${delegationId}.\n`);
   }
 
@@ -230,7 +232,7 @@ async function main() {
     if (![...SOL_ROLES, "fable-challenge"].includes(role)) throw new Error("Unknown review role");
     if (kind === "commit" && role === "fable-challenge") throw new Error("Commit review uses Sol roles only");
     const target = await targetFor(stream, kind);
-    const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}) });
+    const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
     return process.stdout.write(`${JSON.stringify({ delegation, prompt: reviewPrompt(stream, delegation) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "bind") {
@@ -245,7 +247,7 @@ async function main() {
     const delegation = delegationEvents.find((item) => item.id === envelope.delegationId && item.event === "created" && item.type === "review");
     const bound = delegationEvents.findLast((item) => item.id === envelope.delegationId && item.event === "bound");
     if (!bound || bound.taskId !== envelope.reviewerTaskId) throw new Error("Review task ID must match its explicit delegation binding");
-    const review = await store.addReview(stream.id, validateReview(envelope, delegation));
+    const review = await store.addReview(stream.id, { ...validateReview(envelope, delegation), ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null });
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.\n`);
   }
   if (command === "review" && positional[0] === "status") {

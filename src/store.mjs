@@ -191,6 +191,10 @@ export function createStore(root = defaultStateRoot()) {
     return locked(async () => {
       const created = (await lines("delegations", stream.id)).find((item) => item.event === "created" && item.id === delegationId);
       if (!created) throw new Error(`Unknown delegation: ${delegationId}`);
+      if (value.event === "bound") {
+        const existing = (await lines("delegations", stream.id)).findLast((item) => item.event === "bound" && item.id === delegationId);
+        if (existing && existing.taskId !== value.taskId) throw new Error(`Delegation ${delegationId} is already bound to ${existing.taskId}`);
+      }
       return append("delegations", stream.id, event);
     });
   }

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { evaluateGate, miniEligibility, publicationReasons, validateReview } from "../src/policy.mjs";
+import { evaluateGate, miniEligibility, publicationReasons, validateReview, workstreamPublicationReasons } from "../src/policy.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const project = { commitGate: "required", miniReview: { maxFiles: 5, maxChangedLines: 120, riskyPaths: ["migrations/"] } };
@@ -15,6 +15,27 @@ test("commit gate requires distinct exact-target Sol reviewers", () => {
   assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full" }, project, reviews }).ready, true);
   reviews[1].reviewerTaskId = "reviewer-a";
   assert.match(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full" }, project, reviews }).reasons.join(" "), /distinct/);
+});
+
+test("a different reviewer cannot erase adverse evidence on the same exact target", () => {
+  const first = delegation("deep-code-review");
+  const replacement = delegation("deep-code-review");
+  const structural = delegation("structural-challenge");
+  const adverse = { ...envelope(first, "reviewer-a"), verdict: "NO_GO", findings: ["Fix the bug"] };
+  const reviews = [validateReview(adverse, first), validateReview(envelope(replacement, "reviewer-c"), replacement), validateReview(envelope(structural, "reviewer-b"), structural)];
+  assert.match(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full" }, project, reviews }).reasons.join(" "), /reviewer-a has unreconciled adverse evidence/);
+  reviews.push(validateReview(envelope(first, "reviewer-a"), first));
+  assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full" }, project, reviews }).ready, true);
+});
+
+test("owner identity at review time remains disqualifying after reassignment", () => {
+  const deep = delegation("deep-code-review");
+  const structural = delegation("structural-challenge");
+  const reviews = [
+    { ...validateReview(envelope(deep, "original-owner"), deep), ownerTaskIdAtBrief: "original-owner" },
+    { ...validateReview(envelope(structural, "reviewer-b"), structural), ownerTaskIdAtBrief: "original-owner" }
+  ];
+  assert.match(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full", ownerTaskId: "new-owner" }, project, reviews }).reasons.join(" "), /owner when its review brief was created/);
 });
 
 test("full final gate requires exact Fable route", () => {
@@ -49,4 +70,11 @@ test("publication rejects wrong base and every non-success check conclusion", ()
   assert.match(reasons.join(" "), /configured base/);
   assert.match(reasons.join(" "), /unsuccessful conclusion/);
   assert.match(reasons.join(" "), /reviewed branch/);
+});
+
+test("publication blocks open questions and duplicate PR ownership", () => {
+  const workstream = { id: "primary", project: "sample", questions: [{ id: "Q1", status: "open" }], pullRequests: [7] };
+  const reasons = workstreamPublicationReasons({ workstream, workstreams: [workstream, { id: "other", project: "sample", questions: [], pullRequests: [7] }], pr: { number: 7 } });
+  assert.match(reasons.join(" "), /open workstream questions: Q1/);
+  assert.match(reasons.join(" "), /also claimed by workstream other/);
 });
