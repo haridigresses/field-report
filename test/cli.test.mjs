@@ -45,6 +45,9 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await exec("git", ["add", "README.md"], { cwd: repo });
   const briefReview = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
   assert.equal(briefReview.delegation.ownerTaskIdAtBrief, "owner-1");
+  assert.match(briefReview.prompt, /findings as a string array/);
+  assert.match(briefReview.prompt, /scoreRationale as an object/);
+  assert.match(briefReview.prompt, /No prose or Markdown fences/);
   await run(["review", "bind", "outcome", "--delegation", briefReview.delegation.id, "--task-id", "review-task-1"], repo, state);
   const reviewFile = path.join(root, "review.json");
   const review = { reviewComplete: true, independent: true, delegationId: briefReview.delegation.id, reviewerTaskId: "review-task-1", kind: "commit", role: "deep-code-review", head: briefReview.delegation.head, baseHead: briefReview.delegation.baseHead, tree: briefReview.delegation.tree, provider: "openai", model: "gpt-5.6-sol", verdict: "GO", findings: [], unresolved: [], summary: "Reviewed", miniEligible: true, scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 90, evidenceConfidence: 90 }, scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low", implementationQuality: "Strong", evidenceConfidence: "Direct" } };
