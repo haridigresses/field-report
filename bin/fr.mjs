@@ -43,7 +43,7 @@ fr publish <id>
 fr hook install|status|uninstall <project-id>
 fr workflow [shared|coordinator|workstream|reviewer]
 
-Field Report defines targets, policy, evidence, and gates. Native Codex delegation and configured provider tools perform reviews.`;
+Field Report defines targets, policy, evidence, and gates. Native Codex delegation performs Sol reviews; invoke claude-aws through the user's shell entrypoint for Fable.`;
 }
 
 function parse(values) {
@@ -99,7 +99,7 @@ function reviewPrompt(stream, delegation) {
     ? "Inspect correctness, security, data integrity, error paths, regressions, and test adequacy."
     : delegation.role === "structural-challenge"
     ? "Challenge necessity, simplicity, duplicated authority, scope drift, maintainability, and whether you would choose this mechanism from scratch."
-    : "Perform an independent Fable structural and correctness challenge through the configured claude-aws route.";
+    : "Invoke claude-aws through the user's shell entrypoint and perform an independent Fable structural and correctness challenge.";
   return `Review Field Report workstream ${stream.id} as ${delegation.role}. Target ${target}. ${rubric}\n\nReturn one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, kind=${delegation.kind}, role=${delegation.role}, head, baseHead${delegation.tree ? ", tree" : ""}, provider, model, route when applicable, verdict=GO|NO_GO, findings[], unresolved[], summary, miniEligible${delegation.role === "fable-challenge" ? " (omit for Fable)" : " boolean"}, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence}, each an integer 0-100, and scoreRationale with a concise explanation for each score. Do not modify the candidate.`;
 }
 
@@ -202,7 +202,7 @@ async function main() {
     if (!["workstream-owner", "executor"].includes(role)) throw new Error("Delegation role must be workstream-owner or executor");
     const slice = requireValue(flags.slice, "Specify the bounded --slice to delegate");
     const delegation = await store.addDelegation(stream.id, { type: "work", role, slice, coordinatorTaskId: process.env.CODEX_THREAD_ID || null });
-    const prompt = `Work on Field Report outcome ${stream.id}: ${stream.outcome}\n\nYour bounded ${role} slice is: ${slice}\n\nUse native agent capabilities to do the work. Field Report does not launch or supervise you. When done, return a completion object with delegationId=${delegation.id}, taskId, completed=true|false, finalHead when code changed, checksRun[], unresolved[], and summary.`;
+    const prompt = `Work on Field Report outcome ${stream.id}: ${stream.outcome}\n\nYour bounded ${role} slice is: ${slice}\n\nWhen done, return a completion object with delegationId=${delegation.id}, taskId, completed=true|false, finalHead when code changed, checksRun[], unresolved[], and summary.`;
     return process.stdout.write(`${JSON.stringify({ delegation, prompt }, null, 2)}\n`);
   }
   if (command === "delegate" && positional[0] === "bind") {

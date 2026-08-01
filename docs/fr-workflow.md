@@ -1,6 +1,6 @@
 # Field Report Factory Contract
 
-Field Report is the user's software-factory policy and evidence harness. It defines obligations and evaluates gates. Native Codex delegation and the user's configured provider tools execute work and reviews.
+Field Report is the user's software-factory policy and evidence harness. It defines obligations and evaluates gates. Native Codex delegation executes work and Sol reviews. Required Fable review uses `claude-aws` through the user's shell entrypoint.
 
 ## Shared contract
 
@@ -18,7 +18,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 - A managed hook intentionally blocks branches that are not assigned to exactly one Field Report workstream. Any agent may create a workstream for its own branch or self-bind the correct existing outcome with `fr update`; no coordinator or persistent-owner approval is required. The hook error prints the exact commands. Registration is self-service, not a policy bypass.
 - The two reviews require distinct reviewer task or subagent IDs. The owner cannot satisfy either independent lane.
 - Any staged-tree or base-HEAD change invalidates the reviews.
-- Field Report issues role-specific delegation briefs, binds each to the native task or provider-run ID, and validates returned envelopes. It never launches Codex or provider processes.
+- Field Report issues role-specific delegation briefs, binds each to the native task or provider-run ID, and validates returned envelopes.
 - A managed repository hook asks `fr gate commit` whether the exact evidence exists. Hooks are installed explicitly per repository.
 
 ### Final review and publication policy
@@ -51,7 +51,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 
 - Own one approved outcome and its plan. Delegate implementation and reviews through native Codex tools.
 - Before every commit, request two role-specific Sol briefs, launch distinct subagents, bind each brief to its native task ID, record their envelopes, reconcile findings, and confirm `fr gate commit` is READY.
-- Before publication, request fresh final-head Sol briefs and, unless validly mini, a Fable brief. Invoke `claude-aws` through the user's configured shell/tooling rather than through Field Report. Bind every brief to its native task or provider-run ID before recording evidence.
+- Before publication, request fresh final-head Sol briefs and, unless validly mini, a Fable brief. Invoke `claude-aws` through the user's shell entrypoint; if it is a shell alias, use an interactive shell. Bind every brief to its native task or provider-run ID before recording evidence.
 - Verify the actual diff, checks, target identities, and reviewer claims. Do not mark status complete while required evidence is missing or stale.
 - Escalate changed premises and product-coupled mechanism changes before accumulating repair machinery.
 
