@@ -1,0 +1,85 @@
+const SHA = /^[0-9a-f]{40}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SCORE_KEYS = ["mergeReadiness", "structuralRisk", "implementationQuality", "evidenceConfidence"];
+export const SOL_ROLES = ["deep-code-review", "structural-challenge"];
+
+function assertScore(value, key) {
+  if (!Number.isInteger(value) || value < 0 || value > 100) throw new Error(`${key} must be an integer from 0 to 100`);
+}
+
+export function validateReview(input, delegation) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Review envelope must be an object");
+  if (input.reviewComplete !== true || input.independent !== true) throw new Error("Review requires reviewComplete=true and independent=true");
+  if (!["GO", "NO_GO"].includes(input.verdict)) throw new Error("Review verdict must be GO or NO_GO");
+  if (!["commit", "final"].includes(input.kind)) throw new Error("Review kind must be commit or final");
+  if (![...SOL_ROLES, "fable-challenge"].includes(input.role)) throw new Error("Unknown review role");
+  if (!UUID.test(input.delegationId || "") || input.delegationId !== delegation?.id) throw new Error("Review must reference its exact Field Report delegation ID");
+  if (!String(input.reviewerTaskId || "").trim()) throw new Error("Review requires a reviewer task or provider-run ID");
+  if (!SHA.test(input.head || "") || !SHA.test(input.baseHead || "")) throw new Error("Review requires exact head and baseHead SHAs");
+  if (input.kind === "commit" && !SHA.test(input.tree || "")) throw new Error("Commit review requires the exact staged tree SHA");
+  if (input.kind === "final" && input.tree != null) throw new Error("Final review must not include a staged tree");
+  if (delegation.kind !== input.kind || delegation.role !== input.role || delegation.head !== input.head || delegation.baseHead !== input.baseHead || (input.kind === "commit" && delegation.tree !== input.tree)) throw new Error("Review target does not match its delegation");
+  if (input.role === "fable-challenge") {
+    if (input.provider !== "anthropic" || input.model !== "anthropic.claude-fable-5" || input.route !== "claude-aws") throw new Error("Fable review requires anthropic.claude-fable-5 through claude-aws");
+  } else if (input.provider !== "openai" || input.model !== "gpt-5.6-sol") throw new Error("Sol review requires gpt-5.6-sol through OpenAI");
+  if (!Array.isArray(input.findings) || !input.findings.every((item) => typeof item === "string")) throw new Error("Review findings must be a string array");
+  if (!Array.isArray(input.unresolved) || !input.unresolved.every((item) => typeof item === "string")) throw new Error("Review unresolved must be a string array");
+  if (!String(input.summary || "").trim()) throw new Error("Review requires a summary");
+  for (const key of SCORE_KEYS) assertScore(input.scores?.[key], key);
+  for (const key of SCORE_KEYS) if (!String(input.scoreRationale?.[key] || "").trim()) throw new Error(`${key} requires explanatory rationale`);
+  if (input.role !== "fable-challenge" && typeof input.miniEligible !== "boolean") throw new Error("Sol reviews must state miniEligible true or false");
+  return { ...input, findings: [...input.findings], unresolved: [...input.unresolved], scores: { ...input.scores } };
+}
+
+const accepted = (review) => review?.legacy !== true && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && !(review.findings || []).length && !(review.unresolved || []).length;
+
+function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
+
+export function evaluateGate({ kind, target, workstream, reviews }) {
+  const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
+  const sol = Object.fromEntries(SOL_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
+  const fable = latestFor(matching, (review) => review.role === "fable-challenge");
+  const reasons = [];
+  for (const role of SOL_ROLES) {
+    if (!sol[role]) reasons.push(`missing ${role} Sol review`);
+    else if (!accepted(sol[role])) reasons.push(`${role} is not a finding-free GO`);
+  }
+  const solIds = SOL_ROLES.map((role) => sol[role]?.reviewerTaskId).filter(Boolean);
+  if (solIds.length === 2 && new Set(solIds).size !== 2) reasons.push("Sol roles require distinct reviewer task IDs");
+  if (workstream.ownerTaskId && solIds.includes(workstream.ownerTaskId)) reasons.push("Workstream owner cannot satisfy an independent Sol review lane");
+  const mini = kind === "final" && workstream.reviewClass === "mini";
+  if (mini) {
+    if (!workstream.miniClassification?.eligible || workstream.miniClassification?.head !== target.head || workstream.miniClassification?.baseHead !== target.baseHead) reasons.push("mini classification is missing or stale");
+    for (const role of SOL_ROLES) if (sol[role] && sol[role].miniEligible !== true) reasons.push(`${role} did not affirm mini eligibility`);
+  }
+  if (kind === "final" && !mini) {
+    if (!fable) reasons.push("missing Fable review through claude-aws");
+    else if (!accepted(fable)) reasons.push("Fable review is not a finding-free GO");
+  }
+  return { ready: reasons.length === 0, kind, target, reviewClass: mini ? "mini" : "full", reasons, lanes: { ...sol, fable: kind === "final" ? fable : null } };
+}
+
+export function miniEligibility({ files, additions, deletions, project }) {
+  const policy = project.miniReview;
+  const risky = files.filter((file) => policy.riskyPaths.some((pattern) => file.toLowerCase().includes(pattern.toLowerCase())));
+  const reasons = [];
+  if (files.length > policy.maxFiles) reasons.push(`${files.length} changed files exceeds ${policy.maxFiles}`);
+  if (additions + deletions > policy.maxChangedLines) reasons.push(`${additions + deletions} changed lines exceeds ${policy.maxChangedLines}`);
+  if (risky.length) reasons.push(`high-risk paths changed: ${risky.join(", ")}`);
+  return { eligible: reasons.length === 0, files, additions, deletions, risky, reasons };
+}
+
+export function publicationReasons({ project, target, checkout, pr }) {
+  const reasons = [];
+  if (checkout.dirty) reasons.push("checkout has uncommitted changes");
+  if (pr.state !== "OPEN") reasons.push(`PR #${pr.number} is not open`);
+  if (!pr.isDraft) reasons.push(`PR #${pr.number} is already non-draft`);
+  if (pr.headRefOid !== target.head) reasons.push("PR head does not match the reviewed exact head");
+  if (pr.headRefName !== target.branch) reasons.push(`PR head branch ${pr.headRefName} does not match reviewed branch ${target.branch}`);
+  if (pr.baseRefName !== project.baseBranch) reasons.push(`PR base ${pr.baseRefName} does not match configured base ${project.baseBranch}`);
+  const accepted = new Set(["SUCCESS", "SKIPPED", "NEUTRAL"]);
+  const checks = pr.statusCheckRollup || [];
+  if (checks.some((check) => check.conclusion && !accepted.has(check.conclusion))) reasons.push("GitHub checks include an unsuccessful conclusion");
+  if (checks.some((check) => !check.conclusion && !accepted.has(check.state))) reasons.push("GitHub checks are incomplete or unsuccessful");
+  return reasons;
+}

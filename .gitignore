@@ -1,11 +1,6 @@
 # macOS metadata.
 .DS_Store
 
-# Generated local projection and optional refresh history.
-data/current.json
-snapshots/*.json
-
-# Atomic-write scratch files.
-data/*.next
-snapshots/*.next
-.field-report-write.lock/
+# Field Report state belongs under ~/.local/state/field-report, never in source.
+.field-report-state/
+projection.json
