@@ -36,3 +36,14 @@ test("store rejects a stale read-modify-write instead of losing a concurrent upd
   await store.saveWorkstream({ ...first, summary: "Newer update" });
   await assert.rejects(store.saveWorkstream({ ...first, next: "Stale update" }), /changed since it was read/);
 });
+
+test("store rejects rebinding a delegation to a different task", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-binding-"));
+  const store = createStore(root);
+  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
+  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
+  const delegation = await store.addDelegation("sample-outcome", { type: "work" });
+  await store.addDelegationEvent("sample-outcome", delegation.id, { event: "bound", taskId: "task-a" });
+  await store.addDelegationEvent("sample-outcome", delegation.id, { event: "bound", taskId: "task-a" });
+  await assert.rejects(store.addDelegationEvent("sample-outcome", delegation.id, { event: "bound", taskId: "task-b" }), /already bound to task-a/);
+});

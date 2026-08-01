@@ -11,6 +11,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 - Challenge every proposed mechanism for necessity, simpler paths, duplicated authority, noise, and continuing coordination cost.
 - Preserve user merge authority. A Field Report publish gate may authorize marking a draft PR ready; it never authorizes merge.
 - Scores are explanatory. A high score cannot override a NO_GO, finding, unresolved question, missing reviewer, stale target, or failed deterministic gate.
+- A reviewer’s latest adverse evidence for an exact target remains blocking until that same reviewer records a finding-free GO or the target changes. A different reviewer cannot erase it.
 
 ### Commit policy
 
@@ -29,6 +30,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 - Mini review may omit Fable only when deterministic size/path rules pass, the owner records a reason, and both final Sol reviewers independently affirm mini eligibility. Commit review is never reduced.
 - Final-head changes make all prior final reviews and mini classifications stale.
 - Publication requires a finding-free policy gate, exact checkout/PR head agreement, a clean checkout, an open draft PR, and no failing or pending GitHub checks.
+- Publication also requires no open workstream questions and exactly one workstream claiming the PR.
 - `fr gate publish` reports the verdict. `fr publish` recomputes it and may perform only the ready-for-review transition.
 
 ### Review envelope
@@ -37,6 +39,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 - Scores are integers from 0–100: merge readiness, structural risk, implementation quality, and evidence confidence. Every score requires its own concise rationale.
 - Use stable anchors: 0–24 critical, 25–49 weak/high concern, 50–74 mixed/material concern, 75–89 strong/low concern, and 90–100 exceptional/minimal concern. Structural risk runs in the opposite direction: higher is worse. Scores describe the evidence; they never decide a gate.
 - Field Report validates identity shape and target consistency to prevent ordinary mistakes. It does not claim cryptographic authentication against a local user who can edit state.
+- Review briefs snapshot the workstream owner before review begins, and a delegation cannot be rebound to a different task ID.
 
 ## Repository coordinator
 
@@ -54,6 +57,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 - Before publication, request fresh final-head Sol briefs and, unless validly mini, a Fable brief. Invoke `claude-aws` through the user's shell entrypoint; if it is a shell alias, use an interactive shell. Bind every brief to its native task or provider-run ID before recording evidence.
 - Verify the actual diff, checks, target identities, and reviewer claims. Do not mark status complete while required evidence is missing or stale.
 - Escalate changed premises and product-coupled mechanism changes before accumulating repair machinery.
+- Require worker completions to state checks run, checks skipped, scope deviations, changed premises, acceptance evidence, and unresolved concerns; empty arrays are explicit evidence, not omitted fields.
 
 ## Reviewer
 

@@ -35,11 +35,20 @@ const accepted = (review) => review?.legacy !== true && review?.verdict === "GO"
 
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
 
+function latestByReviewerAndRole(reviews) {
+  const latest = new Map();
+  for (const review of reviews) latest.set(`${review.role}\0${review.reviewerTaskId}`, review);
+  return [...latest.values()];
+}
+
 export function evaluateGate({ kind, target, workstream, reviews }) {
   const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
   const sol = Object.fromEntries(SOL_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
   const fable = latestFor(matching, (review) => review.role === "fable-challenge");
   const reasons = [];
+  for (const review of latestByReviewerAndRole(matching)) {
+    if (!accepted(review)) reasons.push(`${review.role} review by ${review.reviewerTaskId} has unreconciled adverse evidence`);
+  }
   for (const role of SOL_ROLES) {
     if (!sol[role]) reasons.push(`missing ${role} Sol review`);
     else if (!accepted(sol[role])) reasons.push(`${role} is not a finding-free GO`);
@@ -47,6 +56,9 @@ export function evaluateGate({ kind, target, workstream, reviews }) {
   const solIds = SOL_ROLES.map((role) => sol[role]?.reviewerTaskId).filter(Boolean);
   if (solIds.length === 2 && new Set(solIds).size !== 2) reasons.push("Sol roles require distinct reviewer task IDs");
   if (workstream.ownerTaskId && solIds.includes(workstream.ownerTaskId)) reasons.push("Workstream owner cannot satisfy an independent Sol review lane");
+  for (const review of Object.values(sol).filter(Boolean)) {
+    if (review.ownerTaskIdAtBrief && review.ownerTaskIdAtBrief === review.reviewerTaskId) reasons.push(`${review.role} reviewer was the workstream owner when its review brief was created`);
+  }
   const mini = kind === "final" && workstream.reviewClass === "mini";
   if (mini) {
     if (!workstream.miniClassification?.eligible || workstream.miniClassification?.head !== target.head || workstream.miniClassification?.baseHead !== target.baseHead) reasons.push("mini classification is missing or stale");
@@ -81,5 +93,14 @@ export function publicationReasons({ project, target, checkout, pr }) {
   const checks = pr.statusCheckRollup || [];
   if (checks.some((check) => check.conclusion && !accepted.has(check.conclusion))) reasons.push("GitHub checks include an unsuccessful conclusion");
   if (checks.some((check) => !check.conclusion && !accepted.has(check.state))) reasons.push("GitHub checks are incomplete or unsuccessful");
+  return reasons;
+}
+
+export function workstreamPublicationReasons({ workstream, workstreams, pr }) {
+  const reasons = [];
+  const openQuestions = workstream.questions.filter((question) => question.status === "open");
+  if (openQuestions.length) reasons.push(`open workstream questions: ${openQuestions.map((question) => question.id).join(", ")}`);
+  const duplicateOwners = workstreams.filter((other) => other.id !== workstream.id && other.project === workstream.project && other.pullRequests.includes(pr.number));
+  if (duplicateOwners.length) reasons.push(`PR #${pr.number} is also claimed by workstream${duplicateOwners.length === 1 ? "" : "s"} ${duplicateOwners.map((other) => other.id).join(", ")}`);
   return reasons;
 }
