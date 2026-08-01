@@ -2,7 +2,7 @@
 
 Field Report is a local software-factory policy and evidence harness. It keeps durable outcome state, gives coordinators and workstream owners canonical operating instructions, issues exact-target review briefs, validates completed evidence, and evaluates commit and publication gates.
 
-Field Report does not execute Codex, Claude, or provider processes. Coordinators launch native Codex agents; configured provider tools execute reviews; Field Report verifies that the required work was completed against the correct target.
+Field Report defines policy and evaluates evidence. Coordinators launch native Codex agents. Required Fable review uses `claude-aws` through the user's shell entrypoint.
 
 ## Core policies
 
@@ -68,7 +68,7 @@ fr gate commit aon-example
 fr review brief aon-example --kind final --role deep-code-review
 fr review brief aon-example --kind final --role structural-challenge
 fr review brief aon-example --kind final --role fable-challenge
-# Invoke configured claude-aws externally for the Fable brief.
+# Invoke claude-aws through the user's shell entrypoint for the Fable brief.
 # Bind every final brief to its native task or provider-run ID before recording it.
 fr review status aon-example --kind final
 fr gate publish aon-example
