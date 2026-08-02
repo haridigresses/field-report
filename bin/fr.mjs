@@ -100,7 +100,7 @@ function reviewPrompt(stream, delegation) {
     : delegation.role === "structural-challenge"
     ? "Challenge necessity, simplicity, duplicated authority, scope drift, maintainability, and whether you would choose this mechanism from scratch."
     : "Invoke claude-aws through the user's shell entrypoint and perform an independent Fable structural and correctness challenge.";
-  return `Review Field Report workstream ${stream.id} as ${delegation.role}. Target ${target}. ${rubric}\n\nReturn only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, kind=${delegation.kind}, role=${delegation.role}, head, baseHead${delegation.tree ? ", tree" : ""}, provider, model, route when applicable, verdict=GO|NO_GO, findings as a string array, unresolved as a string array, summary, miniEligible${delegation.role === "fable-challenge" ? " (omit for Fable)" : " boolean"}, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence}, each an integer 0-100, and scoreRationale as an object with one concise string for each score key. No prose or Markdown fences. Do not modify the candidate.`;
+  return `Review Field Report workstream ${stream.id} as ${delegation.role}. Target ${target}. ${rubric}\n\nReturn only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, kind=${delegation.kind}, role=${delegation.role}, head, baseHead${delegation.tree ? ", tree" : ""}, provider, model, route when applicable, verdict=GO|NO_GO, findings as a string array, unresolved as a string array, summary, miniEligible${delegation.role === "fable-challenge" ? " (omit for Fable)" : " boolean"}, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale as an object with one concise string for each score key, necessity=necessary|questionable_roi, simplerPath as a concise explanation of alternatives considered and discarded or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences. Do not modify the candidate.`;
 }
 
 async function gateFor(stream, kind) {
@@ -110,11 +110,27 @@ async function gateFor(stream, kind) {
   return { project, target, gate };
 }
 
-function printGate(stream, result) {
+function evidenceLines(gate) {
+  return Object.values(gate.lanes).filter(Boolean).flatMap((review) => {
+    const lines = [
+      `${review.role}: ${review.verdict} by ${review.reviewerTaskId}`,
+      `  Scores: readiness ${review.scores?.mergeReadiness}% · structural risk ${review.scores?.structuralRisk}% · implementation quality ${review.scores?.implementationQuality}% · evidence confidence ${review.scores?.evidenceConfidence}% · outcome confidence ${review.scores?.outcomeConfidence}%`,
+      `  Signals: necessity ${review.necessity} · scope drift ${review.scopeDrift} · contract integrity ${review.contractIntegrity} · evidence quality ${review.evidenceQuality}`,
+      `  Simpler path: ${review.simplerPath}`,
+      `  Summary: ${review.summary}`
+    ];
+    if (review.findings?.length) lines.push(`  Findings: ${review.findings.join(" | ")}`);
+    if (review.unresolved?.length) lines.push(`  Unresolved: ${review.unresolved.join(" | ")}`);
+    return lines;
+  });
+}
+
+function printGate(stream, result, includeEvidence = false) {
   const { gate, target } = result;
   const label = target.tree || target.head;
   const lines = [`${stream.id} ${gate.kind} gate at ${label.slice(0, 12)}: ${gate.ready ? "READY" : "BLOCKED"}`, `Review class: ${gate.reviewClass}`];
   if (gate.reasons.length) lines.push(...gate.reasons.map((reason) => `- ${reason}`));
+  if (includeEvidence) lines.push(...evidenceLines(gate));
   return lines.join("\n");
 }
 
@@ -253,7 +269,7 @@ async function main() {
   if (command === "review" && positional[0] === "status") {
     const stream = await store.workstream(positional[1]);
     const result = await gateFor(stream, requireValue(flags.kind, "Specify --kind commit|final"));
-    return process.stdout.write(`${printGate(stream, result)}\n`);
+    return process.stdout.write(`${printGate(stream, result, true)}\n`);
   }
 
   if (command === "gate" && positional[0] === "commit") {
@@ -266,7 +282,7 @@ async function main() {
   if (command === "gate" && positional[0] === "publish") {
     const stream = await store.workstream(requireValue(positional[1], "Specify a workstream ID"));
     const result = await publishGate(stream);
-    const lines = [`${stream.id} publish gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "PUBLISHABLE" : "BLOCKED"}`, `PR #${result.pr.number}: ${result.pr.isDraft ? "draft" : "ready"}`, ...result.reasons.map((reason) => `- ${reason}`)];
+    const lines = [`${stream.id} publish gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "PUBLISHABLE" : "BLOCKED"}`, `PR #${result.pr.number}: ${result.pr.isDraft ? "draft" : "ready"}`, ...result.reasons.map((reason) => `- ${reason}`), ...evidenceLines(result.gate)];
     if (!result.ready) throw new Error(lines.join("\n"));
     return process.stdout.write(`${lines.join("\n")}\n`);
   }

@@ -35,9 +35,10 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 
 ### Review envelope
 
-- Every review must state `reviewComplete=true`, `independent=true`, its exact Field Report delegation ID, reviewer task or provider-run ID, kind, role, exact target, provider/model/route, GO or NO_GO, findings, unresolved questions, summary, mini eligibility for Sol, and four rubric scores.
-- Scores are integers from 0–100: merge readiness, structural risk, implementation quality, and evidence confidence. Every score requires its own concise rationale.
+- Every review must state `reviewComplete=true`, `independent=true`, its exact Field Report delegation ID, reviewer task or provider-run ID, kind, role, exact target, provider/model/route, GO or NO_GO, findings, unresolved questions, summary, mini eligibility for Sol, five rubric scores, and the qualitative structural signals below.
+- Scores are integers from 0–100: merge readiness, structural risk, implementation quality, evidence confidence, and outcome confidence. Every score requires its own concise rationale.
 - Use stable anchors: 0–24 critical, 25–49 weak/high concern, 50–74 mixed/material concern, 75–89 strong/low concern, and 90–100 exceptional/minimal concern. Structural risk runs in the opposite direction: higher is worse. Scores describe the evidence; they never decide a gate.
+- Required signals are necessity (`necessary` or `questionable_roi`), scope drift (`none`, `minor`, or `material`), contract integrity (`sound`, `mixed`, or `broken`), and evidence quality (`strong`, `mixed`, or `weak`). `simplerPath` explains alternatives considered and discarded, or states that none were found; it is not a rating.
 - Field Report validates identity shape and target consistency to prevent ordinary mistakes. It does not claim cryptographic authentication against a local user who can edit state.
 - Review briefs snapshot the workstream owner before review begins, and a delegation cannot be rebound to a different task ID.
 
@@ -57,6 +58,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 - Before publication, request fresh final-head Sol briefs and, unless validly mini, a Fable brief. Verify a clean checkout at the brief's exact `HEAD_SHA`, then invoke `claude-aws` from that repository root through the user's shell entrypoint in `dontAsk` mode with `Read,Grep,Glob,Bash`. Allow Bash only for the exact command `git diff --no-ext-diff --no-textconv BASE_SHA HEAD_SHA --`, substituting the brief's full 40-character SHAs before launch; do not use wildcard Bash rules. Unlisted tools and Bash commands are denied rather than prompting. Use `--print --output-format json`. Provider execution succeeded only when the outer JSON has `is_error=false`, `subtype=success`, and a nonempty `result`, which is the model response. Bind every brief to its native task or provider-run ID before recording evidence.
 - Never infer Fable failure from intermediate stream events or token counts. If provider execution succeeds but `fr review record` rejects the envelope, resume that same Claude session with the exact validation error and request only a corrected envelope. Distinguish provider failure, envelope-validation failure, and a recorded review explicitly.
 - Verify the actual diff, checks, target identities, and reviewer claims. Do not mark status complete while required evidence is missing or stale.
+- In the user-facing final MRR handoff, reproduce every lane's verdict, five scores, qualitative signals, simpler-path explanation, findings, and unresolved questions. Do not hide the evidence inside the stored envelope.
 - Escalate changed premises and product-coupled mechanism changes before accumulating repair machinery.
 - Require worker completions to state checks run, checks skipped, scope deviations, changed premises, acceptance evidence, and unresolved concerns; empty arrays are explicit evidence, not omitted fields.
 
