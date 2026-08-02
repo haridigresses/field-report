@@ -5,6 +5,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 ## Shared contract
 
 - Start with `fr context`. Treat the returned outcome, target, obligations, and gate reasons as orientation; verify live repository facts before acting.
+- When Field Report is updated or its policy is reported changed, reread `fr workflow <role>` before continuing. A long-running task does not inherit new instructions automatically.
 - Keep one durable workstream per product outcome. Record only material status, next action, questions, decisions, delegations, reviews, and publication.
 - Bind implementation to a repository, branch, exact head, workstream owner task ID, and explicit acceptance evidence.
 - Product behavior, meaningful scope expansion, security posture, migration behavior, durable-data behavior, and materially debatable architecture remain user decisions unless explicitly delegated.
@@ -32,6 +33,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 - Publication requires a finding-free policy gate, exact checkout/PR head agreement, a clean checkout, an open draft PR, and no failing or pending GitHub checks.
 - Publication also requires no open workstream questions and exactly one workstream claiming the PR.
 - `fr gate publish` reports the verdict. `fr publish` recomputes it and may perform only the ready-for-review transition.
+- “Full MRR complete” means the required exact-head review lanes are recorded and finding-free, required deterministic checks and current CI are settled, and the live publication gate has been evaluated. Review lanes alone are “final review complete,” not full MRR.
 
 ### Review envelope
 
@@ -54,6 +56,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 ## Workstream owner
 
 - Own one approved outcome and its plan. Delegate implementation and reviews through native Codex tools.
+- Do not end a user-visible turn while a material hidden worker is still running without either remaining active or reporting a durable checkpoint: native task ID, exact worktree/branch/head, current change state, completed checks, and next action. A task ID by itself is not a checkpoint.
 - Before every commit, request two role-specific Sol briefs, launch distinct subagents, bind each brief to its native task ID, record their envelopes, reconcile findings, and confirm `fr gate commit` is READY.
 - Before publication, request fresh final-head Sol briefs and, unless validly mini, a Fable brief. That required brief authorizes its bounded exact-target review through the user's configured `claude-aws` route; run it without asking the user for another approval. Verify a clean checkout at the brief's exact `HEAD_SHA`, then invoke `claude-aws` from that repository root through the user's shell entrypoint in `dontAsk` mode with `Read,Grep,Glob,Bash`. Allow Bash only for the exact command `git diff --no-ext-diff --no-textconv BASE_SHA HEAD_SHA --`, substituting the brief's full 40-character SHAs before launch; do not use wildcard Bash rules. Unlisted tools and Bash commands are denied rather than prompting. Use `--print --output-format json`. Provider execution succeeded only when the outer JSON has `is_error=false`, `subtype=success`, and a nonempty `result`, which is the model response. Bind every brief to its native task or provider-run ID before recording evidence.
 - Never infer Fable failure from intermediate stream events or token counts. If provider execution succeeds but `fr review record` rejects the envelope, resume that same Claude session with the exact validation error and request only a corrected envelope. Distinguish provider failure, envelope-validation failure, and a recorded review explicitly.
