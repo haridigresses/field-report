@@ -45,6 +45,8 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await exec("git", ["add", "README.md"], { cwd: repo });
   const briefReview = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
   assert.equal(briefReview.delegation.ownerTaskIdAtBrief, "owner-1");
+  assert.match(briefReview.prompt, /Attempt to falsify the candidate/);
+  assert.match(briefReview.prompt, /more code is not evidence of necessity or quality/);
   assert.match(briefReview.prompt, /findings as a string array/);
   assert.match(briefReview.prompt, /scoreRationale as an object/);
   assert.match(briefReview.prompt, /necessity=necessary\|questionable_roi/);
