@@ -1,10 +1,24 @@
 const SHA = /^[0-9a-f]{40}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SCORE_KEYS = ["mergeReadiness", "structuralRisk", "implementationQuality", "evidenceConfidence"];
+const SCORE_KEYS = ["mergeReadiness", "structuralRisk", "implementationQuality", "evidenceConfidence", "outcomeConfidence"];
+const SIGNAL_VALUES = {
+  necessity: ["necessary", "questionable_roi"],
+  scopeDrift: ["none", "minor", "material"],
+  contractIntegrity: ["sound", "mixed", "broken"],
+  evidenceQuality: ["strong", "mixed", "weak"]
+};
 export const SOL_ROLES = ["deep-code-review", "structural-challenge"];
 
 function assertScore(value, key) {
   if (!Number.isInteger(value) || value < 0 || value > 100) throw new Error(`${key} must be an integer from 0 to 100`);
+}
+
+const isScore = (value) => Number.isInteger(value) && value >= 0 && value <= 100;
+
+function hasCompleteEvidence(input) {
+  return SCORE_KEYS.every((key) => isScore(input.scores?.[key]) && String(input.scoreRationale?.[key] || "").trim())
+    && Object.entries(SIGNAL_VALUES).every(([key, values]) => values.includes(input[key]))
+    && Boolean(String(input.simplerPath || "").trim());
 }
 
 export function validateReview(input, delegation) {
@@ -27,11 +41,13 @@ export function validateReview(input, delegation) {
   if (!String(input.summary || "").trim()) throw new Error("Review requires a summary");
   for (const key of SCORE_KEYS) assertScore(input.scores?.[key], key);
   for (const key of SCORE_KEYS) if (!String(input.scoreRationale?.[key] || "").trim()) throw new Error(`${key} requires explanatory rationale`);
+  for (const [key, values] of Object.entries(SIGNAL_VALUES)) if (!values.includes(input[key])) throw new Error(`${key} must be one of: ${values.join(", ")}`);
+  if (!String(input.simplerPath || "").trim()) throw new Error("simplerPath must explain alternatives considered and discarded, or state that none were found");
   if (input.role !== "fable-challenge" && typeof input.miniEligible !== "boolean") throw new Error("Sol reviews must state miniEligible true or false");
   return { ...input, findings: [...input.findings], unresolved: [...input.unresolved], scores: { ...input.scores } };
 }
 
-const accepted = (review) => review?.legacy !== true && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && !(review.findings || []).length && !(review.unresolved || []).length;
+const accepted = (review) => review?.legacy !== true && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasCompleteEvidence(review) && !(review.findings || []).length && !(review.unresolved || []).length;
 
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
 

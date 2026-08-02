@@ -46,12 +46,13 @@ function row(stream) {
 
 function open(stream) {
   const reviews = stream.reviews.slice().reverse();
-  const score = (review) => review.scores ? `<br><small>Readiness ${review.scores.mergeReadiness} · Risk ${review.scores.structuralRisk} · Quality ${review.scores.implementationQuality} · Evidence ${review.scores.evidenceConfidence}</small><br><small>${escape(Object.values(review.scoreRationale || {}).join(" · "))}</small>` : "";
+  const score = (review) => review.scores ? `<br><small>Readiness ${review.scores.mergeReadiness}% · Structural risk ${review.scores.structuralRisk}% · Implementation quality ${review.scores.implementationQuality}% · Evidence confidence ${review.scores.evidenceConfidence}% · Outcome confidence ${review.scores.outcomeConfidence}%</small><br><small>${escape(Object.values(review.scoreRationale || {}).join(" · "))}</small>` : "";
+  const signals = (review) => review.necessity ? `<br><small>Necessity ${escape(review.necessity)} · Scope drift ${escape(review.scopeDrift)} · Contract integrity ${escape(review.contractIntegrity)} · Evidence quality ${escape(review.evidenceQuality)}</small><br><small>Simpler path: ${escape(review.simplerPath)}</small>` : "";
   detailBody.innerHTML = `<p class="eyebrow">${escape(stream.project)} · ${escape(stream.id)}</p><h2>${escape(stream.title)}</h2><p>${escape(stream.summary)}</p>
     <dl><div><dt>Status</dt><dd>${escape(stream.status)}</dd></div><div><dt>Review</dt><dd>${escape(stream.reviewClass)}</dd></div><div><dt>Branch</dt><dd>${escape(stream.branch || "None")}</dd></div><div><dt>Owner task</dt><dd>${escape(stream.ownerTaskId || "Unassigned")}</dd></div></dl>
     <h3>Next</h3><p>${escape(stream.next || "Not recorded")}</p>
     <h3>Open questions</h3>${openQuestions(stream).length ? `<ul>${openQuestions(stream).map((question) => `<li><b>${escape(question.id)}</b> ${escape(question.text)}</li>`).join("")}</ul>` : `<p class="quiet">None</p>`}
-    <h3>Review evidence</h3>${reviews.length ? `<ul>${reviews.map((review) => `<li><b>${escape(review.role)}</b> ${escape(review.verdict)} · ${escape((review.tree || review.head || "").slice(0, 12))}${review.legacy ? " · historical" : ""}<br><small>${escape(review.summary)}</small>${score(review)}</li>`).join("")}</ul>` : `<p class="quiet">None</p>`}`;
+    <h3>Review evidence</h3>${reviews.length ? `<ul>${reviews.map((review) => `<li><b>${escape(review.role)}</b> ${escape(review.verdict)} · ${escape((review.tree || review.head || "").slice(0, 12))}${review.legacy ? " · historical" : ""}<br><small>${escape(review.summary)}</small>${score(review)}${signals(review)}</li>`).join("")}</ul>` : `<p class="quiet">None</p>`}`;
   detail.showModal();
 }
 
