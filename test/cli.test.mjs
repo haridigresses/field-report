@@ -31,6 +31,9 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await run(["create", "outcome", "--project", "sample", "--title", "Outcome", "--outcome", "Ship bounded change", "--branch", "main", "--owner-task", "owner-1"], repo, state);
   const brief = JSON.parse(await run(["delegate", "brief", "outcome", "--role", "executor", "--slice", "Implement one bounded change"], repo, state));
   assert.equal(brief.delegation.type, "work");
+  assert.match(brief.prompt, /run `af onboard`/);
+  assert.match(brief.prompt, /Agent Fixes for session context and issue lineage/);
+  assert.match(brief.prompt, /retry it once with normal escalation/);
   await run(["delegate", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "native-task-7"], repo, state);
   const completion = path.join(root, "completion.json");
   await writeFile(completion, JSON.stringify({ delegationId: brief.delegation.id, taskId: "native-task-7", completed: true, checksRun: ["npm test"], unresolved: [], summary: "Incomplete evidence" }));
@@ -45,6 +48,9 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await exec("git", ["add", "README.md"], { cwd: repo });
   const briefReview = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
   assert.equal(briefReview.delegation.ownerTaskIdAtBrief, "owner-1");
+  assert.match(briefReview.prompt, /run `af onboard`/);
+  assert.match(briefReview.prompt, /Agent Fixes for session context and issue lineage/);
+  assert.match(briefReview.prompt, /retry it once with normal escalation/);
   assert.match(briefReview.prompt, /Attempt to falsify the candidate/);
   assert.match(briefReview.prompt, /more code is not evidence of necessity or quality/);
   assert.match(briefReview.prompt, /findings as a string array/);
@@ -66,4 +72,17 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   assert.match(status, /Simpler path: No simpler reliable path was found/);
   assert.match(status, /Findings: Finding one/);
   assert.match(status, /Unresolved: Question one/);
+
+  const remote = path.join(root, "remote.git");
+  await exec("git", ["init", "--bare", remote]);
+  await exec("git", ["remote", "add", "origin", remote], { cwd: repo });
+  await exec("git", ["commit", "-m", "candidate"], { cwd: repo });
+  await exec("git", ["push", "-u", "origin", "main"], { cwd: repo });
+  await exec("git", ["switch", "-c", "feature"], { cwd: repo });
+  await writeFile(path.join(repo, "README.md"), "final candidate\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
+  await exec("git", ["commit", "-m", "final candidate"], { cwd: repo });
+  await run(["update", "outcome", "--branch", "feature"], repo, state);
+  const fableBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "final", "--role", "fable-challenge"], repo, state));
+  assert.doesNotMatch(fableBrief.prompt, /af onboard/);
 });
