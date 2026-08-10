@@ -4,6 +4,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 
 ## Shared contract
 
+- Before any other task work in every Field Report-managed Codex session, run `af onboard` and read its complete output. Agent Fixes owns session context and issue lineage; Field Report owns durable outcome state, review evidence, and gates. If AF remains unavailable after the normal bounded retry, report that fact and continue the bounded task without inventing replacement context. Do not reproduce or reinterpret AF onboarding inside Field Report. Fable is a bounded provider review, not a Field Report-managed Codex session; its exact brief remains self-contained.
 - Start with `fr context`. Treat the returned outcome, target, obligations, and gate reasons as orientation; verify live repository facts before acting.
 - When Field Report is updated or its policy is reported changed, reread `fr workflow <role>` before continuing. A long-running task does not inherit new instructions automatically.
 - Keep one durable workstream per product outcome. Record only material status, next action, questions, decisions, delegations, reviews, and publication.

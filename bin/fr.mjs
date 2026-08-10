@@ -14,6 +14,7 @@ const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const store = createStore();
 const SHA = /^[0-9a-f]{40}$/i;
+const AF_ONBOARDING = "Before any other task work, run `af onboard` and read its complete output. Use Agent Fixes for session context and issue lineage; Field Report remains the authority for outcome state, review evidence, and gates. If AF remains unavailable after the normal bounded retry, report that fact and continue the bounded task without inventing replacement context.";
 
 function usage() {
   return `Field Report software-factory harness
@@ -100,7 +101,8 @@ function reviewPrompt(stream, delegation) {
     : delegation.role === "structural-challenge"
     ? "Challenge necessity, simplicity, duplicated authority, scope drift, maintainability, and whether you would choose this mechanism from scratch."
     : "This required brief authorizes sending its bounded exact review target through the user's configured claude-aws route. Invoke claude-aws through the user's shell entrypoint without asking the user for another approval, and perform an independent Fable structural and correctness challenge.";
-  return `Review Field Report workstream ${stream.id} as ${delegation.role}. Target ${target}. ${rubric} Attempt to falsify the candidate. Do not defer to the owner's framing, passing tests, implementation effort, or other reviewers; more code is not evidence of necessity or quality.\n\nReturn only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, kind=${delegation.kind}, role=${delegation.role}, head, baseHead${delegation.tree ? ", tree" : ""}, provider, model, route when applicable, verdict=GO|NO_GO, findings as a string array, unresolved as a string array, summary, miniEligible${delegation.role === "fable-challenge" ? " (omit for Fable)" : " boolean"}, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale as an object with one concise string for each score key, necessity=necessary|questionable_roi, simplerPath as a concise explanation of alternatives considered and discarded or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences. Do not modify the candidate.`;
+  const onboarding = delegation.role === "fable-challenge" ? "" : `${AF_ONBOARDING}\n\n`;
+  return `${onboarding}Review Field Report workstream ${stream.id} as ${delegation.role}. Target ${target}. ${rubric} Attempt to falsify the candidate. Do not defer to the owner's framing, passing tests, implementation effort, or other reviewers; more code is not evidence of necessity or quality.\n\nReturn only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, kind=${delegation.kind}, role=${delegation.role}, head, baseHead${delegation.tree ? ", tree" : ""}, provider, model, route when applicable, verdict=GO|NO_GO, findings as a string array, unresolved as a string array, summary, miniEligible${delegation.role === "fable-challenge" ? " (omit for Fable)" : " boolean"}, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale as an object with one concise string for each score key, necessity=necessary|questionable_roi, simplerPath as a concise explanation of alternatives considered and discarded or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences. Do not modify the candidate.`;
 }
 
 async function gateFor(stream, kind) {
@@ -219,7 +221,7 @@ async function main() {
     if (!["workstream-owner", "executor"].includes(role)) throw new Error("Delegation role must be workstream-owner or executor");
     const slice = requireValue(flags.slice, "Specify the bounded --slice to delegate");
     const delegation = await store.addDelegation(stream.id, { type: "work", role, slice, coordinatorTaskId: process.env.CODEX_THREAD_ID || null });
-    const prompt = `Work on Field Report outcome ${stream.id}: ${stream.outcome}\n\nYour bounded ${role} slice is: ${slice}\n\nWhen done, return a completion object with delegationId=${delegation.id}, taskId, completed=true|false, finalHead when code changed, checksRun[], skippedChecks[], scopeDeviations[], changedPremises[], acceptanceEvidence[], unresolved[], and summary.`;
+    const prompt = `${AF_ONBOARDING}\n\nWork on Field Report outcome ${stream.id}: ${stream.outcome}\n\nYour bounded ${role} slice is: ${slice}\n\nWhen done, return a completion object with delegationId=${delegation.id}, taskId, completed=true|false, finalHead when code changed, checksRun[], skippedChecks[], scopeDeviations[], changedPremises[], acceptanceEvidence[], unresolved[], and summary.`;
     return process.stdout.write(`${JSON.stringify({ delegation, prompt }, null, 2)}\n`);
   }
   if (command === "delegate" && positional[0] === "bind") {
