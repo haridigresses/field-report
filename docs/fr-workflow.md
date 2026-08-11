@@ -22,6 +22,7 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 - The two reviews require distinct reviewer task or subagent IDs. The owner cannot satisfy either independent lane.
 - Any staged-tree or base-HEAD change invalidates the reviews.
 - Field Report issues role-specific delegation briefs, binds each to the native task or provider-run ID, and validates returned envelopes.
+- Every native work or Sol-review brief declares `execution.forkTurns="none"`. Launch that brief as a fresh native task with no inherited owner/coordinator conversation. The exact brief and repository are the task context; prior implementation reasoning, reviewer opinions, and workstream narration must not be forked into independent execution or review.
 - A managed repository hook asks `fr gate commit` whether the exact evidence exists. Hooks are installed explicitly per repository.
 
 ### Final review and publication policy
@@ -56,9 +57,10 @@ Field Report is the user's software-factory policy and evidence harness. It defi
 
 ## Workstream owner
 
-- Own one approved outcome and its plan. Delegate implementation and reviews through native Codex tools.
+- Own one approved outcome and its plan. Delegate implementation and reviews through native Codex tools using the brief's declared execution mode.
+- Keep one active implementation effort for a slice. While an executor owns it, the owner must not concurrently edit or independently implement the same slice. The owner may inspect code as needed for decisions and must verify the returned diff and evidence. To take over implementation, stop the executor first.
 - Do not end a user-visible turn while a material hidden worker is still running without either remaining active or reporting a durable checkpoint: native task ID, exact worktree/branch/head, current change state, completed checks, and next action. A task ID by itself is not a checkpoint.
-- Before every commit, request two role-specific Sol briefs, launch distinct subagents, bind each brief to its native task ID, record their envelopes, reconcile findings, and confirm `fr gate commit` is READY.
+- Before every commit, request two role-specific Sol briefs, launch distinct fresh-context subagents with `fork_turns="none"`, bind each brief to its native task ID, record their envelopes, reconcile findings, and confirm `fr gate commit` is READY.
 - Before publication, request fresh final-head Sol briefs and, unless validly mini, a Fable brief. That required brief authorizes its bounded exact-target review through the user's configured `claude-aws` route; run it without asking the user for another approval. Verify a clean checkout at the brief's exact `HEAD_SHA`, then invoke `claude-aws` from that repository root through the user's shell entrypoint in `dontAsk` mode with `Read,Grep,Glob,Bash`. Allow Bash only for the exact command `git diff --no-ext-diff --no-textconv BASE_SHA HEAD_SHA --`, substituting the brief's full 40-character SHAs before launch; do not use wildcard Bash rules. Unlisted tools and Bash commands are denied rather than prompting. Use `--print --output-format json`. Provider execution succeeded only when the outer JSON has `is_error=false`, `subtype=success`, and a nonempty `result`, which is the model response. Bind every brief to its native task or provider-run ID before recording evidence.
 - Never infer Fable failure from intermediate stream events or token counts. If provider execution succeeds but `fr review record` rejects the envelope, resume that same Claude session with the exact validation error and request only a corrected envelope. Distinguish provider failure, envelope-validation failure, and a recorded review explicitly.
 - Verify the actual diff, checks, target identities, and reviewer claims. Do not mark status complete while required evidence is missing or stale.
