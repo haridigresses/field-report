@@ -15,7 +15,7 @@ const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const store = createStore();
 const SHA = /^[0-9a-f]{40}$/i;
 const AF_ONBOARDING = "Before any other task work, run `af-onboard-safe` and read its complete output. It returns the exact onboarding document pinned to the installed AF version without invoking AF's broken sandboxed update check. Use Agent Fixes for session context and issue lineage; Field Report remains the authority for outcome state, review evidence, and gates. If the helper reports a version mismatch or missing cache, retry `af onboard` once with normal escalation. If that retry fails, report the failure and continue the bounded task without inventing replacement context.";
-const FRESH_NATIVE_EXECUTION = Object.freeze({ nativeDelegation: true, fork_turns: "none" });
+const FRESH_NATIVE_EXECUTION = Object.freeze({ fork_turns: "none" });
 
 function usage() {
   return `Field Report software-factory harness

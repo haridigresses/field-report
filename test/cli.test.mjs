@@ -31,7 +31,7 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await run(["create", "outcome", "--project", "sample", "--title", "Outcome", "--outcome", "Ship bounded change", "--branch", "main", "--owner-task", "owner-1"], repo, state);
   const brief = JSON.parse(await run(["delegate", "brief", "outcome", "--role", "executor", "--slice", "Implement one bounded change"], repo, state));
   assert.equal(brief.delegation.type, "work");
-  assert.deepEqual(brief.execution, { nativeDelegation: true, fork_turns: "none" });
+  assert.deepEqual(brief.execution, { fork_turns: "none" });
   assert.match(brief.prompt, /run `af-onboard-safe`/);
   assert.match(brief.prompt, /Agent Fixes for session context and issue lineage/);
   assert.match(brief.prompt, /retry `af onboard` once with normal escalation/);
@@ -49,7 +49,7 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await exec("git", ["add", "README.md"], { cwd: repo });
   const briefReview = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
   assert.equal(briefReview.delegation.ownerTaskIdAtBrief, "owner-1");
-  assert.deepEqual(briefReview.execution, { nativeDelegation: true, fork_turns: "none" });
+  assert.deepEqual(briefReview.execution, { fork_turns: "none" });
   assert.match(briefReview.prompt, /run `af-onboard-safe`/);
   assert.match(briefReview.prompt, /Agent Fixes for session context and issue lineage/);
   assert.match(briefReview.prompt, /retry `af onboard` once with normal escalation/);
@@ -85,7 +85,7 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await exec("git", ["add", "README.md"], { cwd: repo });
   await exec("git", ["commit", "-m", "final candidate"], { cwd: repo });
   await run(["update", "outcome", "--branch", "feature"], repo, state);
-      const fableBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "final", "--role", "fable-challenge"], repo, state));
+  const fableBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "final", "--role", "fable-challenge"], repo, state));
   assert.deepEqual(fableBrief.execution, { provider: "claude-aws" });
   assert.doesNotMatch(fableBrief.prompt, /af-onboard-safe/);
 });
