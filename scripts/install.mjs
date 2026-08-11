@@ -7,7 +7,9 @@ import { createStore } from "../src/store.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const home = os.homedir();
-const bin = path.join(home, ".local", "bin", "fr");
+const binDir = path.join(home, ".local", "bin");
+const bin = path.join(binDir, "fr");
+const afOnboardSafe = path.join(binDir, "af-onboard-safe");
 
 async function replace(file, writer) {
   await mkdir(path.dirname(file), { recursive: true });
@@ -17,6 +19,7 @@ async function replace(file, writer) {
 }
 
 await replace(bin, (temporary) => writeFile(temporary, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(path.join(root, "bin", "fr.mjs"))} "$@"\n`, { mode: 0o755 }));
+await replace(afOnboardSafe, (temporary) => writeFile(temporary, `#!/bin/sh\nexec ${JSON.stringify(path.join(root, "bin", "af-onboard-safe"))} "$@"\n`, { mode: 0o755 }));
 for (const name of ["field-report", "repo-coordinator", "workstream-orchestrator"]) {
   const skill = path.join(home, ".codex", "skills", name);
   await mkdir(path.dirname(skill), { recursive: true });
@@ -29,5 +32,6 @@ for (const name of ["field-report", "repo-coordinator", "workstream-orchestrator
   await rename(temporary, skill);
 }
 await chmod(path.join(root, "bin", "fr.mjs"), 0o755);
+await chmod(path.join(root, "bin", "af-onboard-safe"), 0o755);
 const state = await createStore().init();
-process.stdout.write(`Installed Field Report launcher at ${bin}\nCanonical state: ${state}\nRepository hooks are explicit: fr hook install <project-id>\n`);
+process.stdout.write(`Installed Field Report launchers at ${bin} and ${afOnboardSafe}\nCanonical state: ${state}\nRepository hooks are explicit: fr hook install <project-id>\n`);

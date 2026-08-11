@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+script_path=$0
+while [ -L "$script_path" ]; do
+  link_target=$(readlink "$script_path")
+  case "$link_target" in
+    /*) script_path=$link_target ;;
+    *) script_path=$(dirname -- "$script_path")/$link_target ;;
+  esac
+done
+runtime_root=$(CDPATH= cd -- "$(dirname -- "$script_path")/.." && pwd)
+af_version=$(af --version | awk 'NR == 1 { print $2 }')
+cache_file="$runtime_root/resources/af-onboard/$af_version.md"
+
+if [ -z "$af_version" ]; then
+  echo "af-onboard-safe: could not determine the installed AF version" >&2
+  exit 1
+fi
+
+if [ ! -f "$cache_file" ]; then
+  echo "af-onboard-safe: no exact onboarding cache for AF $af_version" >&2
+  echo "Refresh the version-pinned cache outside the sandbox before continuing." >&2
+  exit 1
+fi
+
+exec /bin/cat "$cache_file"
