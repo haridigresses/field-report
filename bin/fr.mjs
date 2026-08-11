@@ -15,7 +15,7 @@ const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const store = createStore();
 const SHA = /^[0-9a-f]{40}$/i;
 const AF_ONBOARDING = "Before any other task work, run `af-onboard-safe` and read its complete output. It returns the exact onboarding document pinned to the installed AF version without invoking AF's broken sandboxed update check. Use Agent Fixes for session context and issue lineage; Field Report remains the authority for outcome state, review evidence, and gates. If the helper reports a version mismatch or missing cache, retry `af onboard` once with normal escalation. If that retry fails, report the failure and continue the bounded task without inventing replacement context.";
-const FRESH_NATIVE_EXECUTION = Object.freeze({ nativeDelegation: true, forkTurns: "none" });
+const FRESH_NATIVE_EXECUTION = Object.freeze({ nativeDelegation: true, fork_turns: "none" });
 
 function usage() {
   return `Field Report software-factory harness
@@ -223,7 +223,7 @@ async function main() {
     const slice = requireValue(flags.slice, "Specify the bounded --slice to delegate");
     const delegation = await store.addDelegation(stream.id, { type: "work", role, slice, coordinatorTaskId: process.env.CODEX_THREAD_ID || null });
     const prompt = `${AF_ONBOARDING}\n\nWork on Field Report outcome ${stream.id}: ${stream.outcome}\n\nYour bounded ${role} slice is: ${slice}\n\nWhen done, return a completion object with delegationId=${delegation.id}, taskId, completed=true|false, finalHead when code changed, checksRun[], skippedChecks[], scopeDeviations[], changedPremises[], acceptanceEvidence[], unresolved[], and summary.`;
-      return process.stdout.write(`${JSON.stringify({ delegation, execution: FRESH_NATIVE_EXECUTION, prompt }, null, 2)}\n`);
+    return process.stdout.write(`${JSON.stringify({ delegation, execution: FRESH_NATIVE_EXECUTION, prompt }, null, 2)}\n`);
   }
   if (command === "delegate" && positional[0] === "bind") {
     const stream = await store.workstream(positional[1]);
@@ -252,10 +252,10 @@ async function main() {
     if (kind === "commit" && role === "fable-challenge") throw new Error("Commit review uses Sol roles only");
     const target = await targetFor(stream, kind);
     const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
-      const execution = role === "fable-challenge"
-        ? { provider: "claude-aws" }
-        : FRESH_NATIVE_EXECUTION;
-      return process.stdout.write(`${JSON.stringify({ delegation, execution, prompt: reviewPrompt(stream, delegation) }, null, 2)}\n`);
+    const execution = role === "fable-challenge"
+      ? { provider: "claude-aws" }
+      : FRESH_NATIVE_EXECUTION;
+    return process.stdout.write(`${JSON.stringify({ delegation, execution, prompt: reviewPrompt(stream, delegation) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "bind") {
     const stream = await store.workstream(positional[1]);
