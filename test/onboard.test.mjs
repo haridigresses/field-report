@@ -30,3 +30,22 @@ test("safe onboarding fails closed when AF and cache versions differ", async () 
     (error) => /no exact onboarding cache for AF 999\.0\.0/.test(error.stderr || "")
   );
 });
+
+test("safe onboarding rejects malformed AF version output before selecting a cache path", async () => {
+  for (const output of [
+    "wrong-prefix 2.0.19\n",
+    "agent-fixes \n",
+    "agent-fixes 2.0.19 extra\n",
+    "agent-fixes ../../plans/example\n",
+    "agent-fixes 2.0.19\nunexpected\n",
+  ]) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fr-af-onboard-"));
+    const fakeAf = path.join(root, "af");
+    await writeFile(fakeAf, `#!/bin/sh\nprintf '%s' '${output}'\n`);
+    await chmod(fakeAf, 0o755);
+    await assert.rejects(
+      exec(helper, [], { env: { ...process.env, PATH: `${root}:${process.env.PATH}` } }),
+      (error) => /could not parse|invalid installed AF version token/.test(error.stderr || "")
+    );
+  }
+});
