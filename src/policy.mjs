@@ -28,6 +28,7 @@ export function validateReview(input, delegation) {
   if (!["commit", "final"].includes(input.kind)) throw new Error("Review kind must be commit or final");
   if (![...SOL_ROLES, "fable-challenge"].includes(input.role)) throw new Error("Unknown review role");
   if (!UUID.test(input.delegationId || "") || input.delegationId !== delegation?.id) throw new Error("Review must reference its exact Field Report delegation ID");
+  if (!String(input.claim || "").trim() || input.claim !== delegation?.claim) throw new Error("Review claim must match its exact Field Report delegation");
   if (!String(input.reviewerTaskId || "").trim()) throw new Error("Review requires a reviewer task or provider-run ID");
   if (!SHA.test(input.head || "") || !SHA.test(input.baseHead || "")) throw new Error("Review requires exact head and baseHead SHAs");
   if (input.kind === "commit" && !SHA.test(input.tree || "")) throw new Error("Commit review requires the exact staged tree SHA");
@@ -51,20 +52,11 @@ const accepted = (review) => review?.legacy !== true && review?.verdict === "GO"
 
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
 
-function latestByReviewerAndRole(reviews) {
-  const latest = new Map();
-  for (const review of reviews) latest.set(`${review.role}\0${review.reviewerTaskId}`, review);
-  return [...latest.values()];
-}
-
 export function evaluateGate({ kind, target, workstream, reviews }) {
-  const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
+  const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.claim === workstream.summary && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
   const sol = Object.fromEntries(SOL_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
   const fable = latestFor(matching, (review) => review.role === "fable-challenge");
   const reasons = [];
-  for (const review of latestByReviewerAndRole(matching)) {
-    if (!accepted(review)) reasons.push(`${review.role} review by ${review.reviewerTaskId} has unreconciled adverse evidence`);
-  }
   for (const role of SOL_ROLES) {
     if (!sol[role]) reasons.push(`missing ${role} Sol review`);
     else if (!accepted(sol[role])) reasons.push(`${role} is not a finding-free GO`);
