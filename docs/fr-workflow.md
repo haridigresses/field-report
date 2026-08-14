@@ -7,6 +7,7 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 - Coordinators, workstream owners, and executors run `af-onboard-safe`, then `fr context` and their `fr workflow <role>`. Bounded Sol and Fable reviewers use their self-contained briefs instead of AF onboarding or inherited owner history.
 - Keep one durable workstream per product outcome. Bind it to its repository, branch, exact head, owner task, and acceptance evidence. Record only material state.
 - Product behavior, meaningful scope expansion, security, migrations, durable data, and materially debatable architecture remain user decisions unless explicitly delegated.
+- Reconcile reviewer disagreement against the stated claim, code, tests, and product contracts—not by vote, reviewer count, or repeatedly commissioning reviews until one returns GO.
 - Preserve user merge authority. Field Report may authorize marking a draft PR ready; it never authorizes merge.
 - Scores and structural signals explain the evidence. They never override a verdict, blocker, unresolved question, stale target, or failed deterministic gate.
 
@@ -42,7 +43,7 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 - Own the stated outcome. Choose a coherent, genuinely reviewable delivery unit and state exactly what it claims, what proves it, and what remains outside it.
 - Use judgment. Bring uncertainty about product behavior to the user. If consequential technical, scope, or architecture ambiguity remains after inspecting the evidence, consult `claude-aws` for an independent perspective before deciding. Its advice is not approval or review evidence.
 - Keep one implementation owner for the current unit. Verify delegated work and required evidence.
-- Obtain the required exact-target commit and final reviews. Reviews evaluate the stated claim and do not automatically expand its scope. A GO with nonblocking observations is complete; do not iterate merely to make reviews silent.
+- Obtain the required exact-target commit and final reviews. Reviews evaluate the stated claim and do not automatically expand its scope. Substantively address earlier blockers before relying on later evidence; do not commission reviews until one returns GO. A GO with nonblocking observations is complete.
 - Summarize stored final evidence clearly, leading with anything that needs attention. Preserve user merge authority.
 
 ## Reviewer
