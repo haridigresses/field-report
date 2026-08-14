@@ -5,8 +5,10 @@ import { evaluateGate, miniEligibility, publicationReasons, validateReview, work
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const project = { commitGate: "required", miniReview: { maxFiles: 5, maxChangedLines: 120, riskyPaths: ["migrations/"] } };
-const delegation = (role, kind = "commit", id = randomUUID()) => ({ id, role, kind, head, baseHead, ...(kind === "commit" ? { tree } : {}) });
-const envelope = (d, reviewerTaskId) => ({ reviewComplete: true, independent: true, delegationId: d.id, reviewerTaskId, kind: d.kind, role: d.role, head, baseHead, ...(d.tree ? { tree } : {}), provider: d.role === "fable-challenge" ? "anthropic" : "openai", model: d.role === "fable-challenge" ? "anthropic.claude-fable-5" : "gpt-5.6-sol", ...(d.role === "fable-challenge" ? { route: "claude-aws" } : { miniEligible: true }), verdict: "GO", findings: [], unresolved: [], summary: "Complete review", scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 88, evidenceConfidence: 92, outcomeConfidence: 91 }, scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low risk", implementationQuality: "Strong", evidenceConfidence: "Direct evidence", outcomeConfidence: "Outcome is well supported" }, necessity: "necessary", simplerPath: "No simpler reliable path was found.", scopeDrift: "none", contractIntegrity: "sound", evidenceQuality: "strong" });
+const claim = "Ship the stated delivery unit";
+const fullWorkstream = { reviewClass: "full", summary: claim };
+const delegation = (role, kind = "commit", id = randomUUID()) => ({ id, role, kind, claim, head, baseHead, ...(kind === "commit" ? { tree } : {}) });
+const envelope = (d, reviewerTaskId) => ({ reviewComplete: true, independent: true, delegationId: d.id, reviewerTaskId, claim: d.claim, kind: d.kind, role: d.role, head, baseHead, ...(d.tree ? { tree } : {}), provider: d.role === "fable-challenge" ? "anthropic" : "openai", model: d.role === "fable-challenge" ? "anthropic.claude-fable-5" : "gpt-5.6-sol", ...(d.role === "fable-challenge" ? { route: "claude-aws" } : { miniEligible: true }), verdict: "GO", findings: [], unresolved: [], summary: "Complete review", scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 88, evidenceConfidence: 92, outcomeConfidence: 91 }, scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low risk", implementationQuality: "Strong", evidenceConfidence: "Direct evidence", outcomeConfidence: "Outcome is well supported" }, necessity: "necessary", simplerPath: "No simpler reliable path was found.", scopeDrift: "none", contractIntegrity: "sound", evidenceQuality: "strong" });
 
 test("review requires the complete numeric and qualitative evidence contract", () => {
   const deep = delegation("deep-code-review");
@@ -22,9 +24,9 @@ test("commit gate requires distinct exact-target Sol reviewers", () => {
   const deep = delegation("deep-code-review");
   const structural = delegation("structural-challenge");
   const reviews = [validateReview(envelope(deep, "reviewer-a"), deep), validateReview(envelope(structural, "reviewer-b"), structural)];
-  assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full" }, project, reviews }).ready, true);
+  assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: fullWorkstream, project, reviews }).ready, true);
   reviews[1].reviewerTaskId = "reviewer-a";
-  assert.match(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full" }, project, reviews }).reasons.join(" "), /distinct/);
+  assert.match(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: fullWorkstream, project, reviews }).reasons.join(" "), /distinct/);
 });
 
 test("commit gate rejects persisted evidence with an out-of-range score", () => {
@@ -32,18 +34,23 @@ test("commit gate rejects persisted evidence with an out-of-range score", () => 
   const structural = delegation("structural-challenge");
   const reviews = [validateReview(envelope(deep, "reviewer-a"), deep), validateReview(envelope(structural, "reviewer-b"), structural)];
   reviews[0].scores.mergeReadiness = 101;
-  assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full" }, project, reviews }).ready, false);
+  assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: fullWorkstream, project, reviews }).ready, false);
 });
 
-test("a different reviewer cannot erase adverse evidence on the same exact target", () => {
+test("the latest required lane evidence supersedes an earlier review on the same exact target", () => {
   const first = delegation("deep-code-review");
   const replacement = delegation("deep-code-review");
   const structural = delegation("structural-challenge");
   const adverse = { ...envelope(first, "reviewer-a"), verdict: "NO_GO", findings: ["Fix the bug"] };
   const reviews = [validateReview(adverse, first), validateReview(envelope(replacement, "reviewer-c"), replacement), validateReview(envelope(structural, "reviewer-b"), structural)];
-  assert.match(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full" }, project, reviews }).reasons.join(" "), /reviewer-a has unreconciled adverse evidence/);
-  reviews.push(validateReview(envelope(first, "reviewer-a"), first));
-  assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full" }, project, reviews }).ready, true);
+  assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: fullWorkstream, project, reviews }).ready, true);
+});
+
+test("changing the stated claim makes exact-target reviews stale", () => {
+  const deep = delegation("deep-code-review");
+  const structural = delegation("structural-challenge");
+  const reviews = [validateReview(envelope(deep, "reviewer-a"), deep), validateReview(envelope(structural, "reviewer-b"), structural)];
+  assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { ...fullWorkstream, summary: "A different claim" }, project, reviews }).ready, false);
 });
 
 test("owner identity at review time remains disqualifying after reassignment", () => {
@@ -53,21 +60,21 @@ test("owner identity at review time remains disqualifying after reassignment", (
     { ...validateReview(envelope(deep, "original-owner"), deep), ownerTaskIdAtBrief: "original-owner" },
     { ...validateReview(envelope(structural, "reviewer-b"), structural), ownerTaskIdAtBrief: "original-owner" }
   ];
-  assert.match(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { reviewClass: "full", ownerTaskId: "new-owner" }, project, reviews }).reasons.join(" "), /owner when its review brief was created/);
+  assert.match(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { ...fullWorkstream, ownerTaskId: "new-owner" }, project, reviews }).reasons.join(" "), /owner when its review brief was created/);
 });
 
 test("full final gate requires exact Fable route", () => {
   const roles = [delegation("deep-code-review", "final"), delegation("structural-challenge", "final"), delegation("fable-challenge", "final")];
   const reviews = roles.map((item, index) => validateReview(envelope(item, `reviewer-${index}`), item));
-  assert.equal(evaluateGate({ kind: "final", target: { head, baseHead }, workstream: { reviewClass: "full" }, project, reviews }).ready, true);
+  assert.equal(evaluateGate({ kind: "final", target: { head, baseHead }, workstream: fullWorkstream, project, reviews }).ready, true);
   reviews.pop();
-  assert.match(evaluateGate({ kind: "final", target: { head, baseHead }, workstream: { reviewClass: "full" }, project, reviews }).reasons.join(" "), /Fable/);
+  assert.match(evaluateGate({ kind: "final", target: { head, baseHead }, workstream: fullWorkstream, project, reviews }).reasons.join(" "), /Fable/);
 });
 
 test("mini waives only Fable after deterministic and reviewer agreement", () => {
   const roles = [delegation("deep-code-review", "final"), delegation("structural-challenge", "final")];
   const reviews = roles.map((item, index) => validateReview(envelope(item, `reviewer-${index}`), item));
-  const workstream = { reviewClass: "mini", miniClassification: { eligible: true, head, baseHead } };
+  const workstream = { reviewClass: "mini", summary: claim, miniClassification: { eligible: true, head, baseHead } };
   assert.equal(evaluateGate({ kind: "final", target: { head, baseHead }, workstream, project, reviews }).ready, true);
   assert.equal(evaluateGate({ kind: "final", target: { head, baseHead: "d".repeat(40) }, workstream, project, reviews }).ready, false);
   reviews[0].miniEligible = false;
