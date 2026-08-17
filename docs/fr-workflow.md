@@ -5,7 +5,7 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 ## Shared contract
 
 - Coordinators, workstream owners, and executors run `af-onboard-safe`, then `fr context` and their `fr workflow <role>`. Bounded Sol and Fable reviewers use their self-contained briefs instead of AF onboarding or inherited owner history.
-- Keep one durable workstream per product outcome. Bind it to its repository, branch, exact head, owner task, and acceptance evidence. Record only material state.
+- Keep one durable workstream per product outcome. Bind it to its repository, branch, exact head, owner task, and acceptance evidence. Persist only material state in Field Report.
 - Product behavior, meaningful scope expansion, security, migrations, durable data, and materially debatable architecture remain user decisions unless explicitly delegated.
 - Reconcile reviewer disagreement against the stated claim, code, tests, and product contracts—not by vote, reviewer count, or repeatedly commissioning reviews until one returns GO.
 - Preserve user merge authority. Field Report may authorize marking a draft PR ready; it never authorizes merge.

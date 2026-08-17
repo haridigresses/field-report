@@ -17,6 +17,6 @@ Field Report defines policy and evaluates evidence.
 7. Require `fr gate commit` before every commit in a managed repository.
 8. Require `fr gate publish` before ready-for-review publication; `fr publish` may perform only that transition.
 9. Keep scores explanatory and reconcile every finding. Exact target changes stale prior evidence.
-10. Record only material state. Do not create lifecycle chatter.
+10. Persist only material state in Field Report.
 
 Repository hooks are explicit: `fr hook install|status|uninstall <project-id>`.
