@@ -52,7 +52,9 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   assert.equal(briefReview.delegation.claim, "Ship bounded change");
   assert.deepEqual(briefReview.execution, { fork_turns: "none" });
   assert.doesNotMatch(briefReview.prompt, /af-onboard-safe/);
-  assert.match(briefReview.prompt, /safely and honestly satisfies that claim/);
+  assert.match(briefReview.prompt, /claim describes the intended outcome; it does not limit review scope/);
+  assert.match(briefReview.prompt, /complete changed authority boundary/);
+  assert.match(briefReview.prompt, /behavioral state space/);
   assert.match(briefReview.prompt, /A GO with observations is valid/);
   assert.match(briefReview.prompt, /findings as a string array/);
   assert.match(briefReview.prompt, /scoreRationale with one concise string/);
@@ -87,4 +89,8 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   const fableBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "final", "--role", "fable-challenge"], repo, state));
   assert.deepEqual(fableBrief.execution, { provider: "claude-aws" });
   assert.doesNotMatch(fableBrief.prompt, /af-onboard-safe/);
+  assert.match(fableBrief.prompt, /claim describes the intended outcome; it does not limit review scope/);
+  assert.match(fableBrief.prompt, /complete changed authority boundary/);
+  assert.match(fableBrief.prompt, /behavioral state space/);
+  assert.match(fableBrief.prompt, /accumulated mechanism/);
 });
