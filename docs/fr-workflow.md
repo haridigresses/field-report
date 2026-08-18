@@ -43,12 +43,13 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 - Own the stated outcome. Choose a coherent, genuinely reviewable delivery unit and state exactly what it claims, what proves it, and what remains outside it.
 - Use judgment. Bring uncertainty about product behavior to the user. If consequential technical, scope, or architecture ambiguity remains after inspecting the evidence, consult `claude-aws` for an independent perspective before deciding. Its advice is not approval or review evidence.
 - Keep one implementation owner for the current unit. Verify delegated work and required evidence.
-- Obtain the required exact-target commit and final reviews. Reviews evaluate the stated claim and do not automatically expand its scope. Substantively address earlier blockers before relying on later evidence; do not commission reviews until one returns GO. A GO with nonblocking observations is complete.
+- Obtain the required exact-target commit and final reviews. The stated claim describes the intended outcome and does not limit review scope. Substantively address earlier blockers before relying on later evidence; do not commission reviews until one returns GO. A GO with nonblocking observations is complete.
 - Summarize stored final evidence clearly, leading with anything that needs attention. Preserve user merge authority.
 
 ## Reviewer
 
-- Remain read-only and independently assess whether the exact candidate safely and honestly satisfies its stated claim.
-- Block defects that invalidate the claim, or a delivery unit too broad or incoherent to assess reliably.
+- Remain read-only and independently review the complete changed authority boundary; the stated claim is context, not a scope limit.
+- Derive the relevant behavioral state space and trace affected consumers and call paths. Report any material defect or missing evidence.
+- Judge the accumulated mechanism, not only the latest repair or reported cases.
 - Separate other risks, observations, and future work from blockers. Do not convert deferred scope or optional improvements into findings.
 - Return a complete exact-target envelope. Do not convert partial evidence into a GO.
