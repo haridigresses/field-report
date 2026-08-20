@@ -45,7 +45,34 @@ export function validateReview(input, delegation) {
   for (const [key, values] of Object.entries(SIGNAL_VALUES)) if (!values.includes(input[key])) throw new Error(`${key} must be one of: ${values.join(", ")}`);
   if (!String(input.simplerPath || "").trim()) throw new Error("simplerPath must explain alternatives considered and discarded, or state that none were found");
   if (input.role !== "fable-challenge" && typeof input.miniEligible !== "boolean") throw new Error("Sol reviews must state miniEligible true or false");
-  return { ...input, findings: [...input.findings], unresolved: [...input.unresolved], scores: { ...input.scores } };
+  if (input.reconciled != null) {
+    if (!Array.isArray(input.reconciled)) throw new Error("reconciled must be an array of finding reconciliations");
+    for (const entry of input.reconciled) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Each reconciled entry must be an object");
+      if (!String(entry.findingId || "").trim() || !["resolved", "rejected"].includes(entry.disposition) || !String(entry.rationale || "").trim()) throw new Error("Each reconciled entry requires findingId, disposition resolved|rejected, and evidence-based rationale");
+    }
+    const ids = input.reconciled.map((entry) => entry.findingId);
+    if (new Set(ids).size !== ids.length) throw new Error("reconciled entries must reference distinct finding IDs");
+  }
+  return { ...input, findings: [...input.findings], unresolved: [...input.unresolved], scores: { ...input.scores }, ...(input.reconciled ? { reconciled: input.reconciled.map((entry) => ({ ...entry })) } : {}) };
+}
+
+export function findingLedger(reviews) {
+  const entries = [];
+  let counter = 0;
+  for (const review of reviews) {
+    if (review.legacy === true) continue;
+    for (const text of review.findings || []) {
+      counter += 1;
+      entries.push({ id: `F${counter}`, text, role: review.role, claim: review.claim });
+    }
+  }
+  return entries;
+}
+
+export function outstandingFindings(reviews, claim) {
+  const reconciled = new Set(reviews.filter((review) => review.legacy !== true).flatMap((review) => (review.reconciled || []).map((entry) => entry.findingId)));
+  return findingLedger(reviews).filter((finding) => finding.claim === claim && !reconciled.has(finding.id));
 }
 
 const accepted = (review) => review?.legacy !== true && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasCompleteEvidence(review) && !(review.findings || []).length && !(review.unresolved || []).length;
@@ -53,7 +80,8 @@ const accepted = (review) => review?.legacy !== true && review?.verdict === "GO"
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
 
 export function evaluateGate({ kind, target, workstream, reviews }) {
-  const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.claim === workstream.summary && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
+  const claim = workstream.claim ?? workstream.summary;
+  const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.claim === claim && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
   const sol = Object.fromEntries(SOL_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
   const fable = latestFor(matching, (review) => review.role === "fable-challenge");
   const reasons = [];
@@ -76,6 +104,7 @@ export function evaluateGate({ kind, target, workstream, reviews }) {
     if (!fable) reasons.push("missing Fable review through claude-aws");
     else if (!accepted(fable)) reasons.push("Fable review is not a finding-free GO");
   }
+  for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} finding ${finding.id}: ${finding.text}`);
   return { ready: reasons.length === 0, kind, target, reviewClass: mini ? "mini" : "full", reasons, lanes: { ...sol, fable: kind === "final" ? fable : null } };
 }
 

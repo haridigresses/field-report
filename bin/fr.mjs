@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createStore } from "../src/store.mjs";
-import { evaluateGate, miniEligibility, publicationReasons, SOL_ROLES, validateReview, workstreamPublicationReasons } from "../src/policy.mjs";
+import { evaluateGate, findingLedger, miniEligibility, outstandingFindings, publicationReasons, SOL_ROLES, validateReview, workstreamPublicationReasons } from "../src/policy.mjs";
 import { checkout, commitTarget, diffInventory, finalTarget, markReady, pullRequest } from "../src/repository.mjs";
 import { hookText, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 
@@ -28,7 +28,7 @@ fr create <id> --project <id> --title <title> --outcome <text> [--branch <branch
 fr list [--project <id>]
 fr show <id> [--json]
 fr context [id]
-fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
+fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
 fr question add <id> <question>
 fr question resolve <id> <question-id> <decision>
 fr classify <id> full|mini [--reason <text>]
@@ -102,7 +102,10 @@ function reviewPrompt(stream, delegation) {
     : delegation.role === "structural-challenge"
     ? "Inspect necessity, simplicity, authority boundaries, scope, maintainability, and whether you would select the mechanism from scratch."
     : "This brief authorizes its bounded exact target through the configured claude-aws route without another approval.";
-  return `Independently review Field Report workstream ${stream.id} as ${delegation.role}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim: ${delegation.claim}. ${rubric}\n\nThe claim describes the intended outcome; it does not limit review scope. Review the complete changed authority boundary, derive its relevant behavioral state space, trace affected consumers and call paths, and judge the accumulated mechanism rather than only the latest repair or reported cases. Any material defect or missing evidence is a finding, as is a candidate too broad or incoherent to assess reliably. Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings or unresolved. A GO with observations is valid. Do not modify the candidate.\n\nReturn only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, claim exactly as stated above, kind=${delegation.kind}, role=${delegation.role}, head, baseHead${delegation.tree ? ", tree" : ""}, provider, model, route when applicable, verdict=GO|NO_GO, findings as a string array, unresolved as a string array, summary, miniEligible${delegation.role === "fable-challenge" ? " (omit for Fable)" : " boolean"}, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
+  const outstanding = delegation.outstanding?.length
+    ? `\n\nOutstanding findings requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id}: ${finding.text}`).join("\n")}\nFor each, either include a reconciled entry with its findingId, disposition=resolved|rejected, and evidence-based rationale grounded in the code, tests, or contracts, or restate it as a current finding. Do not clear a finding on the owner's assurance alone.`
+    : "";
+  return `Independently review Field Report workstream ${stream.id} as ${delegation.role}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim: ${delegation.claim}. ${rubric}\n\nThe claim describes the intended outcome; it does not limit review scope. Review the complete changed authority boundary, derive its relevant behavioral state space, trace affected consumers and call paths, and judge the accumulated mechanism rather than only the latest repair or reported cases. Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers. Any material defect or missing evidence is a finding, as is a candidate too broad or incoherent to assess reliably. Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings or unresolved. A GO with observations is valid. Do not modify the candidate.${outstanding}\n\nReturn only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, claim exactly as stated above, kind=${delegation.kind}, role=${delegation.role}, head, baseHead${delegation.tree ? ", tree" : ""}, provider, model, route when applicable, verdict=GO|NO_GO, findings as a string array, unresolved as a string array,${delegation.outstanding?.length ? " reconciled as an array of {findingId, disposition, rationale} objects," : ""} summary, miniEligible${delegation.role === "fable-challenge" ? " (omit for Fable)" : " boolean"}, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
 }
 
 async function gateFor(stream, kind) {
@@ -123,6 +126,7 @@ function evidenceLines(gate) {
     ];
     if (review.findings?.length) lines.push(`  Findings: ${review.findings.join(" | ")}`);
     if (review.unresolved?.length) lines.push(`  Unresolved: ${review.unresolved.join(" | ")}`);
+    if (review.reconciled?.length) lines.push(`  Reconciled: ${review.reconciled.map((entry) => `${entry.findingId} ${entry.disposition} — ${entry.rationale}`).join(" | ")}`);
     return lines;
   });
 }
@@ -185,8 +189,9 @@ async function main() {
   if (command === "update") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
     const pullRequests = flags.prs ? flags.prs.split(",").map(Number) : stream.pullRequests;
-    const eventText = flags.summary || flags.next || (flags.status ? `Status set to ${flags.status}` : flags.prs ? `Linked PRs ${flags.prs}` : flags.branch ? `Branch set to ${flags.branch}` : flags["owner-task"] ? `Owner task set to ${flags["owner-task"]}` : "Updated workstream metadata");
-    const next = await store.saveWorkstream({ ...stream, status: flags.status || stream.status, summary: flags.summary || stream.summary, next: flags.next ?? stream.next, branch: flags.branch ?? stream.branch, ownerTaskId: flags["owner-task"] ?? stream.ownerTaskId, pullRequests }, { type: "status", text: eventText, actor: process.env.CODEX_THREAD_ID });
+    const eventText = flags.claim ? `Delivery claim set to ${flags.claim}` : flags.summary || flags.next || (flags.status ? `Status set to ${flags.status}` : flags.prs ? `Linked PRs ${flags.prs}` : flags.branch ? `Branch set to ${flags.branch}` : flags["owner-task"] ? `Owner task set to ${flags["owner-task"]}` : "Updated workstream metadata");
+    const next = await store.saveWorkstream({ ...stream, status: flags.status || stream.status, summary: flags.summary || stream.summary, claim: flags.claim ?? stream.claim, next: flags.next ?? stream.next, branch: flags.branch ?? stream.branch, ownerTaskId: flags["owner-task"] ?? stream.ownerTaskId, pullRequests }, { type: "status", text: eventText, actor: process.env.CODEX_THREAD_ID });
+    if (flags.claim && flags.claim !== stream.claim) process.stdout.write("Delivery claim changed; prior review evidence for the old claim is stale.\n");
     return process.stdout.write(`Updated ${next.id}.\n`);
   }
 
@@ -250,7 +255,8 @@ async function main() {
     if (![...SOL_ROLES, "fable-challenge"].includes(role)) throw new Error("Unknown review role");
     if (kind === "commit" && role === "fable-challenge") throw new Error("Commit review uses Sol roles only");
     const target = await targetFor(stream, kind);
-    const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, claim: stream.summary, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
+    const outstanding = role === "deep-code-review" ? outstandingFindings(await store.reviews(stream.id), stream.claim).map(({ id, text }) => ({ id, text })) : [];
+    const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, claim: stream.claim, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ...(outstanding.length ? { outstanding } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
     const execution = role === "fable-challenge"
       ? { provider: "claude-aws" }
       : FRESH_NATIVE_EXECUTION;
@@ -268,8 +274,13 @@ async function main() {
     const delegation = delegationEvents.find((item) => item.id === envelope.delegationId && item.event === "created" && item.type === "review");
     const bound = delegationEvents.findLast((item) => item.id === envelope.delegationId && item.event === "bound");
     if (!bound || bound.taskId !== envelope.reviewerTaskId) throw new Error("Review task ID must match its explicit delegation binding");
-    const review = await store.addReview(stream.id, { ...validateReview(envelope, delegation), ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null });
-    return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.\n`);
+    const validated = validateReview(envelope, delegation);
+    const prior = await store.reviews(stream.id);
+    const known = new Set(findingLedger(prior).map((finding) => finding.id));
+    for (const entry of validated.reconciled || []) if (!known.has(entry.findingId)) throw new Error(`reconciled references unknown finding ID: ${entry.findingId}`);
+    const review = await store.addReview(stream.id, { ...validated, ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null });
+    const assigned = findingLedger([...prior, review]).slice(known.size).map((finding) => finding.id);
+    return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);
   }
   if (command === "review" && positional[0] === "status") {
     const stream = await store.workstream(positional[1]);

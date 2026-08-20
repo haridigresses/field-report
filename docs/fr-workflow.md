@@ -28,7 +28,10 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 
 ### Review envelope
 
-- Every review records its exact delegation, claim, reviewer task or provider run, target, independence, verdict, findings, unresolved questions, summary, explanatory scores, structural signals, and simpler-path reasoning. Changing the claim makes prior review evidence stale.
+- Every review records its exact delegation, claim, reviewer task or provider run, target, independence, verdict, findings, unresolved questions, summary, explanatory scores, structural signals, and simpler-path reasoning.
+- The delivery claim is a dedicated workstream field (`fr update <id> --claim`), distinct from the mutable status summary. Changing the claim makes prior review evidence stale; ordinary summary updates do not.
+- Field Report assigns durable finding IDs when recording reviews. A recorded finding stays outstanding across candidate evolution within the same delivery claim until a later completed review explicitly reconciles its ID with disposition resolved or rejected and evidence-based rationale judged against the current exact target. A newer GO or a changed SHA never silently clears it.
+- The `deep-code-review` brief carries outstanding findings for reconciliation; the `structural-challenge` lane reviews fresh, without prior findings.
 - Required scores are merge readiness, structural risk, implementation quality, evidence confidence, and outcome confidence. Required signals are necessity, scope drift, contract integrity, and evidence quality.
 - A GO may contain nonblocking observations in its summary. Findings and unresolved questions are blocking; do not use them for deferred scope or optional improvements.
 
@@ -51,5 +54,7 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 - Remain read-only and independently review the complete changed authority boundary; the stated claim is context, not a scope limit.
 - Derive the relevant behavioral state space and trace affected consumers and call paths. Report any material defect or missing evidence.
 - Judge the accumulated mechanism, not only the latest repair or reported cases.
+- Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers.
+- Reconcile any outstanding findings in your brief explicitly, with disposition and evidence-based rationale against the current exact target, or restate them as current findings.
 - Separate other risks, observations, and future work from blockers. Do not convert deferred scope or optional improvements into findings.
 - Return a complete exact-target envelope. Do not convert partial evidence into a GO.

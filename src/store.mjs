@@ -129,16 +129,21 @@ export function createStore(root = defaultStateRoot()) {
     return value;
   }
 
+  // One-time v2 claim migration: records saved before the dedicated delivery
+  // claim existed used summary as the implicit claim; preserve that reading
+  // until the record is next saved.
+  function withClaim(value) { return value && value.claim == null ? { ...value, claim: value.summary } : value; }
+
   async function workstreams() {
     await init();
     const files = (await readdir(path.join(root, "workstreams"))).filter((file) => file.endsWith(".json")).sort();
-    return Promise.all(files.map((file) => readJson(path.join(root, "workstreams", file))));
+    return (await Promise.all(files.map((file) => readJson(path.join(root, "workstreams", file))))).map(withClaim);
   }
 
   async function workstream(workstreamId) {
     const value = await readJson(path.join(root, "workstreams", `${id(workstreamId, "Workstream ID")}.json`), null);
     if (!value) throw new Error(`Unknown workstream: ${workstreamId}`);
-    return value;
+    return withClaim(value);
   }
 
   async function saveWorkstream(value, event = null) {
@@ -158,6 +163,7 @@ export function createStore(root = defaultStateRoot()) {
       outcome: requiredString(value.outcome || previous.outcome || value.summary || previous.summary, "Outcome"),
       status,
       summary: requiredString(value.summary || previous.summary || value.outcome || previous.outcome, "Summary"),
+      claim: requiredString(value.claim ?? previous.claim ?? previous.summary ?? value.summary ?? value.outcome ?? previous.outcome, "Delivery claim"),
       next: optionalString(value.next ?? previous.next, "Next action"),
       ownerTaskId: optionalString(value.ownerTaskId ?? previous.ownerTaskId, "Owner task ID", 200),
       branch: optionalString(value.branch ?? previous.branch, "Branch", 300),
