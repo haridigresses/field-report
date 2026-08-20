@@ -62,17 +62,24 @@ export function findingLedger(reviews) {
   let counter = 0;
   for (const review of reviews) {
     if (review.legacy === true) continue;
-    for (const text of review.findings || []) {
-      counter += 1;
-      entries.push({ id: `F${counter}`, text, role: review.role, claim: review.claim });
+    for (const [category, items] of [["finding", review.findings], ["unresolved", review.unresolved]]) {
+      for (const text of items || []) {
+        counter += 1;
+        entries.push({ id: `F${counter}`, category, text, role: review.role, claim: review.claim });
+      }
     }
   }
   return entries;
 }
 
-export function outstandingFindings(reviews, claim) {
+// Adverse evidence is durable across candidate evolution AND claim changes:
+// scoping durability to the owner-editable claim would let a claim edit
+// launder every outstanding issue. An issue inapplicable to a revised claim
+// is explicitly rejected with that rationale; a fundamentally different
+// outcome uses a new workstream.
+export function outstandingFindings(reviews) {
   const reconciled = new Set(reviews.filter((review) => review.legacy !== true).flatMap((review) => (review.reconciled || []).map((entry) => entry.findingId)));
-  return findingLedger(reviews).filter((finding) => finding.claim === claim && !reconciled.has(finding.id));
+  return findingLedger(reviews).filter((finding) => !reconciled.has(finding.id));
 }
 
 const accepted = (review) => review?.legacy !== true && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasCompleteEvidence(review) && !(review.findings || []).length && !(review.unresolved || []).length;
@@ -104,7 +111,7 @@ export function evaluateGate({ kind, target, workstream, reviews }) {
     if (!fable) reasons.push("missing Fable review through claude-aws");
     else if (!accepted(fable)) reasons.push("Fable review is not a finding-free GO");
   }
-  for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} finding ${finding.id}: ${finding.text}`);
+  for (const finding of outstandingFindings(reviews)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
   return { ready: reasons.length === 0, kind, target, reviewClass: mini ? "mini" : "full", reasons, lanes: { ...sol, fable: kind === "final" ? fable : null } };
 }
 

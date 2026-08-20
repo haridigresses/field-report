@@ -103,7 +103,7 @@ function reviewPrompt(stream, delegation) {
     ? "Inspect necessity, simplicity, authority boundaries, scope, maintainability, and whether you would select the mechanism from scratch."
     : "This brief authorizes its bounded exact target through the configured claude-aws route without another approval.";
   const outstanding = delegation.outstanding?.length
-    ? `\n\nOutstanding findings requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id}: ${finding.text}`).join("\n")}\nFor each, either include a reconciled entry with its findingId, disposition=resolved|rejected, and evidence-based rationale grounded in the code, tests, or contracts, or restate it as a current finding. Do not clear a finding on the owner's assurance alone.`
+    ? `\n\nOutstanding review issues requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nFor each, either include a reconciled entry with its findingId, disposition=resolved|rejected, and evidence-based rationale grounded in the code, tests, or contracts, or restate it as a current finding. An issue inapplicable to the current claim is rejected with that rationale, not ignored. Do not clear an issue on the owner's assurance alone.`
     : "";
   return `Independently review Field Report workstream ${stream.id} as ${delegation.role}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim: ${delegation.claim}. ${rubric}\n\nThe claim describes the intended outcome; it does not limit review scope. Review the complete changed authority boundary, derive its relevant behavioral state space, trace affected consumers and call paths, and judge the accumulated mechanism rather than only the latest repair or reported cases. Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers. Any material defect or missing evidence is a finding, as is a candidate too broad or incoherent to assess reliably. Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings or unresolved. A GO with observations is valid. Do not modify the candidate.${outstanding}\n\nReturn only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, claim exactly as stated above, kind=${delegation.kind}, role=${delegation.role}, head, baseHead${delegation.tree ? ", tree" : ""}, provider, model, route when applicable, verdict=GO|NO_GO, findings as a string array, unresolved as a string array,${delegation.outstanding?.length ? " reconciled as an array of {findingId, disposition, rationale} objects," : ""} summary, miniEligible${delegation.role === "fable-challenge" ? " (omit for Fable)" : " boolean"}, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
 }
@@ -255,7 +255,7 @@ async function main() {
     if (![...SOL_ROLES, "fable-challenge"].includes(role)) throw new Error("Unknown review role");
     if (kind === "commit" && role === "fable-challenge") throw new Error("Commit review uses Sol roles only");
     const target = await targetFor(stream, kind);
-    const outstanding = role === "deep-code-review" ? outstandingFindings(await store.reviews(stream.id), stream.claim).map(({ id, text }) => ({ id, text })) : [];
+    const outstanding = role === "deep-code-review" ? outstandingFindings(await store.reviews(stream.id)).map(({ id, category, text }) => ({ id, category, text })) : [];
     const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, claim: stream.claim, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ...(outstanding.length ? { outstanding } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
     const execution = role === "fable-challenge"
       ? { provider: "claude-aws" }
@@ -275,11 +275,12 @@ async function main() {
     const bound = delegationEvents.findLast((item) => item.id === envelope.delegationId && item.event === "bound");
     if (!bound || bound.taskId !== envelope.reviewerTaskId) throw new Error("Review task ID must match its explicit delegation binding");
     const validated = validateReview(envelope, delegation);
+    const packet = new Set((delegation.outstanding || []).map((finding) => finding.id));
+    for (const entry of validated.reconciled || []) if (!packet.has(entry.findingId)) throw new Error(`reconciled may only reference IDs from this brief's outstanding packet; out-of-packet ID: ${entry.findingId}`);
     const prior = await store.reviews(stream.id);
-    const known = new Set(findingLedger(prior).map((finding) => finding.id));
-    for (const entry of validated.reconciled || []) if (!known.has(entry.findingId)) throw new Error(`reconciled references unknown finding ID: ${entry.findingId}`);
+    const priorLedger = findingLedger(prior).length;
     const review = await store.addReview(stream.id, { ...validated, ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null });
-    const assigned = findingLedger([...prior, review]).slice(known.size).map((finding) => finding.id);
+    const assigned = findingLedger([...prior, review]).slice(priorLedger).map((finding) => finding.id);
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);
   }
   if (command === "review" && positional[0] === "status") {

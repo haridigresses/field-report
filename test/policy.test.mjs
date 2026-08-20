@@ -58,7 +58,7 @@ test("an explicit evidence-based reconciliation clears an outstanding finding", 
   assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: fullWorkstream, project, reviews }).ready, true);
 });
 
-test("a finding survives candidate evolution within the same delivery claim", () => {
+test("a finding survives candidate evolution", () => {
   const oldTree = "e".repeat(40);
   const oldTarget = delegation("deep-code-review");
   oldTarget.tree = oldTree;
@@ -69,7 +69,27 @@ test("a finding survives candidate evolution within the same delivery claim", ()
   const blocked = evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: fullWorkstream, project, reviews });
   assert.equal(blocked.ready, false);
   assert.match(blocked.reasons.join(" "), /unreconciled deep-code-review finding F1/);
-  assert.deepEqual(outstandingFindings(reviews, claim).map((finding) => finding.id), ["F1"]);
+  assert.deepEqual(outstandingFindings(reviews).map((finding) => finding.id), ["F1"]);
+});
+
+test("changing the delivery claim does not launder outstanding adverse evidence", () => {
+  const first = delegation("deep-code-review");
+  const adverse = { ...envelope(first, "reviewer-a"), verdict: "NO_GO", findings: ["Fix the bug"] };
+  const reviews = [validateReview(adverse, first)];
+  const blocked = evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { ...fullWorkstream, claim: "A revised claim" }, project, reviews });
+  assert.equal(blocked.ready, false);
+  assert.match(blocked.reasons.join(" "), /unreconciled deep-code-review finding F1: Fix the bug/);
+});
+
+test("unresolved questions are durable adverse evidence", () => {
+  const first = delegation("deep-code-review");
+  const replacement = delegation("deep-code-review");
+  const structural = delegation("structural-challenge");
+  const adverse = { ...envelope(first, "reviewer-a"), verdict: "NO_GO", unresolved: ["Is the migration reversible?"] };
+  const reviews = [validateReview(adverse, first), validateReview(envelope(replacement, "reviewer-c"), replacement), validateReview(envelope(structural, "reviewer-b"), structural)];
+  const blocked = evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: fullWorkstream, project, reviews });
+  assert.equal(blocked.ready, false);
+  assert.match(blocked.reasons.join(" "), /unreconciled deep-code-review unresolved F1: Is the migration reversible\?/);
 });
 
 test("reconciled entries require findingId, disposition, and rationale", () => {

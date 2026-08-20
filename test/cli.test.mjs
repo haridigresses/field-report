@@ -68,7 +68,7 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   const review = { reviewComplete: true, independent: true, delegationId: briefReview.delegation.id, reviewerTaskId: "review-task-1", claim: briefReview.delegation.claim, kind: "commit", role: "deep-code-review", head: briefReview.delegation.head, baseHead: briefReview.delegation.baseHead, tree: briefReview.delegation.tree, provider: "openai", model: "gpt-5.6-sol", verdict: "NO_GO", findings: ["Finding one"], unresolved: ["Question one"], summary: "Reviewed", miniEligible: true, scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 90, evidenceConfidence: 90, outcomeConfidence: 91 }, scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low", implementationQuality: "Strong", evidenceConfidence: "Direct", outcomeConfidence: "Outcome supported" }, necessity: "necessary", simplerPath: "No simpler reliable path was found.", scopeDrift: "none", contractIntegrity: "sound", evidenceQuality: "strong" };
   await writeFile(reviewFile, JSON.stringify(review));
   const recordedOutput = await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
-  assert.match(recordedOutput, /Assigned finding IDs: F1/);
+  assert.match(recordedOutput, /Assigned finding IDs: F1, F2/);
   const recorded = JSON.parse((await readFile(path.join(state, "reviews", "outcome.jsonl"), "utf8")).trim());
   assert.equal(recorded.reviewerTaskId, "review-task-1");
   assert.equal(recorded.ownerTaskIdAtBrief, "owner-1");
@@ -84,9 +84,10 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await run(["update", "outcome", "--summary", "Status prose changed mid-flight"], repo, state);
   const reconcileBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
   assert.equal(reconcileBrief.delegation.claim, "Ship bounded change");
-  assert.deepEqual(reconcileBrief.delegation.outstanding, [{ id: "F1", text: "Finding one" }]);
-  assert.match(reconcileBrief.prompt, /Outstanding findings requiring explicit reconciliation/);
-  assert.match(reconcileBrief.prompt, /- F1: Finding one/);
+  assert.deepEqual(reconcileBrief.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }, { id: "F2", category: "unresolved", text: "Question one" }]);
+  assert.match(reconcileBrief.prompt, /Outstanding review issues requiring explicit reconciliation/);
+  assert.match(reconcileBrief.prompt, /- F1 \(finding\): Finding one/);
+  assert.match(reconcileBrief.prompt, /- F2 \(unresolved\): Question one/);
   assert.match(reconcileBrief.prompt, /reconciled as an array of \{findingId, disposition, rationale\} objects/);
   // The structural lane stays fresh: no outstanding findings in its brief.
   const freshBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "structural-challenge"], repo, state));
@@ -95,8 +96,13 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await run(["review", "bind", "outcome", "--delegation", reconcileBrief.delegation.id, "--task-id", "review-task-2"], repo, state);
   const reconciling = { ...review, delegationId: reconcileBrief.delegation.id, reviewerTaskId: "review-task-2", head: reconcileBrief.delegation.head, baseHead: reconcileBrief.delegation.baseHead, tree: reconcileBrief.delegation.tree, verdict: "GO", findings: [], unresolved: [], reconciled: [{ findingId: "F9", disposition: "resolved", rationale: "Wrong ID" }] };
   await writeFile(reviewFile, JSON.stringify(reconciling));
-  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /unknown finding ID: F9/);
-  reconciling.reconciled = [{ findingId: "F1", disposition: "resolved", rationale: "Fixed at this target with a regression test." }];
+  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /out-of-packet ID: F9/);
+  // A lane that was never delivered the outstanding packet cannot reconcile its IDs.
+  await run(["review", "bind", "outcome", "--delegation", freshBrief.delegation.id, "--task-id", "review-task-3"], repo, state);
+  const outOfLane = { ...reconciling, delegationId: freshBrief.delegation.id, reviewerTaskId: "review-task-3", role: "structural-challenge", reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Not my packet" }] };
+  await writeFile(reviewFile, JSON.stringify(outOfLane));
+  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /out-of-packet ID: F1/);
+  reconciling.reconciled = [{ findingId: "F1", disposition: "resolved", rationale: "Fixed at this target with a regression test." }, { findingId: "F2", disposition: "resolved", rationale: "Answered: the migration is reversible; documented in the runbook." }];
   await writeFile(reviewFile, JSON.stringify(reconciling));
   await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
   const reconciledStatus = await run(["review", "status", "outcome", "--kind", "commit"], repo, state);
