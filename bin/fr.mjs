@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createStore } from "../src/store.mjs";
-import { evaluateGate, findingLedger, miniEligibility, outstandingFindings, publicationReasons, SOL_ROLES, validateReview, workstreamPublicationReasons } from "../src/policy.mjs";
+import { evaluateGate, miniEligibility, outstandingFindings, publicationReasons, SOL_ROLES, validateReview, workstreamPublicationReasons } from "../src/policy.mjs";
 import { checkout, commitTarget, diffInventory, finalTarget, markReady, pullRequest } from "../src/repository.mjs";
 import { hookText, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 
@@ -256,7 +256,7 @@ async function main() {
     if (kind === "commit" && role === "fable-challenge") throw new Error("Commit review uses Sol roles only");
     const target = await targetFor(stream, kind);
     const outstanding = role === "deep-code-review" ? outstandingFindings(await store.reviews(stream.id), stream.claim).map(({ id, category, text }) => ({ id, category, text })) : [];
-    const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, claim: stream.claim, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ...(outstanding.length ? { outstanding } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
+    const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ...(outstanding.length ? { outstanding } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
     const execution = role === "fable-challenge"
       ? { provider: "claude-aws" }
       : FRESH_NATIVE_EXECUTION;
@@ -274,16 +274,18 @@ async function main() {
     const delegation = delegationEvents.find((item) => item.id === envelope.delegationId && item.event === "created" && item.type === "review");
     const bound = delegationEvents.findLast((item) => item.id === envelope.delegationId && item.event === "bound");
     if (!bound || bound.taskId !== envelope.reviewerTaskId) throw new Error("Review task ID must match its explicit delegation binding");
-    const currentTarget = await targetFor(stream, delegation.kind);
-    if (delegation.head !== currentTarget.head || delegation.baseHead !== currentTarget.baseHead || (delegation.kind === "commit" && delegation.tree !== currentTarget.tree)) throw new Error("Review delegation target is stale; issue a new brief for the current target");
     const validated = validateReview(envelope, delegation);
+    const currentTarget = await targetFor(stream, delegation.kind);
+    const stale = (delegation.claimRevision ?? 1) !== (stream.claimRevision ?? 1) || delegation.head !== currentTarget.head || delegation.baseHead !== currentTarget.baseHead || (delegation.kind === "commit" && delegation.tree !== currentTarget.tree);
+    if (stale && (validated.verdict !== "NO_GO" || (!validated.findings.length && !validated.unresolved.length))) throw new Error("A stale review may record new adverse evidence only; it may not record a GO");
+    if (stale && (validated.reconciled || []).some((entry) => entry.disposition !== "still_present")) throw new Error("A stale review may mark delivered findings still_present but may not resolve or reject them");
     const packet = new Set((delegation.outstanding || []).map((finding) => finding.id));
     for (const entry of validated.reconciled || []) if (!packet.has(entry.findingId)) throw new Error(`reconciled may only reference IDs from this brief's outstanding packet; out-of-packet ID: ${entry.findingId}`);
     for (const delivered of delegation.outstanding || []) if (!(validated.reconciled || []).some((entry) => entry.findingId === delivered.id)) throw new Error(`reconciled must account for delivered issue ${delivered.id} as resolved, rejected, or still_present`);
-    const prior = await store.reviews(stream.id);
-    const priorLedger = findingLedger(prior).length;
-    const review = await store.addReview(stream.id, { ...validated, ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null });
-    const assigned = findingLedger([...prior, review]).slice(priorLedger).map((finding) => finding.id);
+    const { review, assignedFindingIds: assigned } = await store.addReview(stream.id, { ...validated, expectedClaimRevision: stream.claimRevision ?? 1, claimRevision: delegation.claimRevision ?? 1, ...(stale ? { staleAtRecord: true } : {}), ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null }, { beforeAppend: async () => {
+      const latest = await targetFor(stream, delegation.kind);
+      if (latest.head !== currentTarget.head || latest.baseHead !== currentTarget.baseHead || (delegation.kind === "commit" && latest.tree !== currentTarget.tree)) throw new Error("Repository target changed while the review was being recorded; retry against current state");
+    } });
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);
   }
   if (command === "review" && positional[0] === "status") {

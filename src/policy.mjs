@@ -37,8 +37,8 @@ export function validateReview(input, delegation) {
   if (input.role === "fable-challenge") {
     if (input.provider !== "anthropic" || input.model !== "anthropic.claude-fable-5" || input.route !== "claude-aws") throw new Error("Fable review requires anthropic.claude-fable-5 through claude-aws");
   } else if (input.provider !== "openai" || input.model !== "gpt-5.6-sol") throw new Error("Sol review requires gpt-5.6-sol through OpenAI");
-  if (!Array.isArray(input.findings) || !input.findings.every((item) => typeof item === "string")) throw new Error("Review findings must be a string array");
-  if (!Array.isArray(input.unresolved) || !input.unresolved.every((item) => typeof item === "string")) throw new Error("Review unresolved must be a string array");
+  if (!Array.isArray(input.findings) || !input.findings.every((item) => typeof item === "string" && item.trim())) throw new Error("Review findings must be a nonblank string array");
+  if (!Array.isArray(input.unresolved) || !input.unresolved.every((item) => typeof item === "string" && item.trim())) throw new Error("Review unresolved must be a nonblank string array");
   if (!String(input.summary || "").trim()) throw new Error("Review requires a summary");
   for (const key of SCORE_KEYS) assertScore(input.scores?.[key], key);
   for (const key of SCORE_KEYS) if (!String(input.scoreRationale?.[key] || "").trim()) throw new Error(`${key} requires explanatory rationale`);
@@ -81,6 +81,7 @@ export function outstandingFindings(reviews, claim) {
   const state = new Map();
   for (const review of reviews) {
     if (review.legacy === true) continue;
+    if (review.staleAtRecord === true) continue;
     for (const entry of review.reconciled || []) {
       const current = state.get(entry.findingId) || { resolved: false, rejectedClaims: new Set() };
       if (entry.disposition === "resolved") current.resolved = true;
@@ -104,7 +105,8 @@ function latestFor(reviews, predicate) { return [...reviews].reverse().find(pred
 
 export function evaluateGate({ kind, target, workstream, reviews }) {
   const claim = workstream.claim ?? workstream.summary;
-  const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.claim === claim && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
+  const claimRevision = workstream.claimRevision ?? 1;
+  const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.claim === claim && (review.claimRevision ?? 1) === claimRevision && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
   const sol = Object.fromEntries(SOL_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
   const fable = latestFor(matching, (review) => review.role === "fable-challenge");
   const reasons = [];

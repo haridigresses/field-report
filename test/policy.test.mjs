@@ -137,12 +137,26 @@ test("reconciled entries require findingId, disposition, and rationale", () => {
   assert.throws(() => validateReview(duplicate, deep), /distinct finding IDs/);
 });
 
+test("findings and unresolved entries must be nonblank", () => {
+  const deep = delegation("deep-code-review");
+  assert.throws(() => validateReview({ ...envelope(deep, "reviewer-a"), findings: ["   "] }, deep), /nonblank string array/);
+  assert.throws(() => validateReview({ ...envelope(deep, "reviewer-a"), unresolved: [""] }, deep), /nonblank string array/);
+});
+
 test("changing the delivery claim makes exact-target reviews stale, but summary edits do not", () => {
   const deep = delegation("deep-code-review");
   const structural = delegation("structural-challenge");
   const reviews = [validateReview(envelope(deep, "reviewer-a"), deep), validateReview(envelope(structural, "reviewer-b"), structural)];
   assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { ...fullWorkstream, claim: "A different claim" }, project, reviews }).ready, false);
   assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { ...fullWorkstream, summary: "Another status edit" }, project, reviews }).ready, true);
+});
+
+test("a claim text round trip does not reactivate old review evidence", () => {
+  const deep = delegation("deep-code-review");
+  const structural = delegation("structural-challenge");
+  const reviews = [validateReview(envelope(deep, "reviewer-a"), deep), validateReview(envelope(structural, "reviewer-b"), structural)].map((review) => ({ ...review, claimRevision: 1 }));
+  assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { ...fullWorkstream, claimRevision: 1 }, project, reviews }).ready, true);
+  assert.equal(evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: { ...fullWorkstream, claimRevision: 3 }, project, reviews }).ready, false);
 });
 
 test("owner identity at review time remains disqualifying after reassignment", () => {

@@ -132,7 +132,7 @@ export function createStore(root = defaultStateRoot()) {
   // One-time v2 claim migration: records saved before the dedicated delivery
   // claim existed used summary as the implicit claim; preserve that reading
   // until the record is next saved.
-  function withClaim(value) { return value && value.claim == null ? { ...value, claim: value.summary } : value; }
+  function withClaim(value) { return value ? { ...value, claim: value.claim ?? value.summary, claimRevision: value.claimRevision ?? 1 } : value; }
 
   async function workstreams() {
     await init();
@@ -154,6 +154,8 @@ export function createStore(root = defaultStateRoot()) {
       if (value.revision != null && value.revision !== previous.revision) throw new Error(`Workstream ${value.id} changed since it was read; reload before updating`);
       const status = value.status || previous.status || "planned";
       if (!["planned", "active", "blocked", "complete"].includes(status)) throw new Error("Status must be planned, active, blocked, or complete");
+      const previousClaim = previous.claim ?? previous.summary ?? null;
+      const claim = requiredString(value.claim ?? previousClaim ?? value.summary ?? value.outcome ?? previous.outcome, "Delivery claim");
       const record = {
       schemaVersion: 2,
       revision: (previous.revision || 0) + 1,
@@ -163,7 +165,8 @@ export function createStore(root = defaultStateRoot()) {
       outcome: requiredString(value.outcome || previous.outcome || value.summary || previous.summary, "Outcome"),
       status,
       summary: requiredString(value.summary || previous.summary || value.outcome || previous.outcome, "Summary"),
-      claim: requiredString(value.claim ?? previous.claim ?? previous.summary ?? value.summary ?? value.outcome ?? previous.outcome, "Delivery claim"),
+      claim,
+      claimRevision: previous.id ? (previous.claimRevision ?? 1) + (claim === previousClaim ? 0 : 1) : 1,
       next: optionalString(value.next ?? previous.next, "Next action"),
       ownerTaskId: optionalString(value.ownerTaskId ?? previous.ownerTaskId, "Owner task ID", 200),
       branch: optionalString(value.branch ?? previous.branch, "Branch", 300),
@@ -205,11 +208,21 @@ export function createStore(root = defaultStateRoot()) {
     });
   }
 
-  async function addReview(workstreamId, value) {
+  async function addReview(workstreamId, value, { beforeAppend } = {}) {
     const stream = await workstream(workstreamId);
-    const review = { ...value, id: randomUUID(), workstreamId: stream.id, recordedAt: new Date().toISOString() };
-    await locked(() => append("reviews", stream.id, review));
-    return review;
+    const { expectedClaimRevision, ...storedValue } = value;
+    const review = { ...storedValue, id: randomUUID(), workstreamId: stream.id, recordedAt: new Date().toISOString() };
+    return locked(async () => {
+      const current = withClaim(await readJson(path.join(root, "workstreams", `${stream.id}.json`)));
+      if (expectedClaimRevision != null && current.claimRevision !== expectedClaimRevision) throw new Error("Workstream claim changed while the review was being recorded; retry against current state");
+      const prior = await lines("reviews", stream.id);
+      if (prior.some((item) => item.delegationId === review.delegationId)) throw new Error("A review delegation may be recorded only once");
+      const priorFindingCount = prior.filter((item) => item.legacy !== true).reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
+      if (beforeAppend) await beforeAppend();
+      await append("reviews", stream.id, review);
+      const assignedFindingIds = Array.from({ length: review.findings.length + review.unresolved.length }, (_, index) => `F${priorFindingCount + index + 1}`);
+      return { review, assignedFindingIds };
+    });
   }
 
   async function addDecision(workstreamId, questionId, answer, actor = null) {
