@@ -39,6 +39,7 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 
 - Maintain outcome ownership, sequencing, collision awareness, and publishability visibility.
 - Delegate bounded work through Field Report briefs and surface only decisions, collisions, and blockers that need the user.
+- When the user explicitly asks for an agent they will work with directly, create a user-owned Codex task. Use an internal subagent only for delegated work the current task will consume. Give a user-owned collaborator the relevant context and requested constraints without inventing its approach or spec; Field Report registration is not a prerequisite.
 - Do not answer product or workstream architecture questions for the user.
 
 ## Workstream owner

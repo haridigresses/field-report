@@ -172,3 +172,12 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   assert.match(fableBrief.prompt, /Attempt to falsify the candidate/);
   assert.equal(fableBrief.delegation.claim, "Ship bounded change");
 });
+
+test("coordinator workflow distinguishes user-owned collaborators from internal delegation", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-workflow-"));
+  const output = await run(["workflow", "coordinator"], root, path.join(root, "state"));
+  assert.match(output, /When the user explicitly asks for an agent they will work with directly, create a user-owned Codex task/);
+  assert.match(output, /Use an internal subagent only for delegated work the current task will consume/);
+  assert.match(output, /without inventing its approach or spec/);
+  assert.match(output, /Field Report registration is not a prerequisite/);
+});
