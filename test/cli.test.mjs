@@ -89,6 +89,8 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   assert.match(reconcileBrief.prompt, /- F1 \(finding\): Finding one/);
   assert.match(reconcileBrief.prompt, /- F2 \(unresolved\): Question one/);
   assert.match(reconcileBrief.prompt, /reconciled as an array of \{findingId, disposition, rationale\} objects/);
+  assert.match(reconcileBrief.prompt, /still_present when it remains/);
+  assert.match(reconcileBrief.prompt, /do not restate a delivered issue there/);
   // The structural lane stays fresh: no outstanding findings in its brief.
   const freshBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "structural-challenge"], repo, state));
   assert.equal(freshBrief.delegation.outstanding, undefined);
@@ -102,12 +104,28 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   const outOfLane = { ...reconciling, delegationId: freshBrief.delegation.id, reviewerTaskId: "review-task-3", role: "structural-challenge", reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Not my packet" }] };
   await writeFile(reviewFile, JSON.stringify(outOfLane));
   await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /out-of-packet ID: F1/);
+  const repeated = { ...reconciling, reconciled: [] };
+  await writeFile(reviewFile, JSON.stringify(repeated));
+  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /reconciled must account for delivered issue F1/);
+  repeated.reconciled = [{ findingId: "F1", disposition: "still_present", rationale: "The defect remains at this target." }, { findingId: "F2", disposition: "still_present", rationale: "The question remains unanswered." }];
+  await writeFile(reviewFile, JSON.stringify(repeated));
+  await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
   reconciling.reconciled = [{ findingId: "F1", disposition: "resolved", rationale: "Fixed at this target with a regression test." }, { findingId: "F2", disposition: "resolved", rationale: "Answered: the migration is reversible; documented in the runbook." }];
   await writeFile(reviewFile, JSON.stringify(reconciling));
   await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
   const reconciledStatus = await run(["review", "status", "outcome", "--kind", "commit"], repo, state);
   assert.doesNotMatch(reconciledStatus, /unreconciled/);
   assert.match(reconciledStatus, /Reconciled: F1 resolved — Fixed at this target with a regression test/);
+
+  const staleBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
+  await run(["review", "bind", "outcome", "--delegation", staleBrief.delegation.id, "--task-id", "stale-review-task"], repo, state);
+  await writeFile(path.join(repo, "README.md"), "newer staged target\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
+  const staleReview = { ...review, delegationId: staleBrief.delegation.id, reviewerTaskId: "stale-review-task", head: staleBrief.delegation.head, baseHead: staleBrief.delegation.baseHead, tree: staleBrief.delegation.tree, verdict: "GO", findings: [], unresolved: [], reconciled: undefined };
+  await writeFile(reviewFile, JSON.stringify(staleReview));
+  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /Review delegation target is stale/);
+  await writeFile(path.join(repo, "README.md"), "review me\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
 
   const remote = path.join(root, "remote.git");
   await exec("git", ["init", "--bare", remote]);

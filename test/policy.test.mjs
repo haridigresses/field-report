@@ -69,7 +69,7 @@ test("a finding survives candidate evolution", () => {
   const blocked = evaluateGate({ kind: "commit", target: { head, baseHead, tree }, workstream: fullWorkstream, project, reviews });
   assert.equal(blocked.ready, false);
   assert.match(blocked.reasons.join(" "), /unreconciled deep-code-review finding F1/);
-  assert.deepEqual(outstandingFindings(reviews).map((finding) => finding.id), ["F1"]);
+  assert.deepEqual(outstandingFindings(reviews, claim).map((finding) => finding.id), ["F1"]);
 });
 
 test("changing the delivery claim does not launder outstanding adverse evidence", () => {
@@ -92,10 +92,47 @@ test("unresolved questions are durable adverse evidence", () => {
   assert.match(blocked.reasons.join(" "), /unreconciled deep-code-review unresolved F1: Is the migration reversible\?/);
 });
 
+test("a rejection is scoped to the claim against which applicability was judged", () => {
+  const original = delegation("deep-code-review");
+  const adverse = { ...envelope(original, "reviewer-a"), verdict: "NO_GO", findings: ["Claim-specific defect"] };
+  const revisedClaim = "A revised delivery claim";
+  const rejectionDelegation = { ...delegation("deep-code-review"), claim: revisedClaim };
+  const rejection = { ...envelope(rejectionDelegation, "reviewer-b"), claim: revisedClaim, reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "This defect is inapplicable to the revised claim." }] };
+  const reviews = [validateReview(adverse, original), validateReview(rejection, rejectionDelegation)];
+  assert.deepEqual(outstandingFindings(reviews, revisedClaim), []);
+  assert.deepEqual(outstandingFindings(reviews, claim).map((finding) => finding.id), ["F1"]);
+});
+
+test("a later still-present disposition reopens previously cleared evidence", () => {
+  const original = delegation("deep-code-review");
+  const adverse = { ...envelope(original, "reviewer-a"), verdict: "NO_GO", findings: ["Claim-specific defect"] };
+  const rejectedDelegation = delegation("deep-code-review");
+  const rejected = { ...envelope(rejectedDelegation, "reviewer-b"), reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Not applicable at this target." }] };
+  const confirmedDelegation = delegation("deep-code-review");
+  const confirmed = { ...envelope(confirmedDelegation, "reviewer-c"), reconciled: [{ findingId: "F1", disposition: "still_present", rationale: "The defect remains reproducible." }] };
+  const reviews = [validateReview(adverse, original), validateReview(rejected, rejectedDelegation), validateReview(confirmed, confirmedDelegation)];
+  assert.deepEqual(outstandingFindings(reviews, claim).map((finding) => finding.id), ["F1"]);
+});
+
+test("claim-scoped rejections do not erase other claim clearances", () => {
+  const original = delegation("deep-code-review");
+  const adverse = { ...envelope(original, "reviewer-a"), verdict: "NO_GO", findings: ["Claim-specific defect"] };
+  const claimA = "Claim A";
+  const claimB = "Claim B";
+  const rejectionADelegation = { ...delegation("deep-code-review"), claim: claimA };
+  const rejectionBDelegation = { ...delegation("deep-code-review"), claim: claimB };
+  const rejectionA = { ...envelope(rejectionADelegation, "reviewer-b"), claim: claimA, reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable to A." }] };
+  const rejectionB = { ...envelope(rejectionBDelegation, "reviewer-c"), claim: claimB, reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable to B." }] };
+  const reviews = [validateReview(adverse, original), validateReview(rejectionA, rejectionADelegation), validateReview(rejectionB, rejectionBDelegation)];
+  assert.deepEqual(outstandingFindings(reviews, claimA), []);
+  assert.deepEqual(outstandingFindings(reviews, claimB), []);
+  assert.deepEqual(outstandingFindings(reviews, claim).map((finding) => finding.id), ["F1"]);
+});
+
 test("reconciled entries require findingId, disposition, and rationale", () => {
   const deep = delegation("deep-code-review");
   const invalid = { ...envelope(deep, "reviewer-a"), reconciled: [{ findingId: "F1", disposition: "waived", rationale: "Trust me" }] };
-  assert.throws(() => validateReview(invalid, deep), /disposition resolved\|rejected/);
+  assert.throws(() => validateReview(invalid, deep), /disposition resolved\|rejected\|still_present/);
   const duplicate = { ...envelope(deep, "reviewer-a"), reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed" }, { findingId: "F1", disposition: "rejected", rationale: "Also this" }] };
   assert.throws(() => validateReview(duplicate, deep), /distinct finding IDs/);
 });

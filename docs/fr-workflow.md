@@ -30,7 +30,7 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 
 - Every review records its exact delegation, claim, reviewer task or provider run, target, independence, verdict, findings, unresolved questions, summary, explanatory scores, structural signals, and simpler-path reasoning.
 - The delivery claim is a dedicated workstream field (`fr update <id> --claim`), distinct from the mutable status summary. Changing the claim makes prior review evidence stale; ordinary summary updates do not.
-- Field Report assigns durable IDs to recorded findings and unresolved questions. Both stay outstanding across candidate evolution and claim changes until a later completed review explicitly reconciles the ID with disposition resolved or rejected and evidence-based rationale judged against the current exact target. A newer GO, a changed SHA, or an edited claim never silently clears them. An issue inapplicable to a revised claim is rejected with that rationale; a fundamentally different outcome uses a new workstream.
+- Field Report assigns durable IDs to recorded findings and unresolved questions. Both stay outstanding across candidate evolution and claim changes until a later completed review explicitly reconciles the ID with evidence-based rationale judged against the current exact target. A resolved issue stays cleared; a rejected issue is cleared only for the claim against which it was judged inapplicable. A newer GO, a changed SHA, or an edited claim never silently clears adverse evidence. A fundamentally different outcome uses a new workstream.
 - The `deep-code-review` brief carries the outstanding issues for reconciliation; the `structural-challenge` lane reviews fresh, without prior findings. A review may reconcile only IDs delivered in its own brief's outstanding packet.
 - Required scores are merge readiness, structural risk, implementation quality, evidence confidence, and outcome confidence. Required signals are necessity, scope drift, contract integrity, and evidence quality.
 - A GO may contain nonblocking observations in its summary. Findings and unresolved questions are blocking; do not use them for deferred scope or optional improvements.
@@ -55,6 +55,6 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 - Derive the relevant behavioral state space and trace affected consumers and call paths. Report any material defect or missing evidence.
 - Judge the accumulated mechanism, not only the latest repair or reported cases.
 - Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers.
-- Reconcile any outstanding issues in your brief explicitly, with disposition and evidence-based rationale against the current exact target, or restate them as current findings. Reconcile only IDs your brief delivered.
+- Account for every delivered issue ID: mark it resolved, rejected when inapplicable to the current claim, or still present. Give evidence-based rationale. Findings and unresolved are only for newly discovered issues. Reconcile only IDs your brief delivered.
 - Separate other risks, observations, and future work from blockers. Do not convert deferred scope or optional improvements into findings.
 - Return a complete exact-target envelope. Do not convert partial evidence into a GO.
