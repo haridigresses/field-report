@@ -37,15 +37,66 @@ export function validateReview(input, delegation) {
   if (input.role === "fable-challenge") {
     if (input.provider !== "anthropic" || input.model !== "anthropic.claude-fable-5" || input.route !== "claude-aws") throw new Error("Fable review requires anthropic.claude-fable-5 through claude-aws");
   } else if (input.provider !== "openai" || input.model !== "gpt-5.6-sol") throw new Error("Sol review requires gpt-5.6-sol through OpenAI");
-  if (!Array.isArray(input.findings) || !input.findings.every((item) => typeof item === "string")) throw new Error("Review findings must be a string array");
-  if (!Array.isArray(input.unresolved) || !input.unresolved.every((item) => typeof item === "string")) throw new Error("Review unresolved must be a string array");
+  if (!Array.isArray(input.findings) || !input.findings.every((item) => typeof item === "string" && item.trim())) throw new Error("Review findings must be a nonblank string array");
+  if (!Array.isArray(input.unresolved) || !input.unresolved.every((item) => typeof item === "string" && item.trim())) throw new Error("Review unresolved must be a nonblank string array");
   if (!String(input.summary || "").trim()) throw new Error("Review requires a summary");
   for (const key of SCORE_KEYS) assertScore(input.scores?.[key], key);
   for (const key of SCORE_KEYS) if (!String(input.scoreRationale?.[key] || "").trim()) throw new Error(`${key} requires explanatory rationale`);
   for (const [key, values] of Object.entries(SIGNAL_VALUES)) if (!values.includes(input[key])) throw new Error(`${key} must be one of: ${values.join(", ")}`);
   if (!String(input.simplerPath || "").trim()) throw new Error("simplerPath must explain alternatives considered and discarded, or state that none were found");
   if (input.role !== "fable-challenge" && typeof input.miniEligible !== "boolean") throw new Error("Sol reviews must state miniEligible true or false");
-  return { ...input, findings: [...input.findings], unresolved: [...input.unresolved], scores: { ...input.scores } };
+  if (input.reconciled != null) {
+    if (!Array.isArray(input.reconciled)) throw new Error("reconciled must be an array of finding reconciliations");
+    for (const entry of input.reconciled) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Each reconciled entry must be an object");
+      if (!String(entry.findingId || "").trim() || !["resolved", "rejected", "still_present"].includes(entry.disposition) || !String(entry.rationale || "").trim()) throw new Error("Each reconciled entry requires findingId, disposition resolved|rejected|still_present, and evidence-based rationale");
+    }
+    const ids = input.reconciled.map((entry) => entry.findingId);
+    if (new Set(ids).size !== ids.length) throw new Error("reconciled entries must reference distinct finding IDs");
+  }
+  return { ...input, findings: [...input.findings], unresolved: [...input.unresolved], scores: { ...input.scores }, ...(input.reconciled ? { reconciled: input.reconciled.map((entry) => ({ ...entry })) } : {}) };
+}
+
+export function findingLedger(reviews) {
+  const entries = [];
+  let counter = 0;
+  for (const review of reviews) {
+    if (review.legacy === true) continue;
+    for (const [category, items] of [["finding", review.findings], ["unresolved", review.unresolved]]) {
+      for (const text of items || []) {
+        counter += 1;
+        entries.push({ id: `F${counter}`, category, text, role: review.role, claim: review.claim });
+      }
+    }
+  }
+  return entries;
+}
+
+// Adverse evidence is durable across candidate evolution AND claim changes:
+// scoping durability to the owner-editable claim would let a claim edit
+// launder every outstanding issue. An issue inapplicable to a revised claim
+// is explicitly rejected with that rationale; a fundamentally different
+// outcome uses a new workstream.
+export function outstandingFindings(reviews, claim) {
+  const state = new Map();
+  for (const review of reviews) {
+    if (review.legacy === true) continue;
+    if (review.staleAtRecord === true) continue;
+    for (const entry of review.reconciled || []) {
+      const current = state.get(entry.findingId) || { resolved: false, rejectedClaims: new Set() };
+      if (entry.disposition === "resolved") current.resolved = true;
+      else if (entry.disposition === "rejected") current.rejectedClaims.add(review.claim);
+      else {
+        current.resolved = false;
+        current.rejectedClaims.delete(review.claim);
+      }
+      state.set(entry.findingId, current);
+    }
+  }
+  return findingLedger(reviews).filter((finding) => {
+    const current = state.get(finding.id);
+    return !current?.resolved && !current?.rejectedClaims.has(claim);
+  });
 }
 
 const accepted = (review) => review?.legacy !== true && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasCompleteEvidence(review) && !(review.findings || []).length && !(review.unresolved || []).length;
@@ -53,7 +104,9 @@ const accepted = (review) => review?.legacy !== true && review?.verdict === "GO"
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
 
 export function evaluateGate({ kind, target, workstream, reviews }) {
-  const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.claim === workstream.summary && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
+  const claim = workstream.claim ?? workstream.summary;
+  const claimRevision = workstream.claimRevision ?? 1;
+  const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.claim === claim && (review.claimRevision ?? 1) === claimRevision && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
   const sol = Object.fromEntries(SOL_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
   const fable = latestFor(matching, (review) => review.role === "fable-challenge");
   const reasons = [];
@@ -76,6 +129,7 @@ export function evaluateGate({ kind, target, workstream, reviews }) {
     if (!fable) reasons.push("missing Fable review through claude-aws");
     else if (!accepted(fable)) reasons.push("Fable review is not a finding-free GO");
   }
+  for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
   return { ready: reasons.length === 0, kind, target, reviewClass: mini ? "mini" : "full", reasons, lanes: { ...sol, fable: kind === "final" ? fable : null } };
 }
 
