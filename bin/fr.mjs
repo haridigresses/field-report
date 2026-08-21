@@ -176,7 +176,7 @@ async function main() {
   if (command === "show") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
     if (flags.json) return process.stdout.write(`${JSON.stringify({ ...stream, reviews: await store.reviews(stream.id), delegations: await store.delegations(stream.id) }, null, 2)}\n`);
-    return process.stdout.write(`${stream.id}\n${stream.title}\nStatus: ${stream.status} · Review: ${stream.reviewClass}\n${stream.summary}\nNext: ${stream.next || "not recorded"}\nBranch: ${stream.branch || "not assigned"}\n`);
+    return process.stdout.write(`${stream.id}\n${stream.title}\nStatus: ${stream.status} · Review: ${stream.reviewClass}\nClaim: ${stream.claim}\n${stream.summary}\nNext: ${stream.next || "not recorded"}\nBranch: ${stream.branch || "not assigned"}\n`);
   }
   if (command === "context") {
     const stream = await streamForCheckout(positional[0]);
@@ -184,7 +184,7 @@ async function main() {
     const state = await checkout();
     let final;
     try { final = await gateFor(stream, "final"); } catch (error) { final = { gate: { ready: false, reasons: [error.message] } }; }
-    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nNext: ${stream.next || "not recorded"}\nPublish review: ${final.gate.ready ? "READY" : `BLOCKED — ${final.gate.reasons.join("; ")}`}\n`);
+    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nPublish review: ${final.gate.ready ? "READY" : `BLOCKED — ${final.gate.reasons.join("; ")}`}\n`);
   }
   if (command === "update") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));

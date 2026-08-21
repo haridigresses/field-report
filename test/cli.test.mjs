@@ -82,6 +82,8 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
 
   // Summary edits do not change the delivery claim or stale review evidence.
   await run(["update", "outcome", "--summary", "Status prose changed mid-flight"], repo, state);
+  assert.match(await run(["show", "outcome"], repo, state), /Claim: Ship bounded change/);
+  assert.match(await run(["context", "outcome"], repo, state), /Claim: Ship bounded change/);
   const reconcileBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
   assert.equal(reconcileBrief.delegation.claim, "Ship bounded change");
   assert.deepEqual(reconcileBrief.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }, { id: "F2", category: "unresolved", text: "Question one" }]);
