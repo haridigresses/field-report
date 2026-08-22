@@ -31,7 +31,7 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await run(["create", "outcome", "--project", "sample", "--title", "Outcome", "--outcome", "Ship bounded change", "--branch", "main", "--owner-task", "owner-1"], repo, state);
   const brief = JSON.parse(await run(["delegate", "brief", "outcome", "--role", "executor", "--slice", "Implement one bounded change"], repo, state));
   assert.equal(brief.delegation.type, "work");
-  assert.deepEqual(brief.execution, { fork_turns: "none" });
+  assert.deepEqual(brief.execution, { freshContext: true, allowed: ["native", "codex-cli", "cursor-cli"] });
   assert.match(brief.prompt, /run `af-onboard-safe`/);
   assert.match(brief.prompt, /Agent Fixes for session context and issue lineage/);
   assert.match(brief.prompt, /retry `af onboard` once with normal escalation/);
@@ -50,8 +50,13 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   const briefReview = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
   assert.equal(briefReview.delegation.ownerTaskIdAtBrief, "owner-1");
   assert.equal(briefReview.delegation.claim, "Ship bounded change");
-  assert.deepEqual(briefReview.execution, { fork_turns: "none" });
-  assert.doesNotMatch(briefReview.prompt, /af-onboard-safe/);
+  assert.deepEqual(briefReview.execution, { freshContext: true, allowed: ["native", "codex-cli", "cursor-cli"] });
+  assert.equal(briefReview.inspection.command, `git diff --no-ext-diff --no-textconv ${briefReview.delegation.baseHead} ${briefReview.delegation.tree} --`);
+  assert.deepEqual(briefReview.inspection.files, ["README.md"]);
+  assert.match(briefReview.prompt, /Inspect the exact target with this read-only command:/);
+  assert.match(briefReview.prompt, /Changed files \(1; \+1 −1\):/);
+  assert.match(briefReview.prompt, /Do not run af-onboard-safe, fr, or owner skills/);
+  assert.match(briefReview.prompt, /Copy the claim string exactly/);
   assert.match(briefReview.prompt, /claim describes the intended outcome; it does not limit review scope/);
   assert.match(briefReview.prompt, /complete changed authority boundary/);
   assert.match(briefReview.prompt, /behavioral state space/);
@@ -66,7 +71,7 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await run(["review", "bind", "outcome", "--delegation", briefReview.delegation.id, "--task-id", "review-task-1"], repo, state);
   const reviewFile = path.join(root, "review.json");
   const review = { reviewComplete: true, independent: true, delegationId: briefReview.delegation.id, reviewerTaskId: "review-task-1", claim: briefReview.delegation.claim, kind: "commit", role: "deep-code-review", head: briefReview.delegation.head, baseHead: briefReview.delegation.baseHead, tree: briefReview.delegation.tree, provider: "openai", model: "gpt-5.6-sol", verdict: "NO_GO", findings: ["Finding one"], unresolved: ["Question one"], summary: "Reviewed", miniEligible: true, scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 90, evidenceConfidence: 90, outcomeConfidence: 91 }, scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low", implementationQuality: "Strong", evidenceConfidence: "Direct", outcomeConfidence: "Outcome supported" }, necessity: "necessary", simplerPath: "No simpler reliable path was found.", scopeDrift: "none", contractIntegrity: "sound", evidenceQuality: "strong" };
-  await writeFile(reviewFile, JSON.stringify(review));
+  await writeFile(reviewFile, `\`\`\`json\n${JSON.stringify(review)}\n\`\`\`\n`);
   const recordedOutput = await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
   assert.match(recordedOutput, /Assigned finding IDs: F1, F2/);
   const recorded = JSON.parse((await readFile(path.join(state, "reviews", "outcome.jsonl"), "utf8")).trim());
@@ -163,8 +168,9 @@ test("CLI records a native delegation lifecycle without launching an agent", asy
   await exec("git", ["commit", "-m", "final candidate"], { cwd: repo });
   await run(["update", "outcome", "--branch", "feature"], repo, state);
   const fableBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "final", "--role", "fable-challenge"], repo, state));
-  assert.deepEqual(fableBrief.execution, { provider: "claude-aws" });
-  assert.doesNotMatch(fableBrief.prompt, /af-onboard-safe/);
+  assert.deepEqual(fableBrief.execution, { freshContext: true, allowed: ["claude-aws"] });
+  assert.equal(fableBrief.inspection.command, `git diff --no-ext-diff --no-textconv ${fableBrief.delegation.baseHead} ${fableBrief.delegation.head} --`);
+  assert.match(fableBrief.prompt, /Do not run af-onboard-safe, fr, or owner skills/);
   assert.match(fableBrief.prompt, /claim describes the intended outcome; it does not limit review scope/);
   assert.match(fableBrief.prompt, /complete changed authority boundary/);
   assert.match(fableBrief.prompt, /behavioral state space/);
@@ -180,4 +186,7 @@ test("coordinator workflow distinguishes user-owned collaborators from internal 
   assert.match(output, /Use an internal subagent only for delegated work the current task will consume/);
   assert.match(output, /without inventing its approach or spec/);
   assert.match(output, /Field Report registration is not a prerequisite/);
+  const shared = await run(["workflow"], root, path.join(root, "state"));
+  assert.match(shared, /Field Report does not run those providers/);
+  assert.doesNotMatch(shared, /fork_turns/);
 });

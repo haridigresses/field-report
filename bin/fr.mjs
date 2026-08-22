@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { parseEnvelope } from "../src/envelope.mjs";
 import { createStore } from "../src/store.mjs";
 import { evaluateGate, miniEligibility, outstandingFindings, publicationReasons, SOL_ROLES, validateReview, workstreamPublicationReasons } from "../src/policy.mjs";
 import { checkout, commitTarget, diffInventory, finalTarget, markReady, pullRequest } from "../src/repository.mjs";
@@ -15,7 +16,9 @@ const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const store = createStore();
 const SHA = /^[0-9a-f]{40}$/i;
 const AF_ONBOARDING = "Before any other task work, run `af-onboard-safe` and read its complete output. It returns the exact onboarding document pinned to the installed AF version without invoking AF's broken sandboxed update check. Use Agent Fixes for session context and issue lineage; Field Report remains the authority for outcome state, review evidence, and gates. If the helper reports a version mismatch or missing cache, retry `af onboard` once with normal escalation. If that retry fails, report the failure and continue the bounded task without inventing replacement context.";
-const FRESH_NATIVE_EXECUTION = Object.freeze({ fork_turns: "none" });
+const WORK_EXECUTION = Object.freeze({ freshContext: true, allowed: ["native", "codex-cli", "cursor-cli"] });
+const SOL_EXECUTION = WORK_EXECUTION;
+const FABLE_EXECUTION = Object.freeze({ freshContext: true, allowed: ["claude-aws"] });
 
 function usage() {
   return `Field Report software-factory harness
@@ -45,7 +48,7 @@ fr publish <id>
 fr hook install|status|uninstall <project-id>
 fr workflow [shared|coordinator|workstream|reviewer]
 
-Field Report defines targets, policy, evidence, and gates. Native Codex delegation performs Sol reviews; invoke claude-aws through the user's shell entrypoint for Fable.`;
+Field Report defines targets, policy, evidence, and gates. The owner launches reviewers; Field Report does not.`;
 }
 
 function parse(values) {
@@ -93,7 +96,15 @@ async function targetFor(stream, kind) {
   return kind === "commit" ? commitTarget(project, stream) : finalTarget(project, stream);
 }
 
-function reviewPrompt(stream, delegation) {
+function inspectCommand(delegation) {
+  return `git diff --no-ext-diff --no-textconv ${delegation.baseHead} ${delegation.tree || delegation.head} --`;
+}
+
+function inspection(delegation, inventory) {
+  return { command: inspectCommand(delegation), files: inventory.files, additions: inventory.additions, deletions: inventory.deletions };
+}
+
+function reviewPrompt(stream, delegation, inventory) {
   const target = delegation.kind === "commit"
     ? `base HEAD ${delegation.baseHead} and staged tree ${delegation.tree}`
     : `base ${delegation.baseHead} and exact final head ${delegation.head}`;
@@ -105,7 +116,8 @@ function reviewPrompt(stream, delegation) {
   const outstanding = delegation.outstanding?.length
     ? `\n\nOutstanding review issues requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nAccount for every delivered ID in reconciled: use disposition=resolved when fixed, rejected when inapplicable to the current claim, or still_present when it remains. Give evidence-based rationale. Findings and unresolved are only for newly discovered issues; do not restate a delivered issue there. Do not clear an issue on the owner's assurance alone.`
     : "";
-  return `Independently review Field Report workstream ${stream.id} as ${delegation.role}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim: ${delegation.claim}. ${rubric}\n\nThe claim describes the intended outcome; it does not limit review scope. Review the complete changed authority boundary, derive its relevant behavioral state space, trace affected consumers and call paths, and judge the accumulated mechanism rather than only the latest repair or reported cases. Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers. Any material defect or missing evidence is a finding, as is a candidate too broad or incoherent to assess reliably. Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings or unresolved. A GO with observations is valid. Do not modify the candidate.${outstanding}\n\nReturn only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, claim exactly as stated above, kind=${delegation.kind}, role=${delegation.role}, head, baseHead${delegation.tree ? ", tree" : ""}, provider, model, route when applicable, verdict=GO|NO_GO, findings as a string array, unresolved as a string array,${delegation.outstanding?.length ? " reconciled as an array of {findingId, disposition, rationale} objects," : ""} summary, miniEligible${delegation.role === "fable-challenge" ? " (omit for Fable)" : " boolean"}, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
+  const files = (inventory.files || []).map((file) => `- ${file}`).join("\n") || "- none listed";
+  return `Independently review Field Report workstream ${stream.id} as ${delegation.role}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim: ${delegation.claim}. ${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run af-onboard-safe, fr, or owner skills. Copy the claim string exactly. Return only the JSON envelope.\n\nThe claim describes the intended outcome; it does not limit review scope. Review the complete changed authority boundary, derive its relevant behavioral state space, trace affected consumers and call paths, and judge the accumulated mechanism rather than only the latest repair or reported cases. Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers. Any material defect or missing evidence is a finding, as is a candidate too broad or incoherent to assess reliably. Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings or unresolved. A GO with observations is valid. Do not modify the candidate.${outstanding}\n\nReturn only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, claim exactly as stated above, kind=${delegation.kind}, role=${delegation.role}, head, baseHead${delegation.tree ? ", tree" : ""}, provider, model, route when applicable, verdict=GO|NO_GO, findings as a string array, unresolved as a string array,${delegation.outstanding?.length ? " reconciled as an array of {findingId, disposition, rationale} objects," : ""} summary, miniEligible${delegation.role === "fable-challenge" ? " (omit for Fable)" : " boolean"}, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
 }
 
 async function gateFor(stream, kind) {
@@ -227,7 +239,7 @@ async function main() {
     const slice = requireValue(flags.slice, "Specify the bounded --slice to delegate");
     const delegation = await store.addDelegation(stream.id, { type: "work", role, slice, coordinatorTaskId: process.env.CODEX_THREAD_ID || null });
     const prompt = `${AF_ONBOARDING}\n\nWork on Field Report outcome ${stream.id}: ${stream.outcome}\n\nYour bounded ${role} slice is: ${slice}\n\nWhen done, return a completion object with delegationId=${delegation.id}, taskId, completed=true|false, finalHead when code changed, checksRun[], skippedChecks[], scopeDeviations[], changedPremises[], acceptanceEvidence[], unresolved[], and summary.`;
-    return process.stdout.write(`${JSON.stringify({ delegation, execution: FRESH_NATIVE_EXECUTION, prompt }, null, 2)}\n`);
+    return process.stdout.write(`${JSON.stringify({ delegation, execution: WORK_EXECUTION, prompt }, null, 2)}\n`);
   }
   if (command === "delegate" && positional[0] === "bind") {
     const stream = await store.workstream(positional[1]);
@@ -237,7 +249,7 @@ async function main() {
   if (command === "delegate" && positional[0] === "complete") {
     const stream = await store.workstream(positional[1]);
     const delegationId = requireValue(flags.delegation, "Specify --delegation");
-    const envelope = JSON.parse(await readFile(path.resolve(requireValue(flags.file, "Specify --file <completion.json>")), "utf8"));
+    const envelope = parseEnvelope(await readFile(path.resolve(requireValue(flags.file, "Specify --file <completion.json>")), "utf8"));
     if (envelope.delegationId !== delegationId || !String(envelope.taskId || "").trim()) throw new Error("Completion must match the delegation and identify the native task");
     const bound = (await store.delegations(stream.id)).findLast((item) => item.id === delegationId && item.event === "bound");
     if (!bound || bound.taskId !== envelope.taskId) throw new Error("Completion taskId must match the delegation's bound native task");
@@ -256,11 +268,10 @@ async function main() {
     if (kind === "commit" && role === "fable-challenge") throw new Error("Commit review uses Sol roles only");
     const target = await targetFor(stream, kind);
     const outstanding = role === "deep-code-review" ? outstandingFindings(await store.reviews(stream.id), stream.claim).map(({ id, category, text }) => ({ id, category, text })) : [];
+    const inventory = await diffInventory(target);
     const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ...(outstanding.length ? { outstanding } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
-    const execution = role === "fable-challenge"
-      ? { provider: "claude-aws" }
-      : FRESH_NATIVE_EXECUTION;
-    return process.stdout.write(`${JSON.stringify({ delegation, execution, prompt: reviewPrompt(stream, delegation) }, null, 2)}\n`);
+    const execution = role === "fable-challenge" ? FABLE_EXECUTION : SOL_EXECUTION;
+    return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "bind") {
     const stream = await store.workstream(positional[1]);
@@ -269,7 +280,7 @@ async function main() {
   }
   if (command === "review" && positional[0] === "record") {
     const stream = await store.workstream(positional[1]);
-    const envelope = JSON.parse(await readFile(path.resolve(requireValue(flags.file, "Specify --file <review.json>")), "utf8"));
+    const envelope = parseEnvelope(await readFile(path.resolve(requireValue(flags.file, "Specify --file <review.json>")), "utf8"));
     const delegationEvents = await store.delegations(stream.id);
     const delegation = delegationEvents.find((item) => item.id === envelope.delegationId && item.event === "created" && item.type === "review");
     const bound = delegationEvents.findLast((item) => item.id === envelope.delegationId && item.event === "bound");

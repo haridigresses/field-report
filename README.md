@@ -2,7 +2,7 @@
 
 Field Report is a local software-factory policy and evidence harness. It keeps durable outcome state, gives coordinators and workstream owners canonical operating instructions, issues exact-target review briefs, validates completed evidence, and evaluates commit and publication gates.
 
-Field Report defines policy and evaluates evidence. Coordinators launch native Codex agents. Required Fable review uses `claude-aws` through the user's shell entrypoint.
+Field Report defines policy and evaluates evidence. The owner launches reviewers through native peers, `codex` CLI, Cursor CLI, or `claude-aws`. Field Report does not run those providers.
 
 ## Core policies
 
@@ -36,6 +36,8 @@ Override this location in tests or isolated environments with `FIELD_REPORT_STAT
 node scripts/install.mjs
 fr init
 ```
+
+The installer writes `~/.local/bin/fr` and links current skills into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. It refuses to replace a real directory at any of those paths.
 
 Add repositories deliberately and install hooks explicitly:
 

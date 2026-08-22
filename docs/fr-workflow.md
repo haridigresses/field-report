@@ -1,6 +1,6 @@
 # Field Report Factory Contract
 
-Field Report defines obligations and evaluates evidence. Native Codex delegation performs work and Sol reviews; required Fable review uses `claude-aws` through the user's shell entrypoint.
+Field Report defines obligations and evaluates evidence. The workstream owner launches reviewers using whatever execution path they have — native peers, `codex` CLI, Cursor CLI, or `claude-aws`. Field Report does not run those providers.
 
 ## Shared contract
 
@@ -15,8 +15,8 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 
 - Every commit requires distinct `deep-code-review` and `structural-challenge` Sol reviews of the exact `{base HEAD, staged tree}`. The owner cannot satisfy either lane.
 - Any agent may create a workstream for its branch or self-bind the correct existing outcome. No coordinator approval is required.
-- Field Report issues immutable briefs, binds them to native task IDs, validates their envelopes, and makes changed targets stale.
-- Sol briefs use `fork_turns="none"`. The bounded brief and repository are the review context.
+- Field Report issues immutable briefs, binds them to reviewer task or provider-run IDs, validates their envelopes, and makes changed targets stale.
+- Reviewers receive a self-contained brief and the repository. Do not inherit owner conversation. The brief names allowed launch routes; the owner chooses one.
 - The repository hook asks `fr gate commit` whether the exact evidence exists.
 
 ### Final review and publication policy
@@ -53,6 +53,7 @@ Field Report defines obligations and evaluates evidence. Native Codex delegation
 ## Reviewer
 
 - Remain read-only and independently review the complete changed authority boundary; the stated claim is context, not a scope limit.
+- Inspect the exact target with the brief's `inspection.command`. Do not inherit owner conversation or run owner skills.
 - Derive the relevant behavioral state space and trace affected consumers and call paths. Report any material defect or missing evidence.
 - Judge the accumulated mechanism, not only the latest repair or reported cases.
 - Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers.

@@ -9,7 +9,7 @@
     "refresh": "node src/collect.mjs",
     "migrate": "node scripts/migrate-v1.mjs",
     "test": "node --test",
-    "check": "node --check bin/fr.mjs && node --check src/store.mjs && node --check src/policy.mjs && node --check src/repository.mjs && node --check src/collect.mjs && node --check src/server.mjs && node --check scripts/install.mjs && node --check scripts/migrate-v1.mjs && node --check public/app.js && npm test"
+    "check": "node --check bin/fr.mjs && node --check src/store.mjs && node --check src/policy.mjs && node --check src/repository.mjs && node --check src/collect.mjs && node --check src/server.mjs && node --check src/envelope.mjs && node --check src/install.mjs && node --check scripts/install.mjs && node --check scripts/migrate-v1.mjs && node --check public/app.js && npm test"
   },
   "engines": { "node": ">=20" }
 }
