@@ -2,14 +2,13 @@
 
 Field Report is a local software-factory policy and evidence harness. It keeps durable outcome state, gives coordinators and workstream owners canonical operating instructions, issues exact-target review briefs, validates completed evidence, and evaluates commit and publication gates.
 
-Field Report defines policy and evaluates evidence. The owner launches reviewers through native peers, `codex` CLI, Cursor CLI, or `claude-aws`. Field Report does not run those providers.
+Field Report defines policy and evaluates evidence. The owner launches Codex, Cursor, and Claude reviewers through native delegation and their installed CLIs. Field Report does not run providers.
 
 ## Core policies
 
-- Every commit in a managed repository requires distinct Sol deep-code and structural reviews of the exact base HEAD and staged tree.
-- Every final candidate requires distinct exact-head Sol deep-code and structural reviews.
-- Full final review also requires Fable through `claude-aws`.
-- Mini review may waive only Fable after deterministic eligibility and agreement from both final Sol reviewers.
+- Every commit and final candidate commissions comprehensive exact-target reviews from Codex, Cursor, and Claude.
+- All three attempts must terminate. Two completed substantive GOs satisfy availability; provider failure is non-evidence, and any completed adverse evidence blocks.
+- The owner uses native delegation for its own reviewer family and CLI launch for the other two. Reviewer models are not hardcoded.
 - Review scores are explanatory; findings and deterministic gates remain authoritative.
 - Field Report may mark a draft PR ready only after the publication gate passes. It never merges.
 
@@ -37,7 +36,7 @@ node scripts/install.mjs
 fr init
 ```
 
-The installer writes `~/.local/bin/fr` and links current skills into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. It refuses to replace a real directory at any of those paths.
+The installer writes `~/.local/bin/fr` and links the same canonical skill sources into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. It refuses to replace a real directory at any of those paths.
 
 Add repositories deliberately and install hooks explicitly:
 
@@ -58,32 +57,21 @@ fr create aon-example --project aon --title "Example" --outcome "Deliver the bou
 fr context aon-example
 fr workflow workstream
 
-fr review brief aon-example --kind commit --role deep-code-review
-fr review brief aon-example --kind commit --role structural-challenge
-# Launch two distinct native Sol subagents and save their JSON envelopes.
-fr review bind aon-example --delegation <deep-uuid> --task-id <deep-native-task-id>
-fr review bind aon-example --delegation <structural-uuid> --task-id <structural-native-task-id>
-fr review record aon-example --file /tmp/deep.json
-fr review record aon-example --file /tmp/structural.json
+fr review brief aon-example --kind commit --reviewer codex --route native
+fr review brief aon-example --kind commit --reviewer cursor --route cli
+fr review brief aon-example --kind commit --reviewer claude --route cli
+# Launch the current host's family natively and the other two by CLI.
+# Bind and record valid envelopes; record an unrecoverable provider attempt with `fr review fail`.
 fr gate commit aon-example
 
-fr review brief aon-example --kind final --role deep-code-review
-fr review brief aon-example --kind final --role structural-challenge
-fr review brief aon-example --kind final --role fable-challenge
-# Invoke claude-aws through the user's shell entrypoint for the Fable brief.
+fr review brief aon-example --kind final --reviewer codex --route native
+fr review brief aon-example --kind final --reviewer cursor --route cli
+fr review brief aon-example --kind final --reviewer claude --route cli
 # Bind every final brief to its native task or provider-run ID before recording it.
 fr review status aon-example --kind final
 fr gate publish aon-example
 fr publish aon-example
 ```
-
-## Mini review
-
-```bash
-fr classify aon-example mini --reason "Bounded presentation-only correction"
-```
-
-Eligibility combines configured size limits, risky-path exclusions, a recorded reason, and affirmative judgment from both final Sol reviewers. Commit review is unchanged.
 
 ## Migration
 

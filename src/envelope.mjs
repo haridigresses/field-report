@@ -18,7 +18,7 @@ function parseObject(text) {
   return isObject(value) ? value : undefined;
 }
 
-function successfulClaudeAwsResult(value) {
+function successfulClaudeResult(value) {
   if (!isObject(value) || value.is_error !== false || value.subtype !== "success") return undefined;
   if (typeof value.result === "string") return String(value.result).trim() ? parseObject(value.result) : undefined;
   return isObject(value.result) ? value.result : undefined;
@@ -27,5 +27,5 @@ function successfulClaudeAwsResult(value) {
 export function parseEnvelope(text) {
   const value = parseObject(text);
   if (!value) throw new Error("Review file must contain a JSON object");
-  return successfulClaudeAwsResult(value) || value;
+  return successfulClaudeResult(value) || value;
 }

@@ -12,7 +12,6 @@ test("store keeps canonical runtime state outside application source", async () 
   await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
   const stream = await store.workstream("sample-outcome");
   assert.equal(stream.schemaVersion, 2);
-  assert.equal(stream.reviewClass, "full");
   assert.equal(stream.claimRevision, 1);
   assert.equal((await store.events(stream.id)).length, 0);
   await assert.rejects(store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Duplicate", outcome: "Duplicate", summary: "Duplicate" }), /already exists/);
@@ -63,6 +62,24 @@ test("store atomically records a review delegation once", async () => {
   assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
   assert.equal(results.filter((result) => result.status === "rejected").length, 1);
   assert.equal((await store.reviews("sample-outcome")).length, 1);
+});
+
+test("review failure and completion are one atomic terminal decision", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-review-terminal-"));
+  const store = createStore(root);
+  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
+  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
+  const delegation = await store.addDelegation("sample-outcome", { type: "review" });
+  await store.addDelegationEvent("sample-outcome", delegation.id, { event: "bound", taskId: "reviewer-1" });
+  const results = await Promise.allSettled([
+    store.addReview("sample-outcome", { delegationId: delegation.id, findings: [], unresolved: [] }),
+    store.addDelegationEvent("sample-outcome", delegation.id, { event: "failed", taskId: "reviewer-1", reason: "provider failed" })
+  ]);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+  const recorded = (await store.reviews("sample-outcome")).some((review) => review.delegationId === delegation.id);
+  const failed = (await store.delegations("sample-outcome")).some((event) => event.id === delegation.id && event.event === "failed");
+  assert.notEqual(recorded, failed);
 });
 
 test("store rejects review recording against a concurrently changed claim", async () => {

@@ -9,7 +9,7 @@ h1 { font-size:42px; } h2 { margin:30px 0 10px; font-size:25px; } h3 { margin-to
 .quiet, small { color:var(--muted); }
 button { border:1px solid var(--ink); padding:7px 10px; background:transparent; color:inherit; cursor:pointer; }
 nav { display:flex; gap:8px; margin:20px 0; } nav button.active { background:var(--ink); color:var(--paper); }
-.row { display:grid; grid-template-columns:2fr .55fr .55fr 1fr 1.25fr 1.25fr; gap:18px; width:100%; padding:14px 10px; border:0; border-top:1px solid var(--line); text-align:left; }
+.row { display:grid; grid-template-columns:2fr .55fr 1fr 1.25fr 1.25fr; gap:18px; width:100%; padding:14px 10px; border:0; border-top:1px solid var(--line); text-align:left; }
 .row:hover { background:#ebe6da; }.row span:first-child { display:grid; gap:3px; }.row strong { font-family:Georgia,serif; font-size:16px; font-weight:400; }.row small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.warn { color:var(--warn); }.good { color:var(--good); }
 dialog { width:min(760px,calc(100% - 28px)); max-height:90vh; overflow:auto; border:1px solid var(--ink); padding:28px; background:var(--paper); color:var(--ink); } dialog > button { float:right; } dialog h2 { font-size:34px; } dialog dl { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:18px 0; border-block:1px solid var(--line); } dt { color:var(--muted); font-size:11px; text-transform:uppercase; } dd { margin:3px 0 0; } li { margin:8px 0; }
 @media(max-width:800px){ .row{grid-template-columns:1fr 1fr}.row span:first-child{grid-column:1/-1} }

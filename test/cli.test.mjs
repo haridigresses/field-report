@@ -8,175 +8,87 @@ import test from "node:test";
 
 const exec = promisify(execFile);
 const cli = path.resolve("bin/fr.mjs");
+const run = async (args, cwd, state) => (await exec(process.execPath, [cli, ...args], { cwd, env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout;
 
-async function run(args, cwd, state) {
-  return (await exec(process.execPath, [cli, ...args], { cwd, env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout;
-}
-
-test("CLI records a native delegation lifecycle without launching an agent", async () => {
+async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "fr-cli-"));
-  const repo = path.join(root, "repo");
-  const state = path.join(root, "state");
+  const repo = path.join(root, "repo"), state = path.join(root, "state");
   await exec("git", ["init", "-b", "main", repo]);
   await exec("git", ["config", "user.email", "fr-test@example.invalid"], { cwd: repo });
   await exec("git", ["config", "user.name", "Field Report Test"], { cwd: repo });
   await writeFile(path.join(repo, "README.md"), "test\n");
   await exec("git", ["add", "README.md"], { cwd: repo });
   await exec("git", ["commit", "-m", "initial"], { cwd: repo });
-
   await run(["project", "add", "sample", "--label", "Sample", "--repo", repo], repo, state);
+  await run(["create", "outcome", "--project", "sample", "--title", "Outcome", "--outcome", "Ship bounded change", "--branch", "main", "--owner-task", "owner-1"], repo, state);
+  return { root, repo, state };
+}
+
+test("work delegation makes AF best-effort and forbids conversation inheritance", async () => {
+  const { repo, state } = await fixture();
   await exec("git", ["branch", "-m", "unsafe'quote"], { cwd: repo });
   await assert.rejects(run(["gate", "commit"], repo, state), (error) => /Self-register without coordinator approval/.test(error.stderr || "") && (error.stderr || "").includes(`--branch 'unsafe'"'"'quote'`));
   await exec("git", ["branch", "-m", "main"], { cwd: repo });
-  await run(["create", "outcome", "--project", "sample", "--title", "Outcome", "--outcome", "Ship bounded change", "--branch", "main", "--owner-task", "owner-1"], repo, state);
   const brief = JSON.parse(await run(["delegate", "brief", "outcome", "--role", "executor", "--slice", "Implement one bounded change"], repo, state));
-  assert.equal(brief.delegation.type, "work");
-  assert.deepEqual(brief.execution, { freshContext: true, allowed: ["native", "codex-cli", "cursor-cli"] });
-  assert.match(brief.prompt, /run `af-onboard-safe`/);
-  assert.match(brief.prompt, /Agent Fixes for session context and issue lineage/);
-  assert.match(brief.prompt, /retry `af onboard` once with normal escalation/);
-  await run(["delegate", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "native-task-7"], repo, state);
-  const completion = path.join(root, "completion.json");
-  await writeFile(completion, JSON.stringify({ delegationId: brief.delegation.id, taskId: "native-task-7", completed: true, checksRun: ["npm test"], unresolved: [], summary: "Incomplete evidence" }));
-  await assert.rejects(run(["delegate", "complete", "outcome", "--delegation", brief.delegation.id, "--file", completion], repo, state), /skippedChecks/);
-  await writeFile(completion, JSON.stringify({ delegationId: brief.delegation.id, taskId: "native-task-7", completed: true, checksRun: ["npm test"], skippedChecks: [], scopeDeviations: [], changedPremises: [], acceptanceEvidence: ["Expected file changed"], unresolved: [], summary: "Done" }));
-  await run(["delegate", "complete", "outcome", "--delegation", brief.delegation.id, "--file", completion], repo, state);
+  assert.deepEqual(brief.execution, { conversationInheritance: "none", allowedRoutes: ["native", "cli"], families: ["codex", "cursor", "claude"] });
+  assert.match(brief.prompt, /AF is useful context, never a gate/);
+  assert.match(brief.prompt, /fails, report that briefly and continue/);
+});
+
+test("review briefs are family-specific, comprehensive, exact-target, and optionally carry reconciliation", async () => {
+  const { repo, state } = await fixture();
+  await writeFile(path.join(repo, "README.md"), "review me\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
+  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--reviewer", "cursor", "--route", "cli"], repo, state));
+  assert.equal(brief.delegation.role, "comprehensive-review");
+  assert.equal(brief.delegation.reviewerFamily, "cursor");
+  assert.deepEqual(brief.execution, { conversationInheritance: "none", allowedRoutes: ["native", "cli"], families: ["codex", "cursor", "claude"] });
+  assert.match(brief.prompt, /Review comprehensively: correctness/);
+  assert.match(brief.prompt, /necessity, simplicity, authority boundaries/);
+  assert.match(brief.prompt, /Do not inherit or request the owner's conversation/);
+  assert.match(brief.prompt, /AF may be attempted.*failure must not block/);
+  assert.match(brief.prompt, /reviewerFamily=cursor/);
+  assert.match(brief.prompt, /route=cli/);
+  assert.match(brief.prompt, /Current claim JSON string/);
+  assert.equal(brief.inspection.command, `git diff --no-ext-diff --no-textconv ${brief.delegation.baseHead} ${brief.delegation.tree} --`);
+
+  await run(["review", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "cursor-run"], repo, state);
+  const review = { reviewComplete: true, independent: true, delegationId: brief.delegation.id, reviewerTaskId: "cursor-run", claim: brief.delegation.claim, kind: "commit", role: "comprehensive-review", reviewerFamily: "cursor", head: brief.delegation.head, baseHead: brief.delegation.baseHead, tree: brief.delegation.tree, provider: "cursor", model: "cursor-current", route: "cli", verdict: "NO_GO", findings: ["Finding one"], unresolved: [], summary: "Reviewed", scores: { mergeReadiness: 70, structuralRisk: 30, implementationQuality: 75, evidenceConfidence: 90, outcomeConfidence: 72 }, scoreRationale: { mergeReadiness: "Blocked", structuralRisk: "Moderate", implementationQuality: "Mostly sound", evidenceConfidence: "Direct", outcomeConfidence: "Finding remains" }, necessity: "necessary", simplerPath: "No simpler path found.", scopeDrift: "none", contractIntegrity: "mixed", evidenceQuality: "strong" };
+  const file = path.join(repo, "review.json");
+  await writeFile(file, `\`\`\`json\n${JSON.stringify(review)}\n\`\`\``);
+  await run(["review", "record", "outcome", "--file", file], repo, state);
+  const fresh = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--reviewer", "codex", "--route", "native"], repo, state));
+  assert.equal(fresh.delegation.outstanding, undefined);
+  const reconcile = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--reviewer", "claude", "--route", "cli", "--reconcile"], repo, state));
+  assert.deepEqual(reconcile.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
+
+  await run(["review", "bind", "outcome", "--delegation", fresh.delegation.id, "--task-id", "codex-run"], repo, state);
+  const freshReview = { ...review, delegationId: fresh.delegation.id, reviewerTaskId: "codex-run", reviewerFamily: "codex", provider: "openai", route: "native", head: fresh.delegation.head, baseHead: fresh.delegation.baseHead, tree: fresh.delegation.tree, verdict: "GO", findings: [], contractIntegrity: "sound", reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "This lane never received the packet." }] };
+  await writeFile(file, JSON.stringify(freshReview));
+  await assert.rejects(run(["review", "record", "outcome", "--file", file], repo, state), /out-of-packet ID: F1/);
+
+  const staleBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--reviewer", "codex", "--route", "native"], repo, state));
+  await run(["review", "bind", "outcome", "--delegation", staleBrief.delegation.id, "--task-id", "stale-codex-run"], repo, state);
+  await writeFile(path.join(repo, "README.md"), "new staged target\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
+  const staleGo = { ...freshReview, delegationId: staleBrief.delegation.id, reviewerTaskId: "stale-codex-run", head: staleBrief.delegation.head, baseHead: staleBrief.delegation.baseHead, tree: staleBrief.delegation.tree, reconciled: undefined };
+  await writeFile(file, JSON.stringify(staleGo));
+  await assert.rejects(run(["review", "record", "outcome", "--file", file], repo, state), /stale review may record new adverse evidence only/);
+  await writeFile(file, JSON.stringify({ ...staleGo, verdict: "NO_GO", findings: ["Late adverse evidence"] }));
+  await run(["review", "record", "outcome", "--file", file], repo, state);
+});
+
+test("three attempts must terminate and a provider failure is non-evidence", async () => {
+  const { repo, state } = await fixture();
+  await writeFile(path.join(repo, "README.md"), "review me\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
+  const briefs = {};
+  for (const family of ["codex", "cursor", "claude"]) briefs[family] = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--reviewer", family, "--route", family === "codex" ? "native" : "cli"], repo, state));
+  await run(["review", "fail", "outcome", "--delegation", briefs.claude.delegation.id, "--task-id", "claude-run", "--reason", "CLI exited without an envelope"], repo, state);
   const events = (await readFile(path.join(state, "delegations", "outcome.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
-  assert.deepEqual(events.map((item) => item.event), ["created", "bound", "completed"]);
-  assert.equal(events[2].taskId, "native-task-7");
-
-  await writeFile(path.join(repo, "README.md"), "review me\n");
-  await exec("git", ["add", "README.md"], { cwd: repo });
-  const briefReview = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
-  assert.equal(briefReview.delegation.ownerTaskIdAtBrief, "owner-1");
-  assert.equal(briefReview.delegation.claim, "Ship bounded change");
-  assert.deepEqual(briefReview.execution, { freshContext: true, allowed: ["native", "codex-cli", "cursor-cli"] });
-  assert.equal(briefReview.inspection.command, `git diff --no-ext-diff --no-textconv ${briefReview.delegation.baseHead} ${briefReview.delegation.tree} --`);
-  assert.deepEqual(briefReview.inspection.files, ["README.md"]);
-  assert.match(briefReview.prompt, /Inspect the exact target with this read-only command:/);
-  assert.match(briefReview.prompt, /Changed files \(1; \+1 −1\):/);
-  assert.match(briefReview.prompt, /Do not run af-onboard-safe, fr, or owner skills/);
-  assert.match(briefReview.prompt, /Copy the claim string exactly/);
-  assert.match(briefReview.prompt, /claim describes the intended outcome; it does not limit review scope/);
-  assert.match(briefReview.prompt, /complete changed authority boundary/);
-  assert.match(briefReview.prompt, /behavioral state space/);
-  assert.match(briefReview.prompt, /Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers/);
-  assert.doesNotMatch(briefReview.prompt, /Outstanding findings/);
-  assert.match(briefReview.prompt, /A GO with observations is valid/);
-  assert.match(briefReview.prompt, /findings as a string array/);
-  assert.match(briefReview.prompt, /scoreRationale with one concise string/);
-  assert.match(briefReview.prompt, /necessity=necessary\|questionable_roi/);
-  assert.match(briefReview.prompt, /simplerPath explaining considered alternatives/);
-  assert.match(briefReview.prompt, /No prose or Markdown fences/);
-  await run(["review", "bind", "outcome", "--delegation", briefReview.delegation.id, "--task-id", "review-task-1"], repo, state);
-  const reviewFile = path.join(root, "review.json");
-  const review = { reviewComplete: true, independent: true, delegationId: briefReview.delegation.id, reviewerTaskId: "review-task-1", claim: briefReview.delegation.claim, kind: "commit", role: "deep-code-review", head: briefReview.delegation.head, baseHead: briefReview.delegation.baseHead, tree: briefReview.delegation.tree, provider: "openai", model: "gpt-5.6-sol", verdict: "NO_GO", findings: ["Finding one"], unresolved: ["Question one"], summary: "Reviewed", miniEligible: true, scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 90, evidenceConfidence: 90, outcomeConfidence: 91 }, scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low", implementationQuality: "Strong", evidenceConfidence: "Direct", outcomeConfidence: "Outcome supported" }, necessity: "necessary", simplerPath: "No simpler reliable path was found.", scopeDrift: "none", contractIntegrity: "sound", evidenceQuality: "strong" };
-  await writeFile(reviewFile, `\`\`\`json\n${JSON.stringify(review)}\n\`\`\`\n`);
-  const recordedOutput = await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
-  assert.match(recordedOutput, /Assigned finding IDs: F1, F2/);
-  const recorded = JSON.parse((await readFile(path.join(state, "reviews", "outcome.jsonl"), "utf8")).trim());
-  assert.equal(recorded.reviewerTaskId, "review-task-1");
-  assert.equal(recorded.ownerTaskIdAtBrief, "owner-1");
-  const status = await run(["review", "status", "outcome", "--kind", "commit"], repo, state);
-  assert.match(status, /readiness 90%/);
-  assert.match(status, /necessity necessary/);
-  assert.match(status, /Simpler path: No simpler reliable path was found/);
-  assert.match(status, /Findings: Finding one/);
-  assert.match(status, /Unresolved: Question one/);
-  assert.match(status, /unreconciled deep-code-review finding F1: Finding one/);
-
-  // Summary edits do not change the delivery claim or stale review evidence.
-  await run(["update", "outcome", "--summary", "Status prose changed mid-flight"], repo, state);
-  assert.match(await run(["show", "outcome"], repo, state), /Claim: Ship bounded change/);
-  assert.match(await run(["context", "outcome"], repo, state), /Claim: Ship bounded change/);
-  const reconcileBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
-  assert.equal(reconcileBrief.delegation.claim, "Ship bounded change");
-  assert.deepEqual(reconcileBrief.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }, { id: "F2", category: "unresolved", text: "Question one" }]);
-  assert.match(reconcileBrief.prompt, /Outstanding review issues requiring explicit reconciliation/);
-  assert.match(reconcileBrief.prompt, /- F1 \(finding\): Finding one/);
-  assert.match(reconcileBrief.prompt, /- F2 \(unresolved\): Question one/);
-  assert.match(reconcileBrief.prompt, /reconciled as an array of \{findingId, disposition, rationale\} objects/);
-  assert.match(reconcileBrief.prompt, /still_present when it remains/);
-  assert.match(reconcileBrief.prompt, /do not restate a delivered issue there/);
-  // The structural lane stays fresh: no outstanding findings in its brief.
-  const freshBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "structural-challenge"], repo, state));
-  assert.equal(freshBrief.delegation.outstanding, undefined);
-  assert.doesNotMatch(freshBrief.prompt, /Outstanding findings/);
-  await run(["review", "bind", "outcome", "--delegation", reconcileBrief.delegation.id, "--task-id", "review-task-2"], repo, state);
-  const reconciling = { ...review, delegationId: reconcileBrief.delegation.id, reviewerTaskId: "review-task-2", head: reconcileBrief.delegation.head, baseHead: reconcileBrief.delegation.baseHead, tree: reconcileBrief.delegation.tree, verdict: "GO", findings: [], unresolved: [], reconciled: [{ findingId: "F9", disposition: "resolved", rationale: "Wrong ID" }] };
-  await writeFile(reviewFile, JSON.stringify(reconciling));
-  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /out-of-packet ID: F9/);
-  // A lane that was never delivered the outstanding packet cannot reconcile its IDs.
-  await run(["review", "bind", "outcome", "--delegation", freshBrief.delegation.id, "--task-id", "review-task-3"], repo, state);
-  const outOfLane = { ...reconciling, delegationId: freshBrief.delegation.id, reviewerTaskId: "review-task-3", role: "structural-challenge", reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Not my packet" }] };
-  await writeFile(reviewFile, JSON.stringify(outOfLane));
-  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /out-of-packet ID: F1/);
-  const repeated = { ...reconciling, reconciled: [] };
-  await writeFile(reviewFile, JSON.stringify(repeated));
-  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /reconciled must account for delivered issue F1/);
-  repeated.reconciled = [{ findingId: "F1", disposition: "still_present", rationale: "The defect remains at this target." }, { findingId: "F2", disposition: "still_present", rationale: "The question remains unanswered." }];
-  await writeFile(reviewFile, JSON.stringify(repeated));
-  await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
-  const staleCarrierBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
-  await run(["review", "bind", "outcome", "--delegation", staleCarrierBrief.delegation.id, "--task-id", "stale-packet-task"], repo, state);
-  const resolutionBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
-  await run(["review", "bind", "outcome", "--delegation", resolutionBrief.delegation.id, "--task-id", "review-task-4"], repo, state);
-  const resolution = { ...reconciling, delegationId: resolutionBrief.delegation.id, reviewerTaskId: "review-task-4", reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed at this target with a regression test." }, { findingId: "F2", disposition: "resolved", rationale: "Answered: the migration is reversible; documented in the runbook." }] };
-  await writeFile(reviewFile, JSON.stringify(resolution));
-  await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
-  const reconciledStatus = await run(["review", "status", "outcome", "--kind", "commit"], repo, state);
-  assert.doesNotMatch(reconciledStatus, /unreconciled/);
-  assert.match(reconciledStatus, /Reconciled: F1 resolved — Fixed at this target with a regression test/);
-
-  const staleBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
-  await run(["review", "bind", "outcome", "--delegation", staleBrief.delegation.id, "--task-id", "stale-review-task"], repo, state);
-  await writeFile(path.join(repo, "README.md"), "newer staged target\n");
-  await exec("git", ["add", "README.md"], { cwd: repo });
-  const staleResolution = { ...resolution, delegationId: staleCarrierBrief.delegation.id, reviewerTaskId: "stale-packet-task", verdict: "NO_GO", findings: ["New evidence found after the target moved"] };
-  await writeFile(reviewFile, JSON.stringify(staleResolution));
-  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /may mark delivered findings still_present/);
-  const stalePacketAdverse = { ...staleResolution, verdict: "NO_GO", findings: ["New evidence found after the target moved"], reconciled: [{ findingId: "F1", disposition: "still_present", rationale: "Still present on the reviewed target." }, { findingId: "F2", disposition: "still_present", rationale: "Still present on the reviewed target." }] };
-  await writeFile(reviewFile, JSON.stringify(stalePacketAdverse));
-  await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
-  const afterStalePacket = await run(["review", "status", "outcome", "--kind", "commit"], repo, state);
-  assert.doesNotMatch(afterStalePacket, /unreconciled deep-code-review finding F1: Finding one/);
-  const staleGo = { ...review, delegationId: staleBrief.delegation.id, reviewerTaskId: "stale-review-task", head: staleBrief.delegation.head, baseHead: staleBrief.delegation.baseHead, tree: staleBrief.delegation.tree, verdict: "GO", findings: [], unresolved: [], reconciled: undefined };
-  await writeFile(reviewFile, JSON.stringify(staleGo));
-  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /stale review may record new adverse evidence only/);
-  const staleReview = { ...review, delegationId: staleBrief.delegation.id, reviewerTaskId: "stale-review-task", head: staleBrief.delegation.head, baseHead: staleBrief.delegation.baseHead, tree: staleBrief.delegation.tree, verdict: "NO_GO", findings: ["Late adverse evidence"], unresolved: [], reconciled: undefined };
-  await writeFile(reviewFile, JSON.stringify(staleReview));
-  await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
-  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /review delegation may be recorded only once/i);
-  await writeFile(path.join(repo, "README.md"), "review me\n");
-  await exec("git", ["add", "README.md"], { cwd: repo });
-  const oldClaimBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "commit", "--role", "deep-code-review"], repo, state));
-  await run(["review", "bind", "outcome", "--delegation", oldClaimBrief.delegation.id, "--task-id", "old-claim-task"], repo, state);
-  await run(["update", "outcome", "--claim", "Revised claim"], repo, state);
-  const oldClaimReview = { ...review, delegationId: oldClaimBrief.delegation.id, reviewerTaskId: "old-claim-task", claim: oldClaimBrief.delegation.claim, head: oldClaimBrief.delegation.head, baseHead: oldClaimBrief.delegation.baseHead, tree: oldClaimBrief.delegation.tree, verdict: "NO_GO", findings: ["New old-claim evidence"], unresolved: [], reconciled: oldClaimBrief.delegation.outstanding.map((item) => ({ findingId: item.id, disposition: "resolved", rationale: "Resolved under the old claim." })) };
-  await writeFile(reviewFile, JSON.stringify(oldClaimReview));
-  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /may mark delivered findings still_present/);
-  await run(["update", "outcome", "--claim", "Ship bounded change"], repo, state);
-
-  const remote = path.join(root, "remote.git");
-  await exec("git", ["init", "--bare", remote]);
-  await exec("git", ["remote", "add", "origin", remote], { cwd: repo });
-  await exec("git", ["commit", "-m", "candidate"], { cwd: repo });
-  await exec("git", ["push", "-u", "origin", "main"], { cwd: repo });
-  await exec("git", ["switch", "-c", "feature"], { cwd: repo });
-  await writeFile(path.join(repo, "README.md"), "final candidate\n");
-  await exec("git", ["add", "README.md"], { cwd: repo });
-  await exec("git", ["commit", "-m", "final candidate"], { cwd: repo });
-  await run(["update", "outcome", "--branch", "feature"], repo, state);
-  const fableBrief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "final", "--role", "fable-challenge"], repo, state));
-  assert.deepEqual(fableBrief.execution, { freshContext: true, allowed: ["claude-aws"] });
-  assert.equal(fableBrief.inspection.command, `git diff --no-ext-diff --no-textconv ${fableBrief.delegation.baseHead} ${fableBrief.delegation.head} --`);
-  assert.match(fableBrief.prompt, /Do not run af-onboard-safe, fr, or owner skills/);
-  assert.match(fableBrief.prompt, /claim describes the intended outcome; it does not limit review scope/);
-  assert.match(fableBrief.prompt, /complete changed authority boundary/);
-  assert.match(fableBrief.prompt, /behavioral state space/);
-  assert.match(fableBrief.prompt, /accumulated mechanism/);
-  assert.match(fableBrief.prompt, /Attempt to falsify the candidate/);
-  assert.equal(fableBrief.delegation.claim, "Ship bounded change");
+  assert.deepEqual(events.filter((item) => item.id === briefs.claude.delegation.id).map((item) => item.event), ["created", "bound", "failed"]);
+  await assert.rejects(run(["review", "fail", "outcome", "--delegation", briefs.claude.delegation.id, "--task-id", "claude-run", "--reason", "again"], repo, state), /already terminal/);
+  await assert.rejects(run(["gate", "commit", "outcome"], repo, state), /requires two completed finding-free GO reviews; received 0/);
 });
 
 test("coordinator workflow distinguishes user-owned collaborators from internal delegation", async () => {
@@ -184,9 +96,4 @@ test("coordinator workflow distinguishes user-owned collaborators from internal 
   const output = await run(["workflow", "coordinator"], root, path.join(root, "state"));
   assert.match(output, /When the user explicitly asks for an agent they will work with directly, create a user-owned Codex task/);
   assert.match(output, /Use an internal subagent only for delegated work the current task will consume/);
-  assert.match(output, /without inventing its approach or spec/);
-  assert.match(output, /Field Report registration is not a prerequisite/);
-  const shared = await run(["workflow"], root, path.join(root, "state"));
-  assert.match(shared, /Field Report does not run those providers/);
-  assert.doesNotMatch(shared, /fork_turns/);
 });

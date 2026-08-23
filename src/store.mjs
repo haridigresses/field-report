@@ -90,11 +90,6 @@ export function createStore(root = defaultStateRoot()) {
       repoPath: path.resolve(requiredString(value.repoPath, "Repository path", 1000)),
       githubRepo: optionalString(value.githubRepo, "GitHub repository", 300),
       baseBranch: optionalString(value.baseBranch, "Base branch", 200) || "main",
-      miniReview: {
-        maxFiles: Number.isInteger(Number(value.miniReview?.maxFiles)) ? Number(value.miniReview.maxFiles) : 5,
-        maxChangedLines: Number.isInteger(Number(value.miniReview?.maxChangedLines)) ? Number(value.miniReview.maxChangedLines) : 120,
-        riskyPaths: Array.isArray(value.miniReview?.riskyPaths) ? value.miniReview.riskyPaths.map(String) : ["migrations/", "schema", "auth", "security", "package.json", "lock", ".github/", "AGENTS.md"]
-      },
       updatedAt: new Date().toISOString()
     };
     await locked(async () => {
@@ -175,12 +170,9 @@ export function createStore(root = defaultStateRoot()) {
       references: Array.isArray(value.references) ? value.references : previous.references || [],
       milestones: Array.isArray(value.milestones) ? value.milestones : previous.milestones || [],
       questions: Array.isArray(value.questions) ? value.questions : previous.questions || [],
-      reviewClass: value.reviewClass || previous.reviewClass || "full",
-      miniClassification: value.miniClassification ?? previous.miniClassification ?? null,
       createdAt: previous.createdAt || value.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
       };
-      if (!["full", "mini"].includes(record.reviewClass)) throw new Error("Review class must be full or mini");
       await writeJson(path.join(root, "workstreams", `${record.id}.json`), record);
       if (event) await append("events", record.id, { id: randomUUID(), at: record.updatedAt, type: event.type, text: requiredString(event.text, "Event text"), actor: optionalString(event.actor, "Actor", 200) });
       return record;
@@ -204,6 +196,14 @@ export function createStore(root = defaultStateRoot()) {
         const existing = (await lines("delegations", stream.id)).findLast((item) => item.event === "bound" && item.id === delegationId);
         if (existing && existing.taskId !== value.taskId) throw new Error(`Delegation ${delegationId} is already bound to ${existing.taskId}`);
       }
+      if (value.event === "failed") {
+        const events = await lines("delegations", stream.id);
+        const terminal = events.findLast((item) => item.id === delegationId && ["failed", "completed"].includes(item.event));
+        if (terminal) throw new Error(`Delegation ${delegationId} is already terminal`);
+        if ((await lines("reviews", stream.id)).some((review) => review.delegationId === delegationId)) throw new Error(`Delegation ${delegationId} already has a recorded review`);
+        const bound = events.findLast((item) => item.id === delegationId && item.event === "bound");
+        if (!bound || bound.taskId !== value.taskId) throw new Error("Failed delegation taskId must match its binding");
+      }
       return append("delegations", stream.id, event);
     });
   }
@@ -217,6 +217,7 @@ export function createStore(root = defaultStateRoot()) {
       if (expectedClaimRevision != null && current.claimRevision !== expectedClaimRevision) throw new Error("Workstream claim changed while the review was being recorded; retry against current state");
       const prior = await lines("reviews", stream.id);
       if (prior.some((item) => item.delegationId === review.delegationId)) throw new Error("A review delegation may be recorded only once");
+      if ((await lines("delegations", stream.id)).some((item) => item.id === review.delegationId && item.event === "failed")) throw new Error("A failed review attempt is terminal; create a new brief to retry");
       const priorFindingCount = prior.filter((item) => item.legacy !== true).reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
       if (beforeAppend) await beforeAppend();
       await append("reviews", stream.id, review);

@@ -7,7 +7,8 @@ const SIGNAL_VALUES = {
   contractIntegrity: ["sound", "mixed", "broken"],
   evidenceQuality: ["strong", "mixed", "weak"]
 };
-export const SOL_ROLES = ["deep-code-review", "structural-challenge"];
+export const REVIEWER_FAMILIES = ["codex", "cursor", "claude"];
+export const REVIEW_ROLE = "comprehensive-review";
 
 function assertScore(value, key) {
   if (!Number.isInteger(value) || value < 0 || value > 100) throw new Error(`${key} must be an integer from 0 to 100`);
@@ -26,7 +27,8 @@ export function validateReview(input, delegation) {
   if (input.reviewComplete !== true || input.independent !== true) throw new Error("Review requires reviewComplete=true and independent=true");
   if (!["GO", "NO_GO"].includes(input.verdict)) throw new Error("Review verdict must be GO or NO_GO");
   if (!["commit", "final"].includes(input.kind)) throw new Error("Review kind must be commit or final");
-  if (![...SOL_ROLES, "fable-challenge"].includes(input.role)) throw new Error("Unknown review role");
+  if (input.role !== REVIEW_ROLE) throw new Error(`Review role must be ${REVIEW_ROLE}`);
+  if (!REVIEWER_FAMILIES.includes(input.reviewerFamily) || input.reviewerFamily !== delegation?.reviewerFamily) throw new Error("Review must identify its exact reviewer family");
   if (!UUID.test(input.delegationId || "") || input.delegationId !== delegation?.id) throw new Error("Review must reference its exact Field Report delegation ID");
   if (!String(input.claim || "").trim() || input.claim !== delegation?.claim) throw new Error("Review claim must match its exact Field Report delegation");
   if (!String(input.reviewerTaskId || "").trim()) throw new Error("Review requires a reviewer task or provider-run ID");
@@ -34,17 +36,18 @@ export function validateReview(input, delegation) {
   if (input.kind === "commit" && !SHA.test(input.tree || "")) throw new Error("Commit review requires the exact staged tree SHA");
   if (input.kind === "final" && input.tree != null) throw new Error("Final review must not include a staged tree");
   if (delegation.kind !== input.kind || delegation.role !== input.role || delegation.head !== input.head || delegation.baseHead !== input.baseHead || (input.kind === "commit" && delegation.tree !== input.tree)) throw new Error("Review target does not match its delegation");
-  if (input.role === "fable-challenge") {
-    if (input.provider !== "anthropic" || input.model !== "anthropic.claude-fable-5" || input.route !== "claude-aws") throw new Error("Fable review requires anthropic.claude-fable-5 through claude-aws");
-  } else if (input.provider !== "openai" || input.model !== "gpt-5.6-sol") throw new Error("Sol review requires gpt-5.6-sol through OpenAI");
+  const providers = { codex: "openai", cursor: "cursor", claude: "anthropic" };
+  if (input.provider !== providers[input.reviewerFamily]) throw new Error(`Provider does not match reviewer family ${input.reviewerFamily}`);
+  if (!String(input.model || "").trim()) throw new Error("Review requires the model used");
+  if (!["native", "cli"].includes(input.route) || input.route !== delegation?.route) throw new Error("Review route must match its exact delegation");
   if (!Array.isArray(input.findings) || !input.findings.every((item) => typeof item === "string" && item.trim())) throw new Error("Review findings must be a nonblank string array");
   if (!Array.isArray(input.unresolved) || !input.unresolved.every((item) => typeof item === "string" && item.trim())) throw new Error("Review unresolved must be a nonblank string array");
+  if (input.verdict === "NO_GO" && !input.findings.length && !input.unresolved.length) throw new Error("NO_GO requires at least one durable finding or unresolved item");
   if (!String(input.summary || "").trim()) throw new Error("Review requires a summary");
   for (const key of SCORE_KEYS) assertScore(input.scores?.[key], key);
   for (const key of SCORE_KEYS) if (!String(input.scoreRationale?.[key] || "").trim()) throw new Error(`${key} requires explanatory rationale`);
   for (const [key, values] of Object.entries(SIGNAL_VALUES)) if (!values.includes(input[key])) throw new Error(`${key} must be one of: ${values.join(", ")}`);
   if (!String(input.simplerPath || "").trim()) throw new Error("simplerPath must explain alternatives considered and discarded, or state that none were found");
-  if (input.role !== "fable-challenge" && typeof input.miniEligible !== "boolean") throw new Error("Sol reviews must state miniEligible true or false");
   if (input.reconciled != null) {
     if (!Array.isArray(input.reconciled)) throw new Error("reconciled must be an array of finding reconciliations");
     for (const entry of input.reconciled) {
@@ -103,44 +106,39 @@ const accepted = (review) => review?.legacy !== true && review?.verdict === "GO"
 
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
 
-export function evaluateGate({ kind, target, workstream, reviews }) {
-  const claim = workstream.claim ?? workstream.summary;
-  const claimRevision = workstream.claimRevision ?? 1;
-  const matching = reviews.filter((review) => review.legacy !== true && review.kind === kind && review.claim === claim && (review.claimRevision ?? 1) === claimRevision && review.head === target.head && review.baseHead === target.baseHead && (kind !== "commit" || review.tree === target.tree));
-  const sol = Object.fromEntries(SOL_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
-  const fable = latestFor(matching, (review) => review.role === "fable-challenge");
-  const reasons = [];
-  for (const role of SOL_ROLES) {
-    if (!sol[role]) reasons.push(`missing ${role} Sol review`);
-    else if (!accepted(sol[role])) reasons.push(`${role} is not a finding-free GO`);
-  }
-  const solIds = SOL_ROLES.map((role) => sol[role]?.reviewerTaskId).filter(Boolean);
-  if (solIds.length === 2 && new Set(solIds).size !== 2) reasons.push("Sol roles require distinct reviewer task IDs");
-  if (workstream.ownerTaskId && solIds.includes(workstream.ownerTaskId)) reasons.push("Workstream owner cannot satisfy an independent Sol review lane");
-  for (const review of Object.values(sol).filter(Boolean)) {
-    if (review.ownerTaskIdAtBrief && review.ownerTaskIdAtBrief === review.reviewerTaskId) reasons.push(`${review.role} reviewer was the workstream owner when its review brief was created`);
-  }
-  const mini = kind === "final" && workstream.reviewClass === "mini";
-  if (mini) {
-    if (!workstream.miniClassification?.eligible || workstream.miniClassification?.head !== target.head || workstream.miniClassification?.baseHead !== target.baseHead) reasons.push("mini classification is missing or stale");
-    for (const role of SOL_ROLES) if (sol[role] && sol[role].miniEligible !== true) reasons.push(`${role} did not affirm mini eligibility`);
-  }
-  if (kind === "final" && !mini) {
-    if (!fable) reasons.push("missing Fable review through claude-aws");
-    else if (!accepted(fable)) reasons.push("Fable review is not a finding-free GO");
-  }
-  for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
-  return { ready: reasons.length === 0, kind, target, reviewClass: mini ? "mini" : "full", reasons, lanes: { ...sol, fable: kind === "final" ? fable : null } };
+function matchesTarget(value, kind, target, claim, claimRevision) {
+  return value.kind === kind && value.claim === claim && (value.claimRevision ?? 1) === claimRevision && value.head === target.head && value.baseHead === target.baseHead && (kind !== "commit" || value.tree === target.tree);
 }
 
-export function miniEligibility({ files, additions, deletions, project }) {
-  const policy = project.miniReview;
-  const risky = files.filter((file) => policy.riskyPaths.some((pattern) => file.toLowerCase().includes(pattern.toLowerCase())));
+export function evaluateGate({ kind, target, workstream, reviews, delegations = [] }) {
+  const claim = workstream.claim ?? workstream.summary;
+  const claimRevision = workstream.claimRevision ?? 1;
+  const matching = reviews.filter((review) => review.legacy !== true && matchesTarget(review, kind, target, claim, claimRevision));
+  const created = delegations.filter((item) => item.event === "created" && item.type === "review" && matchesTarget(item, kind, target, claim, claimRevision));
+  const attempts = Object.fromEntries(REVIEWER_FAMILIES.map((family) => [family, created.filter((item) => item.reviewerFamily === family)]));
+  const lanes = Object.fromEntries(REVIEWER_FAMILIES.map((family) => [family, latestFor(matching, (review) => review.reviewerFamily === family && accepted(review)) || latestFor(matching, (review) => review.reviewerFamily === family)]));
   const reasons = [];
-  if (files.length > policy.maxFiles) reasons.push(`${files.length} changed files exceeds ${policy.maxFiles}`);
-  if (additions + deletions > policy.maxChangedLines) reasons.push(`${additions + deletions} changed lines exceeds ${policy.maxChangedLines}`);
-  if (risky.length) reasons.push(`high-risk paths changed: ${risky.join(", ")}`);
-  return { eligible: reasons.length === 0, files, additions, deletions, risky, reasons };
+  let completedGos = 0;
+  for (const family of REVIEWER_FAMILIES) {
+    const familyAttempts = attempts[family];
+    if (!familyAttempts.length) { reasons.push(`missing ${family} review attempt`); continue; }
+    const review = lanes[family];
+    for (const attempt of familyAttempts) {
+      const completed = matching.some((item) => item.delegationId === attempt.id);
+      const failed = delegations.some((item) => item.id === attempt.id && item.event === "failed");
+      if (!completed && !failed) reasons.push(`${family} review attempt ${attempt.id} is not terminal`);
+    }
+    if (accepted(review)) completedGos += 1;
+  }
+  if (completedGos < 2) reasons.push(`requires two completed finding-free GO reviews; received ${completedGos}`);
+  const reviewerIds = Object.values(lanes).filter(Boolean).map((review) => review.reviewerTaskId);
+  if (new Set(reviewerIds).size !== reviewerIds.length) reasons.push("Completed reviews require distinct reviewer task IDs");
+  if (workstream.ownerTaskId && reviewerIds.includes(workstream.ownerTaskId)) reasons.push("Workstream owner cannot satisfy an independent review");
+  for (const review of Object.values(lanes).filter(Boolean)) {
+    if (review.ownerTaskIdAtBrief && review.ownerTaskIdAtBrief === review.reviewerTaskId) reasons.push(`${review.reviewerFamily} reviewer was the workstream owner when its review brief was created`);
+  }
+  for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
+  return { ready: reasons.length === 0, kind, target, reasons, lanes, attempts };
 }
 
 export function publicationReasons({ project, target, checkout, pr }) {

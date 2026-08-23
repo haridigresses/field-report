@@ -48,7 +48,6 @@ for (const file of workstreamFiles) {
     references: old.references || [],
     milestones: old.chunks || [],
     questions,
-    reviewClass: "full",
     createdAt: old.createdAt || old.updatedAt
   }, { type: "migrated", text: "Migrated from Field Report schema v1", actor: "migrate-v1" });
 
