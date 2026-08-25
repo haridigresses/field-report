@@ -1,91 +1,185 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { evaluateGate, outstandingFindings, publicationReasons, validateReview, workstreamPublicationReasons } from "../src/policy.mjs";
+import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, identityKey, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const claim = "Ship the stated delivery unit";
 const workstream = { claim, claimRevision: 1, ownerTaskId: "owner" };
-const target = { head, baseHead, tree };
-const delegation = (reviewerFamily, id = randomUUID()) => ({ id, event: "created", type: "review", role: "comprehensive-review", reviewerFamily, route: "cli", kind: "commit", claim, claimRevision: 1, head, baseHead, tree, ownerTaskIdAtBrief: "owner" });
-const envelope = (d, reviewerTaskId) => ({ reviewComplete: true, independent: true, delegationId: d.id, reviewerTaskId, claim, kind: "commit", role: "comprehensive-review", reviewerFamily: d.reviewerFamily, head, baseHead, tree, provider: { codex: "openai", cursor: "cursor", claude: "anthropic" }[d.reviewerFamily], model: `${d.reviewerFamily}-current`, route: "cli", verdict: "GO", findings: [], unresolved: [], summary: "Complete adversarial review", scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 88, evidenceConfidence: 92, outcomeConfidence: 91 }, scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low risk", implementationQuality: "Strong", evidenceConfidence: "Direct evidence", outcomeConfidence: "Outcome supported" }, necessity: "necessary", simplerPath: "No simpler reliable path was found.", scopeDrift: "none", contractIntegrity: "sound", evidenceQuality: "strong" });
-const complete = (d, id) => validateReview(envelope(d, id), d);
-const failed = (d, id) => ({ id: d.id, event: "failed", taskId: id, reason: "provider failed" });
+const crrTarget = { head, baseHead, tree };
+const mrrTarget = { head, baseHead };
+const models = {
+  "deep-code-review": { model: "gpt-5.6-sol", provider: "openai" },
+  "structural-challenge": { model: "grok-4.6", provider: "cursor" },
+  "fable-challenge": { model: "claude-fable-5", provider: "anthropic" }
+};
 
-test("review contract is comprehensive, family-bound, and model-agnostic", () => {
-  const d = delegation("claude");
-  const review = envelope(d, "claude-run");
-  review.model = "any-claude-model";
-  assert.equal(validateReview(review, d).model, "any-claude-model");
-  assert.throws(() => validateReview({ ...review, reviewerFamily: "codex" }, d), /exact reviewer family/);
-  assert.throws(() => validateReview({ ...review, necessity: "unnecessary" }, d), /necessity must be one of/);
+const mrrDelegation = (role, id = randomUUID(), extras = {}) => ({
+  id, event: "created", type: "review", role, kind: "mrr", claim, claimRevision: 1, head, baseHead,
+  model: extras.model || models[role].model, route: extras.route || "cli", ownerTaskIdAtBrief: "owner"
 });
 
-test("gate commissions all three families and accepts two completed GOs after all attempts terminate", () => {
-  const codex = delegation("codex"), cursor = delegation("cursor"), claude = delegation("claude");
-  const delegations = [codex, cursor, claude, failed(claude, "claude-run")];
-  const reviews = [complete(codex, "codex-run"), complete(cursor, "cursor-run")];
-  assert.equal(evaluateGate({ kind: "commit", target, workstream, reviews, delegations }).ready, true);
+const crrDelegation = (id = randomUUID(), extras = {}) => ({
+  id, event: "created", type: "review", role: CRR_ROLE, kind: "crr", claim, claimRevision: 1, head, baseHead, tree,
+  model: extras.model || "composer-2", route: extras.route || "native", ownerTaskIdAtBrief: "owner"
 });
 
-test("gate does not pass while the third attempt is still running", () => {
-  const codex = delegation("codex"), cursor = delegation("cursor"), claude = delegation("claude");
-  const gate = evaluateGate({ kind: "commit", target, workstream, reviews: [complete(codex, "codex-run"), complete(cursor, "cursor-run")], delegations: [codex, cursor, claude] });
-  assert.equal(gate.ready, false);
-  assert.match(gate.reasons.join(" "), /claude review attempt .* is not terminal/);
+function mrrEnvelope(d, reviewerTaskId, extras = {}) {
+  const seated = models[d.role];
+  return {
+    reviewComplete: true, independent: true, delegationId: d.id, reviewerTaskId, claim, kind: "mrr", role: d.role,
+    head, baseHead, provider: extras.provider || seated.provider, model: extras.model || d.model, route: d.route,
+    verdict: extras.verdict || "GO", findings: extras.findings || [], unresolved: extras.unresolved || [],
+    summary: extras.summary || "Complete adversarial review",
+    scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 88, evidenceConfidence: 92, outcomeConfidence: 91 },
+    scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low risk", implementationQuality: "Strong", evidenceConfidence: "Direct evidence", outcomeConfidence: "Outcome supported" },
+    necessity: "necessary", simplerPath: "No simpler reliable path was found.", scopeDrift: "none", contractIntegrity: "sound", evidenceQuality: "strong",
+    ...("reconciled" in extras ? { reconciled: extras.reconciled } : {})
+  };
+}
+
+function crrEnvelope(d, reviewerTaskId, extras = {}) {
+  return {
+    reviewComplete: true, independent: true, delegationId: d.id, reviewerTaskId, claim, kind: "crr", role: CRR_ROLE,
+    head, baseHead, tree, provider: extras.provider || "cursor", model: extras.model || d.model, route: d.route,
+    verdict: extras.verdict || "GO", findings: extras.findings || [], unresolved: extras.unresolved || [],
+    summary: extras.summary || "Looks competent",
+    scores: { mergeReadiness: 80, structuralRisk: 20, implementationQuality: 80, evidenceConfidence: 80, outcomeConfidence: 80 },
+    scoreRationale: { mergeReadiness: "n", structuralRisk: "n", implementationQuality: "n", evidenceConfidence: "n", outcomeConfidence: "n" }
+  };
+}
+
+const mrrComplete = (role, id, extras = {}) => {
+  const d = extras.delegation || mrrDelegation(role, undefined, extras);
+  return validateReview(mrrEnvelope(d, id, extras), d);
+};
+
+const crrComplete = (id, extras = {}) => {
+  const d = extras.delegation || crrDelegation(undefined, extras);
+  return validateReview(crrEnvelope(d, id, extras), d);
+};
+
+test("canonical models accept Cursor Grok aliases and reject unknown ids", () => {
+  assert.equal(canonicalReviewModel("cursor-grok-4.6-high"), "grok-4.6");
+  assert.equal(canonicalReviewModel("grok-4.6"), "grok-4.6");
+  assert.equal(canonicalReviewModel("gpt-5.6-sol"), "gpt-5.6-sol");
+  assert.equal(canonicalReviewModel("claude-fable-5"), "claude-fable-5");
+  assert.equal(canonicalReviewModel("anthropic.claude-fable-5"), null);
+  assert.equal(canonicalReviewModel("composer-2"), null);
+  assert.equal(canonicalReviewModel("grok-4.65"), null);
 });
 
-test("one GO plus two failures does not meet the bar", () => {
-  const codex = delegation("codex"), cursor = delegation("cursor"), claude = delegation("claude");
-  const gate = evaluateGate({ kind: "commit", target, workstream, reviews: [complete(codex, "codex-run")], delegations: [codex, cursor, claude, failed(cursor, "cursor-run"), failed(claude, "claude-run")] });
-  assert.equal(gate.ready, false);
-  assert.match(gate.reasons.join(" "), /received 1/);
+test("crr seating accepts local models; mrr seating is Sol/Grok/Fable", () => {
+  assert.equal(seatingFor(CRR_ROLE).model, "local");
+  assert.equal(seatingFor(CRR_ROLE, "composer-2").model, "composer-2");
+  assert.equal(seatingFor("deep-code-review").model, "gpt-5.6-sol");
+  assert.equal(seatingFor("structural-challenge").model, "grok-4.6");
+  assert.equal(seatingFor("fable-challenge").model, "claude-fable-5");
+  assert.throws(() => seatingFor("fable-challenge", "anthropic.claude-fable-5"), /Unknown review model/);
+  assert.throws(() => seatingFor("fable-challenge", "gpt-5.6-sol"), /named backup/);
+  assert.throws(() => seatingFor("cheap-review"), /Unknown review role/);
 });
 
-test("any completed adverse review blocks even when two other families GO", () => {
-  const codex = delegation("codex"), cursor = delegation("cursor"), claude = delegation("claude");
-  const adverse = validateReview({ ...envelope(claude, "claude-run"), verdict: "NO_GO", findings: ["Authority boundary is unsound"] }, claude);
-  const gate = evaluateGate({ kind: "commit", target, workstream, reviews: [complete(codex, "codex-run"), complete(cursor, "cursor-run"), adverse], delegations: [codex, cursor, claude] });
-  assert.equal(gate.ready, false);
-  assert.match(gate.reasons.join(" "), /unreconciled comprehensive-review finding F1/);
+test("identity keys live in the project namespace", () => {
+  assert.deepEqual(identityKey("aon", "coordinator"), { key: "aon/coordinator", fallback: "aon/coordinator-2" });
+  assert.deepEqual(identityKey("ad", "owner"), { key: "ad/owner", fallback: "ad/owner-2" });
+  assert.throws(() => identityKey("aon", "reviewer"), /coordinator or owner/);
 });
 
-test("a NO_GO must enter the durable finding ledger", () => {
-  const claude = delegation("claude");
-  assert.throws(() => validateReview({ ...envelope(claude, "claude-run"), verdict: "NO_GO" }, claude), /at least one durable finding or unresolved item/);
+test("crr gate needs one finding-free GO, not three personas", () => {
+  assert.equal(evaluateGate({ kind: "crr", target: crrTarget, workstream, reviews: [crrComplete("crr-1")] }).ready, true);
+  const missing = evaluateGate({ kind: "crr", target: crrTarget, workstream, reviews: [] });
+  assert.equal(missing.ready, false);
+  assert.match(missing.reasons.join(" "), /missing crr/);
+  const owner = evaluateGate({ kind: "crr", target: crrTarget, workstream, reviews: [crrComplete("owner")] });
+  assert.match(owner.reasons.join(" "), /owner cannot satisfy/);
+  assert.throws(() => evaluateGate({ kind: "commit", target: crrTarget, workstream, reviews: [] }), /crr or mrr/);
 });
 
-test("findings remain durable until explicitly reconciled", () => {
-  const first = delegation("claude");
-  const adverse = validateReview({ ...envelope(first, "claude-run"), verdict: "NO_GO", findings: ["Fix the bug"] }, first);
+test("crr findings do not enter the durable ledger", () => {
+  const crr = crrComplete("crr-1", { verdict: "NO_GO", findings: ["Gap in tests"] });
+  assert.deepEqual(outstandingFindings([crr], claim), []);
+  const mrr = mrrComplete("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Authority boundary is unsound"] });
+  assert.deepEqual(outstandingFindings([crr, mrr], claim).map((item) => item.id), ["F1"]);
+});
+
+test("mrr gate requires persona lanes and accepts two GOs after a terminal failure", () => {
+  const reviews = [
+    mrrComplete("deep-code-review", "sol-run"),
+    mrrComplete("structural-challenge", "grok-run"),
+    mrrComplete("fable-challenge", "fable-run")
+  ];
+  assert.equal(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews }).ready, true);
+  const preferredId = randomUUID();
+  const two = evaluateGate({
+    kind: "mrr", target: mrrTarget, workstream,
+    reviews: reviews.slice(0, 2),
+    delegations: [
+      { id: preferredId, event: "created", type: "review", role: "fable-challenge", kind: "mrr", model: "claude-fable-5", claim, claimRevision: 1, head, baseHead },
+      { id: preferredId, event: "failed" }
+    ]
+  });
+  assert.equal(two.ready, true);
+  const missing = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: reviews.slice(0, 2) });
+  assert.equal(missing.ready, false);
+  assert.match(missing.reasons.join(" "), /missing fable-challenge review/);
+  assert.throws(() => evaluateGate({ kind: "coverage", target: mrrTarget, workstream, reviews }), /crr or mrr/);
+});
+
+test("a backup mrr review requires a terminal preferred-model failure", () => {
+  const preferredId = randomUUID();
+  const reviews = [
+    mrrComplete("deep-code-review", "sol-run"),
+    mrrComplete("structural-challenge", "sol-backup", { model: "gpt-5.6-sol", provider: "openai" }),
+    mrrComplete("fable-challenge", "fable-run")
+  ];
+  const delegations = [
+    { id: preferredId, event: "created", type: "review", role: "structural-challenge", kind: "mrr", model: "grok-4.6", claim, claimRevision: 1, head, baseHead },
+    { id: preferredId, event: "failed" }
+  ];
+  assert.equal(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews, delegations }).ready, true);
+  const skipped = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
+  assert.equal(skipped.ready, false);
+  assert.match(skipped.reasons.join(" "), /backup requires a terminal preferred-model failure/);
+});
+
+test("preferred-model failure is scoped to claim and exact target", () => {
+  const preferredId = randomUUID();
+  const scope = { role: "fable-challenge", kind: "mrr", target: mrrTarget, claim, claimRevision: 1 };
+  const delegations = [
+    { id: preferredId, event: "created", type: "review", role: "fable-challenge", kind: "mrr", model: "claude-fable-5", claim, claimRevision: 1, head, baseHead },
+    { id: preferredId, event: "failed" }
+  ];
+  assert.equal(preferredAlreadyAttempted(delegations, scope), true);
+  assert.equal(preferredAttemptFailed(delegations, scope), true);
+  assert.equal(preferredAttemptFailed(delegations, { ...scope, claim: "A different claim" }), false);
+  assert.equal(preferredAlreadyAttempted(delegations, { ...scope, claim: "A different claim" }), false);
+});
+
+test("mrr findings remain durable until explicitly reconciled", () => {
+  const adverse = mrrComplete("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Fix the bug"] });
   assert.deepEqual(outstandingFindings([adverse], claim).map((item) => item.id), ["F1"]);
-  const retry = delegation("claude");
-  const reconciled = validateReview({ ...envelope(retry, "claude-retry"), reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed and regression-tested." }] }, retry);
+  const reconciled = mrrComplete("deep-code-review", "sol-retry", { reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed and regression-tested." }] });
   assert.deepEqual(outstandingFindings([adverse, reconciled], claim), []);
 });
 
-test("claim edits do not launder adverse evidence and rejections remain claim-scoped", () => {
-  const first = delegation("claude");
-  const adverse = validateReview({ ...envelope(first, "claude-run"), verdict: "NO_GO", findings: ["Claim-specific defect"] }, first);
-  assert.deepEqual(outstandingFindings([adverse], "Revised claim").map((item) => item.id), ["F1"]);
-  const revised = { ...delegation("codex"), claim: "Revised claim" };
-  const rejection = validateReview({ ...envelope(revised, "codex-run"), claim: "Revised claim", reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable to the revised claim." }] }, revised);
+test("a later mrr GO does not silently clear a recorded finding", () => {
+  const adverse = mrrComplete("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Defect remains"] });
+  const later = mrrComplete("deep-code-review", "sol-run");
+  assert.deepEqual(outstandingFindings([adverse, later], claim).map((item) => item.id), ["F1"]);
+});
+
+test("claim edits do not launder mrr evidence", () => {
+  const adverse = mrrComplete("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Claim-specific defect"] });
+  const revised = mrrDelegation("deep-code-review");
+  revised.claim = "Revised claim";
+  const rejection = validateReview({ ...mrrEnvelope(revised, "sol-run"), claim: "Revised claim", reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable to the revised claim." }] }, revised);
   assert.deepEqual(outstandingFindings([adverse, rejection], "Revised claim"), []);
   assert.deepEqual(outstandingFindings([adverse, rejection], claim).map((item) => item.id), ["F1"]);
 });
 
-test("still_present reopens a previously cleared finding", () => {
-  const first = delegation("claude");
-  const adverse = validateReview({ ...envelope(first, "claude-run"), verdict: "NO_GO", findings: ["Defect"] }, first);
-  const clearedDelegation = delegation("codex");
-  const cleared = validateReview({ ...envelope(clearedDelegation, "codex-run"), reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed." }] }, clearedDelegation);
-  const reopenedDelegation = delegation("cursor");
-  const reopened = validateReview({ ...envelope(reopenedDelegation, "cursor-run"), reconciled: [{ findingId: "F1", disposition: "still_present", rationale: "Reproduced on the current target." }] }, reopenedDelegation);
-  assert.deepEqual(outstandingFindings([adverse, cleared, reopened], claim).map((item) => item.id), ["F1"]);
-});
-
-test("publication rejects branch, base, and unsuccessful check mismatches", () => {
-  const reasons = publicationReasons({
+test("bots gate rejects branch, base, and unsuccessful checks without draft ceremony", () => {
+  const reasons = botsReasons({
     project: { baseBranch: "main" }, checkout: { dirty: false },
     pr: { number: 7, state: "OPEN", isDraft: true, headRefOid: head, headRefName: "feature", baseRefName: "develop", statusCheckRollup: [{ conclusion: "CANCELLED", status: "COMPLETED" }] },
     target: { head, branch: "other" }
@@ -93,20 +187,28 @@ test("publication rejects branch, base, and unsuccessful check mismatches", () =
   assert.match(reasons.join(" "), /configured base/);
   assert.match(reasons.join(" "), /unsuccessful conclusion/);
   assert.match(reasons.join(" "), /reviewed branch/);
+  assert.doesNotMatch(reasons.join(" "), /already non-draft/);
 });
 
-test("publication blocks open questions and duplicate PR ownership", () => {
-  const primary = { id: "primary", project: "sample", questions: [{ id: "Q1", status: "open" }], pullRequests: [7] };
-  const reasons = workstreamPublicationReasons({ workstream: primary, workstreams: [primary, { id: "other", project: "sample", questions: [], pullRequests: [7] }], pr: { number: 7 } });
-  assert.match(reasons.join(" "), /open workstream questions: Q1/);
+test("an already-ready PR with matching evidence is fine", () => {
+  const reasons = botsReasons({
+    project: { baseBranch: "main" }, checkout: { dirty: false },
+    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [{ conclusion: "SUCCESS", status: "COMPLETED" }] },
+    target: { head, branch: "feature" }
+  });
+  assert.deepEqual(reasons, []);
+});
+
+test("bots gate blocks duplicate PR ownership", () => {
+  const primary = { id: "primary", project: "sample", pullRequests: [7] };
+  const reasons = workstreamBotsReasons({ workstream: primary, workstreams: [primary, { id: "other", project: "sample", pullRequests: [7] }], pr: { number: 7 } });
   assert.match(reasons.join(" "), /also claimed by workstream other/);
 });
 
-test("reviewer task IDs are distinct and the owner cannot review", () => {
-  const codex = delegation("codex"), cursor = delegation("cursor"), claude = delegation("claude");
-  const delegations = [codex, cursor, claude, failed(claude, "claude-run")];
-  const duplicate = evaluateGate({ kind: "commit", target, workstream, reviews: [complete(codex, "same"), complete(cursor, "same")], delegations });
+test("mrr reviewer task IDs are distinct", () => {
+  const duplicate = evaluateGate({
+    kind: "mrr", target: mrrTarget, workstream,
+    reviews: [mrrComplete("deep-code-review", "same"), mrrComplete("structural-challenge", "same"), mrrComplete("fable-challenge", "fable-run")]
+  });
   assert.match(duplicate.reasons.join(" "), /distinct reviewer task IDs/);
-  const owner = evaluateGate({ kind: "commit", target, workstream, reviews: [complete(codex, "owner"), complete(cursor, "cursor-run")], delegations });
-  assert.match(owner.reasons.join(" "), /owner cannot satisfy/);
 });

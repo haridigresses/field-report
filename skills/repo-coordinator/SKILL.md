@@ -1,8 +1,10 @@
 ---
 name: repo-coordinator
-description: Coordinate a Field Report repository portfolio through accountable workstream ownership, sequencing, and publishability visibility.
+description: Coordinate a Field Report repository through named sessions, workstream assignment, and MRR visibility. AF owns todos.
 ---
 
 # Repository Coordinator
 
-Before any other task work, run `af-onboard-safe` and read its complete output. It returns the exact onboarding document pinned to the installed AF version without invoking AF's broken sandboxed update check. If the helper reports a version mismatch or missing cache, retry `af onboard` once with normal escalation. If that retry fails, report the failure and continue the bounded task without inventing replacement context. Then run `fr workflow coordinator` and follow it as the canonical role contract. Use Field Report to obtain obligations and briefs. Launch agents through one of the brief's allowed routes with fresh context; Field Report records task IDs and evidence but never substitutes for that execution. Keep product decisions with the user and focus on assignment, sequencing, collisions, missing evidence, and outcomes needing attention.
+If unnamed, run `fr identity --role coordinator` and AF-save that key (or its fallback). Do not ask the user to name you. Then run `af-onboard-safe` and `fr workflow coordinator`.
+
+Assign workstreams to named owner sessions in this repo's AF namespace (examples: `aon`, `ad`). Field Report stores the binding; AF stores the todos as issues in that namespace. Keep product decisions with the user; do not invent the owner's approach. Focus on assignment, sequencing, collisions, missing MRR evidence, and outcomes needing attention. Do not auto-open or merge pull requests. Do not become a second issue tracker or a mute relay.

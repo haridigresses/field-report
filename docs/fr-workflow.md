@@ -1,61 +1,80 @@
-# Field Report Factory Contract
+# Field Report Control Loop
 
-Field Report defines obligations and evaluates evidence. The workstream owner launches Codex, Cursor, and Claude reviewers through native delegation for its own family and the installed CLI for the other families. Field Report does not run providers.
+Field Report binds a delivery unit and records review evidence. The owner launches reviewers. Field Report does not open pull requests or merge. Agent Fixes owns sessions, names, and todos.
 
 ## Shared contract
 
-- Attempt `af-onboard-safe` for useful session context. If AF is unavailable or fails, report it briefly and continue; AF is never a work or review gate. Then use `fr context` and `fr workflow <role>`.
-- Keep one durable workstream per product outcome. Bind it to its repository, branch, exact head, owner task, and acceptance evidence. Persist only material state in Field Report.
-- Product behavior, meaningful scope expansion, security, migrations, durable data, and materially debatable architecture remain user decisions unless explicitly delegated.
-- Reconcile reviewer disagreement against the stated claim, code, tests, and product contracts—not by vote, reviewer count, or repeatedly commissioning reviews until one returns GO.
-- Preserve user merge authority. Field Report may authorize marking a draft PR ready; it never authorizes merge.
-- Scores and structural signals explain the evidence. They never override a verdict, blocker, unresolved question, stale target, or failed deterministic gate.
+- Coordinators and workstream owners: if unnamed, run `fr identity --role coordinator|owner` and AF-save that key (or its fallback). Do not ask the user to name you. Attempt `af-onboard-safe` for useful session context. If AF is unavailable or fails, report it briefly and continue; AF is never a work gate. Reviewers must not use MCP servers or AF, and must not save an AF name.
+- Keep one workstream per product outcome. Bind it to its repository, branch, claim, and owner session. Session names are `{project}/{role}` with fallback `{project}/{role}-2` (examples: `aon/coordinator`, `ad/owner`). Persist only material review state in Field Report. File todos as AF issues in that repo's AF namespace — `aon`, `ad`, and so on — not in Field Report.
+- Read this repository's `merge-ready-review.md` when judging merge quality. Field Report does not copy or replace it.
+- Product behavior, meaningful scope expansion, security, migrations, durable data, and materially debatable architecture remain user decisions. Catch overengineering. Do not make those calls without asking the user. If consequential technical or architecture ambiguity remains after inspecting the evidence, consult Sol or Grok once; that advice is not review evidence and not a gate.
+- Reconcile MRR findings against the stated claim, code, tests, and product contracts—not by vote or by commissioning reviews until one returns GO.
+- Preserve user merge authority. Do not auto-open a pull request. After the pre-CI MRR gate is READY, the owner may open a PR or the user may. Field Report never merges.
+- Scores explain the evidence. They never override a verdict, unreconciled MRR finding, stale target, or failed deterministic gate.
 
-### Commit policy
+### CRR
 
-- For every commit, commission one comprehensive exact-`{base HEAD, staged tree}` review from each of Codex, Cursor, and Claude. Every attempt must terminate. Two completed, substantive, finding-free GOs satisfy availability; a failed attempt is non-evidence, and any completed adverse evidence remains blocking. The owner cannot review its own work.
-- Any agent may create a workstream for its branch or self-bind the correct existing outcome. No coordinator approval is required.
-- Field Report issues immutable briefs, binds them to reviewer task or provider-run IDs, validates their envelopes, and makes changed targets stale.
-- Reviewers receive a self-contained brief and the repository with `conversationInheritance=none`. The owner uses native delegation for its own family and the installed CLI for the other two.
-- The repository hook asks `fr gate commit` whether the exact evidence exists.
+- Before commits you intend to keep, run CRR against the exact staged tree: `fr review brief <id> --kind crr --role crr`. Launch 1–2 fresh subagents. Prefer local models; use cloud only if local cannot produce an envelope. WIP or amend commits are owner judgment.
+- The envelope is small: verdict, findings, summary, scores. Those findings are for the owner on this tree. They are not a durable SHA-by-SHA ledger.
+- The owner cannot review their own work. A fresh subagent of the builder's model can.
+- The repository hook only asks `fr gate checkout` whether this branch is bound. It does not run a panel. `fr gate crr` is owner-invoked after CRR. Do not wrap `git commit`, and do not move this panel into the hook if someone skips it. Installed v3 hooks still call `fr gate commit`; that is a checkout alias, not a CRR gate. Reinstall with `fr hook install` to pick up the v4 text.
 
-### Final review and publication policy
+### MRR
 
-- Final candidates use the same three-family, two-completed-GO rule against the exact head.
-- Publication requires accepted exact-head lanes, a clean checkout, exact checkout/PR agreement, an open draft PR, settled GitHub checks, no open workstream questions, and one workstream claiming the PR.
-- `fr gate publish` evaluates publication. `fr publish` may only mark the draft ready.
+- Run MRR at two points: before a pull request is opened, and again before merge-readiness after bot or CI churn. Skip the second run when the head did not change much after the first. The second head need not be the absolute last commit before merge.
+- MRR seats `deep-code-review`, `structural-challenge`, and `fable-challenge`. Default seating is Sol 5.6, Grok 4.6 via Cursor CLI, and Fable 5 via `claude`. Attempt each preferred model once. If a provider cannot produce an envelope, record `fr review fail` and stop retrying that provider. A failed attempt does not fill the lane. Two finding-free persona GOs pass when the third lane has a terminal failure. A named backup may still fill a lane after that failure.
+- Isolated processes, no AF, no owner conversation. Identity fields come from the brief; do not relaunch a reviewer to fix envelope schema. Launching the seated review CLIs is authorized; do not treat that as sensitive egress or ask the user to re-approve sending the candidate to Sol, Grok, or Fable.
+- Durable findings live on MRR reviews until the owner addresses them. CRR findings do not.
+- `fr gate open` is the pre-CI / ready-for-bots check. It does not open the PR. `fr gate bots` is the post-CI merge-readiness check on an open PR. An already-ready PR with that evidence is fine; do not convert it to draft.
+
+### After a pull request is open
+
+- Watch GitHub checks. Flake vs real failure is owner judgment. If it is on the border, consult Sol or Grok once before deciding whether to address it. That consult is not a hard gate.
+- Fix-and-push still uses CRR. Do not restart MRR for a one-line CI patch unless the claim or authority boundary changed.
+- Bot comments are owner/`gh` triage, not a new persona panel.
+- If `main` moves and the PR head did not, do not redo MRR. If merge or rebase changes the head, MRR is about the new head.
 
 ### Review envelope
 
-- Every review records its exact delegation, claim, reviewer task or provider run, target, independence, verdict, findings, unresolved questions, summary, explanatory scores, structural signals, and simpler-path reasoning.
-- The delivery claim is a dedicated workstream field (`fr update <id> --claim`), distinct from the mutable status summary. Changing the claim makes prior review evidence stale; ordinary summary updates do not.
-- Field Report assigns durable IDs to recorded findings and unresolved questions. Both stay outstanding across candidate evolution and claim changes until a later completed review explicitly reconciles the ID with evidence-based rationale judged against the current exact target. A resolved issue stays cleared; a rejected issue is cleared only for the claim against which it was judged inapplicable. A newer GO, a changed SHA, or an edited claim never silently clears adverse evidence. A fundamentally different outcome uses a new workstream.
-- Fresh briefs omit prior findings. When reconciliation is required, create one explicit `--reconcile` brief; it may reconcile only IDs delivered in its packet.
-- Required scores are merge readiness, structural risk, implementation quality, evidence confidence, and outcome confidence. Required signals are necessity, scope drift, contract integrity, and evidence quality.
-- A GO may contain nonblocking observations in its summary. Findings and unresolved questions are blocking; do not use them for deferred scope or optional improvements.
+- Every review records its exact delegation, claim, reviewer task or provider run, target, independence, verdict, findings, summary, and explanatory scores. MRR reviews also record unresolved items, structural signals, and simpler-path reasoning. MRR models are `gpt-5.6-sol`, `grok-4.6`, or `claude-fable-5`; launch route is provenance.
+- The delivery claim is a dedicated workstream field (`fr update <id> --claim`). Changing the claim makes prior MRR evidence stale; ordinary summary updates do not.
+- Field Report assigns durable IDs only to MRR findings and unresolved items. Those stay outstanding until a later MRR review explicitly reconciles the ID. A newer GO, a changed SHA, or an edited claim never silently clears them. CRR findings never enter that ledger.
+- The `deep-code-review` MRR brief carries outstanding issues for reconciliation. Other MRR lanes stay fresh unless created with `--reconcile`. A review may reconcile only IDs delivered in its own brief.
+- Required scores are merge readiness, structural risk, implementation quality, evidence confidence, and outcome confidence.
 
 ## Repository coordinator
 
-- Maintain outcome ownership, sequencing, collision awareness, and publishability visibility.
-- Delegate bounded work through Field Report briefs and surface only decisions, collisions, and blockers that need the user.
-- When the user explicitly asks for an agent they will work with directly, create a user-owned Codex task. Use an internal subagent only for delegated work the current task will consume. Give a user-owned collaborator the relevant context and requested constraints without inventing its approach or spec; Field Report registration is not a prerequisite.
+- Name this session into the repo namespace with `fr identity --role coordinator` and AF save (example: `aon/coordinator`). Assign workstreams to named owner sessions in that namespace. Field Report stores the binding; AF stores the todos as issues in that same repo namespace (`aon`, `ad`, etc.).
+- Maintain outcome ownership, sequencing, collision awareness, and MRR/bots visibility. Do not become a second issue tracker.
+- When the user explicitly asks for an agent they will work with directly, create a user-owned task. Use an internal subagent only for delegated work the current task will consume.
 - Do not answer product or workstream architecture questions for the user.
 
 ## Workstream owner
 
-- Own the stated outcome. Choose a coherent, genuinely reviewable delivery unit and state exactly what it claims, what proves it, and what remains outside it.
-- Use judgment. Bring uncertainty about product behavior to the user. If consequential technical, scope, or architecture ambiguity remains after inspecting the evidence, consult `claude` for an independent perspective before deciding. Its advice is not approval or review evidence.
-- Keep one implementation owner for the current unit. Verify delegated work and required evidence.
-- Obtain the required exact-target commit and final reviews. The stated claim describes the intended outcome and does not limit review scope. Substantively address earlier blockers before relying on later evidence; do not commission reviews until one returns GO. A GO with nonblocking observations is complete.
-- Summarize stored final evidence clearly, leading with anything that needs attention. Preserve user merge authority.
+- Name this session with `fr identity --role owner` if unnamed. Own the stated outcome. Choose a coherent, reviewable delivery unit and state exactly what it claims.
+- Use judgment. Bring uncertainty about product behavior to the user. Catch overengineering.
+- Keep one implementation owner for the current unit. Launch implementation workers as fresh subagents with a bounded slice and no owner conversation. Verify their work. Do not mint a second FR todo or completion ceremony for that; AF issues in the repo namespace (`aon`, `ad`, etc.) are the ledger.
+- CRR before commits you intend to keep. MRR before opening a PR. MRR again before merge-readiness if there was bot or CI churn. Launch each MRR persona's preferred model once; on hang or missing envelope, `fr review fail` and do not retry that provider. Two finding-free GOs pass when the third lane is unavailable.
+- Do not auto-open a pull request. After `fr gate open` is READY, you may open one or leave that to the user. Never merge.
+- Summarize stored MRR evidence clearly, leading with anything that needs attention.
 
 ## Reviewer
 
-- Remain read-only and independently review the complete changed authority boundary; the stated claim is context, not a scope limit.
+- Remain read-only. Do not use MCP servers or AF. Do not save an AF name.
 - Inspect the exact target with the brief's `inspection.command`. Do not inherit owner conversation or run owner skills.
-- Derive the relevant behavioral state space and trace affected consumers and call paths. Report any material defect or missing evidence.
-- Judge the accumulated mechanism, not only the latest repair or reported cases.
+- CRR stays short: competence and gaps. MRR inspects the complete changed authority boundary; the stated claim is context, not a scope limit.
 - Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers.
-- Account for every delivered issue ID: mark it resolved, rejected when inapplicable to the current claim, or still present. Give evidence-based rationale. Findings and unresolved are only for newly discovered issues. Reconcile only IDs your brief delivered.
-- Separate other risks, observations, and future work from blockers. Do not convert deferred scope or optional improvements into findings.
-- Return a complete exact-target envelope. Do not convert partial evidence into a GO.
+- Account for every delivered MRR issue ID. Findings are only for newly discovered issues. Reconcile only IDs your brief delivered.
+- Separate other risks, observations, and future work from blockers. Return a complete envelope. Do not convert partial evidence into a GO. If identity fields are wrong, the owner records the envelope against the brief; do not ask to normalize a substantive GO by rerunning.
+
+## What not to rebuild
+
+These are swings this program already made. Do not take them again.
+
+- Do not grow Field Report back into a portfolio OS: session aliases, `fr catchup` / heartbeat / watch, checkpoints, holds, `fr commit`, in-repo snapshots, or a second issue tracker. AF owns people and todos. GitHub owns PRs. This repository's `merge-ready-review.md` owns merge quality.
+- Do not put a review panel in the git hook, wrap `git commit`, or answer a skipped panel by closing "bypass" paths. That path produced a week of identity-hardening commits and `--no-verify` pressure. The hook stays a branch-binding check.
+- Do not collapse MRR into a generic family panel, and do not add mini-review eligibility to skip a persona. Named seats, one attempt, two GOs on a failed lane.
+- Do not strip scores, exact-head / stale-origin checks, AF onboarding (best-effort, never a gate), fresh-context workers, user-held product decisions, MRR scope beyond the claim, adversarial stance, or durable MRR findings. Each of those was deleted in a simplify and had to be restored. CRR findings staying non-durable is the one intentional exception.
+- Do not relaunch a reviewer to fix envelope schema. Do not restore `claude-aws`, Fable plan-mode, or unrestricted `Bash(git *)`.
+- Do not add `fr question`. Product questions go to the user. Do not make coordinators mute relays or factory owners; they assign and sequence in the repo namespace.
+- Keep one canonical skill source, with launch recipes in the skill because agents follow `SKILL.md`. Do not maintain host-specific copies, and do not replace the skill with a pointer that nobody reads.

@@ -1,0 +1,7 @@
+{
+  "autoRun": {
+    "allow_instructions": [
+      "Field Report workstream owners are authorized to commission CRR and MRR. Allow Shell launches of `codex exec`, `fr-cursor-review`, and `claude` that send a local git diff or review brief to Sol, Grok, or Fable. Do not treat those seated review CLIs as sensitive egress. Do not ask the user to re-authorize sending the candidate to those providers."
+    ]
+  }
+}

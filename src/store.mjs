@@ -162,14 +162,9 @@ export function createStore(root = defaultStateRoot()) {
       summary: requiredString(value.summary || previous.summary || value.outcome || previous.outcome, "Summary"),
       claim,
       claimRevision: previous.id ? (previous.claimRevision ?? 1) + (claim === previousClaim ? 0 : 1) : 1,
-      next: optionalString(value.next ?? previous.next, "Next action"),
       ownerTaskId: optionalString(value.ownerTaskId ?? previous.ownerTaskId, "Owner task ID", 200),
       branch: optionalString(value.branch ?? previous.branch, "Branch", 300),
       pullRequests: Array.isArray(value.pullRequests) ? [...new Set(value.pullRequests.map(Number).filter(Number.isInteger))] : previous.pullRequests || [],
-      issues: Array.isArray(value.issues) ? [...new Set(value.issues.map(String))] : previous.issues || [],
-      references: Array.isArray(value.references) ? value.references : previous.references || [],
-      milestones: Array.isArray(value.milestones) ? value.milestones : previous.milestones || [],
-      questions: Array.isArray(value.questions) ? value.questions : previous.questions || [],
       createdAt: previous.createdAt || value.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
       };
@@ -218,22 +213,16 @@ export function createStore(root = defaultStateRoot()) {
       const prior = await lines("reviews", stream.id);
       if (prior.some((item) => item.delegationId === review.delegationId)) throw new Error("A review delegation may be recorded only once");
       if ((await lines("delegations", stream.id)).some((item) => item.id === review.delegationId && item.event === "failed")) throw new Error("A failed review attempt is terminal; create a new brief to retry");
-      const priorFindingCount = prior.filter((item) => item.legacy !== true).reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
+      const durable = (item) => item.legacy !== true && item.kind === "mrr";
+      const priorFindingCount = prior.filter(durable).reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
       if (beforeAppend) await beforeAppend();
       await append("reviews", stream.id, review);
-      const assignedFindingIds = Array.from({ length: review.findings.length + review.unresolved.length }, (_, index) => `F${priorFindingCount + index + 1}`);
+      const assignedFindingIds = durable(review)
+        ? Array.from({ length: (review.findings?.length || 0) + (review.unresolved?.length || 0) }, (_, index) => `F${priorFindingCount + index + 1}`)
+        : [];
       return { review, assignedFindingIds };
     });
   }
 
-  async function addDecision(workstreamId, questionId, answer, actor = null) {
-    const stream = await workstream(workstreamId);
-    const questions = [...stream.questions];
-    const index = questions.findIndex((question) => question.id === questionId);
-    if (index < 0) throw new Error(`Unknown question: ${questionId}`);
-    questions[index] = { ...questions[index], status: "answered", answer: requiredString(answer, "Decision"), answeredAt: new Date().toISOString() };
-    return saveWorkstream({ ...stream, questions }, { type: "decision", text: `${questionId}: ${answer}`, actor });
-  }
-
-  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), addDelegation, addDelegationEvent, addReview, addDecision };
+  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), addDelegation, addDelegationEvent, addReview };
 }

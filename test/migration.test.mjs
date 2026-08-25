@@ -21,4 +21,5 @@ test("v1 migration preserves corpus records but makes old reviews non-gating", a
   const review = JSON.parse((await readFile(path.join(state, "reviews", "outcome.jsonl"), "utf8")).trim());
   assert.equal(stream.summary, "Preserve me");
   assert.equal(review.legacy, true);
+  assert.equal(review.kind, "mrr");
 });

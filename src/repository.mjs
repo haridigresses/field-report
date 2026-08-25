@@ -25,30 +25,30 @@ async function assertProjectCheckout(project, workstream, state) {
   if (workstream.branch && state.branch !== workstream.branch) throw new Error(`Checkout branch ${state.branch} does not match workstream branch ${workstream.branch}`);
 }
 
-export async function commitTarget(project, workstream, cwd = process.cwd()) {
+export async function crrTarget(project, workstream, cwd = process.cwd()) {
   const state = await checkout(cwd);
   await assertProjectCheckout(project, workstream, state);
   const tree = await run("git", ["write-tree"], state.root);
   const diff = await run("git", ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--find-renames", "--stat"], state.root);
-  if (!diff) throw new Error("Commit review requires a non-empty staged diff");
-  return { kind: "commit", head: state.head, baseHead: state.head, tree, branch: state.branch, repoRoot: state.root };
+  if (!diff) throw new Error("CRR requires a non-empty staged diff");
+  return { kind: "crr", head: state.head, baseHead: state.head, tree, branch: state.branch, repoRoot: state.root };
 }
 
-export async function finalTarget(project, workstream, cwd = process.cwd()) {
+export async function mrrTarget(project, workstream, cwd = process.cwd()) {
   const state = await checkout(cwd);
   await assertProjectCheckout(project, workstream, state);
   const base = `refs/remotes/origin/${project.baseBranch || "main"}`;
   const localBaseTip = await run("git", ["rev-parse", base], state.root);
   const remote = await run("git", ["ls-remote", "--exit-code", "origin", `refs/heads/${project.baseBranch || "main"}`], state.root);
   const remoteBaseTip = remote.split(/\s+/)[0];
-  if (localBaseTip !== remoteBaseTip) throw new Error(`Local origin/${project.baseBranch || "main"} is stale; fetch origin before deriving the final review target`);
+  if (localBaseTip !== remoteBaseTip) throw new Error(`Local origin/${project.baseBranch || "main"} is stale; fetch origin before deriving the MRR target`);
   const baseHead = await run("git", ["merge-base", base, state.head], state.root);
-  if (baseHead === state.head) throw new Error(`Final review requires a non-empty branch diff from origin/${project.baseBranch || "main"}`);
-  return { kind: "final", head: state.head, baseHead, branch: state.branch, repoRoot: state.root };
+  if (baseHead === state.head) throw new Error(`MRR requires a non-empty branch diff from origin/${project.baseBranch || "main"}`);
+  return { kind: "mrr", head: state.head, baseHead, branch: state.branch, repoRoot: state.root };
 }
 
 export async function diffInventory(target) {
-  const range = target.kind === "commit" ? [target.baseHead, target.tree] : [target.baseHead, target.head];
+  const range = target.kind === "crr" ? [target.baseHead, target.tree] : [target.baseHead, target.head];
   const output = await run("git", ["diff", "--numstat", "--no-ext-diff", "--no-textconv", "--find-renames", ...range, "--"], target.repoRoot);
   let additions = 0;
   let deletions = 0;
@@ -68,15 +68,4 @@ export async function pullRequest(project, workstream, cwd = process.cwd()) {
   const args = ["pr", "view", String(selector), "--json", "number,state,isDraft,headRefName,headRefOid,baseRefName,statusCheckRollup"];
   if (project.githubRepo) args.push("--repo", project.githubRepo);
   return JSON.parse(await run("gh", args, cwd));
-}
-
-export async function markReady(project, pr, cwd = process.cwd()) {
-  const args = ["pr", "ready", String(pr.number)];
-  if (project.githubRepo) args.push("--repo", project.githubRepo);
-  return run("gh", args, cwd);
-}
-
-export async function installHook(project, launcher) {
-  const hook = await run("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], project.repoPath);
-  return { hook, launcher };
 }

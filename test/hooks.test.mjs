@@ -9,7 +9,7 @@ test("managed hook is a small evidence query and preserves an existing hook", ()
   assert.match(text, /GIT_INDEX_FILE/);
   assert.match(text, /worktree_admin\/gitdir/);
   assert.match(text, /unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE/);
-  assert.match(text, /gate commit/);
+  assert.match(text, /gate checkout/);
   assert.doesNotMatch(text, /claude|codex exec|sha256|manifest/);
 });
 

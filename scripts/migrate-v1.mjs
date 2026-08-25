@@ -27,12 +27,6 @@ const workstreamFiles = (await readdir(path.join(legacyRoot, "workstreams"))).fi
 let reviewCount = 0;
 for (const file of workstreamFiles) {
   const old = await json(path.join(legacyRoot, "workstreams", file));
-  const questions = (old.questions || []).map((question) => ({
-    id: String(question.id), text: String(question.text), status: question.status === "answered" ? "answered" : "open",
-    ...(question.answer ? { answer: String(question.answer) } : {}),
-    ...(question.askedAt ? { askedAt: question.askedAt } : {}),
-    ...(question.answeredAt ? { answeredAt: question.answeredAt } : {})
-  }));
   await store.saveWorkstream({
     id: old.id,
     project: old.project,
@@ -40,14 +34,9 @@ for (const file of workstreamFiles) {
     outcome: old.outcome || old.summary,
     summary: old.summary,
     status: old.status,
-    next: (old.chunks || []).find((chunk) => ["active", "blocked", "planned"].includes(chunk.status))?.title || null,
     ownerTaskId: old.orchestrator || null,
     branch: old.branch || null,
     pullRequests: (old.prs || []).map((pr) => Number(typeof pr === "object" ? pr.number : pr)).filter(Number.isInteger),
-    issues: old.issuePrefixes || [],
-    references: old.references || [],
-    milestones: old.chunks || [],
-    questions,
     createdAt: old.createdAt || old.updatedAt
   }, { type: "migrated", text: "Migrated from Field Report schema v1", actor: "migrate-v1" });
 
@@ -58,7 +47,7 @@ for (const file of workstreamFiles) {
       await store.addReview(old.id, {
         legacy: true,
         legacyEventId: event.id,
-        kind: "final",
+        kind: "mrr",
         role: metadata.reviewRole || "legacy-review",
         head: metadata.head || null,
         baseHead: metadata.baseHead || null,

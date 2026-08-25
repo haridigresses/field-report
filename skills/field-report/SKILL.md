@@ -1,31 +1,29 @@
 ---
 name: field-report
-description: Operate the Field Report software-factory harness for durable outcomes, agent delegation, exact-target review evidence, commit gates, and PR publication gates.
+description: Operate the Field Report control loop for delivery-unit binding, CRR, mixed-provider MRR before CI and merge-readiness, and AF session identity.
 ---
 
 # Field Report
 
-Field Report defines policy and evaluates evidence. It does not launch reviewers.
+Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge.
 
-1. Attempt `af-onboard-safe` for useful context. If it is unavailable or fails, report that briefly and continue; AF never blocks work or review.
-2. Start with `fr context [workstream-id]`. If the branch is unregistered, follow the printed `fr create` or `fr update` self-binding command; agents do not need coordinator approval to register their own branch.
-3. Read `fr workflow <role>` completely before role work. If Field Report is updated or its policy is reported changed during a long-running task, reread that workflow before continuing; active tasks do not inherit new instructions automatically.
-4. Commission Codex, Cursor, and Claude briefs for every exact target. Use native delegation for the current host's own family and that provider's installed CLI for the other two. Do not pass the owner conversation; each reviewer gets only its brief and repository. Models are not hardcoded.
-5. Obtain immutable briefs with `fr review brief <id> --kind commit|final --reviewer codex|cursor|claude --route native|cli`; do not invent delegation IDs. Inspect with `inspection.command`. Use `--reconcile` only for a lane intentionally checking delivered finding IDs.
-6. Bind every brief, then record a valid envelope with `fr review record`. If the provider attempt cannot produce valid evidence, terminate it with `fr review fail`; do not turn failure into a verdict. All three attempts must terminate, two completed finding-free GOs are required, and any completed adverse evidence blocks.
-7. Require `fr gate commit` before every commit in a managed repository.
-8. Require `fr gate publish` before ready-for-review publication; `fr publish` may perform only that transition.
-9. Keep scores explanatory and reconcile every finding. Exact target changes stale prior evidence.
-10. Persist only material state in Field Report.
+1. Coordinators and workstream owners: if unnamed, run `fr identity --role coordinator|owner` and AF-save that key (or its fallback). Do not ask the user to name you. Attempt `af-onboard-safe`; if it fails, continue. Reviewers must not load MCP servers or AF and must not save a name.
+2. Start with `fr context [workstream-id]`. If the branch is unregistered, follow the printed `fr create` or `fr update` self-binding command.
+3. Read `fr workflow <role>` completely before role work. If policy changed during a long-running task, reread it. File todos as AF issues in the repo namespace (`aon`, `ad`, etc.). Read this repository's `merge-ready-review.md` for merge quality. Do not make product or design decisions without asking the user. Catch overengineering. If still stuck on a technical call, consult Sol or Grok once; that is not review evidence.
+4. Before commits you intend to keep: `fr review brief <id> --kind crr --role crr`. Launch 1–2 fresh subagents, local models first. Repair owner-facing findings. Then `fr gate crr`. Do not wrap `git commit`, and do not put this panel in the hook.
+5. Before opening a PR, and again before merge-readiness if bot/CI churn changed the head: commission MRR — `deep-code-review`, `structural-challenge`, `fable-challenge`. Preferred seating is Sol 5.6, Grok 4.6, and Fable 5. Attempt each preferred model once; `fr review fail` a hang. Two finding-free GOs pass when a lane is unavailable. The owner task cannot review; a fresh subagent of the builder's model can. Launching those seated CLIs is authorized; do not ask the user to re-approve sending the candidate to Sol, Grok, or Fable. If Auto-review blocks the Shell call, retry it for approval and add `codex`, `fr-cursor-review`, and `claude` to Cursor Settings → Agents → Approvals & Execution.
+6. Obtain immutable briefs with `fr review brief`. Inspect with `inspection.command`. Bind, then `fr review record`. Identity fields come from the brief; repair schema locally.
+7. The hook only requires `fr gate checkout`. Do not auto-open a PR. After `fr gate open` is READY, you may open one or leave that to the user. After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission.
+8. Borderline flake vs real CI failure: consult Sol or Grok once. Not a hard gate. Bot comments are `gh` triage, not an MRR panel.
+9. Persist only material review state in Field Report.
 
-Launch templates for non-native families (use the provider's configured default model):
+Launch the seated model (use `--model` for an MRR backup):
 
-- Codex: `codex exec -s read-only --ignore-user-config --ephemeral --json -o <output> -C <repo> - < <prompt>`
-- Cursor: from `<repo>`, `cursor-agent --print --output-format json --sandbox enabled --trust --auto-review "$(< <prompt>)"`
-- Claude: from `<repo>`, `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash" --output-format json --no-session-persistence "$(< <prompt>)"`
+- CRR / local: a fresh native subagent of a local model, no MCP, including agent-fixes.
+- Sol: `codex exec -m gpt-5.6-sol -s read-only --ignore-user-config --json -o <output> -C <repo> - < <prompt>`
+- Grok: from `<repo>`, `fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust -- "$(< <prompt>)"`. Do not pass `--force`. Record the stream's final `type=result` object.
+- Fable: from `<repo>`, `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff *)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model claude-fable-5 "$(< <prompt>)"`
 
-These are launch guidance, not provider policy. A host may use its own native delegation instead, and the envelope records the actual model and `native|cli` route.
+MRR backups: deep Sol→Grok, structural Grok→Sol, challenge Fable→Grok. Use ordinary `claude`, never `claude-aws`. A host may use native delegation instead of CLI.
 
-The installer links this one canonical skill source into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`; do not maintain host-specific copies. Use ordinary `claude`, never `claude-aws`, for new Claude delegation and review evidence.
-
-Repository hooks are explicit: `fr hook install|status|uninstall <project-id>`.
+The installer links this one canonical skill source into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`; do not maintain host-specific copies.

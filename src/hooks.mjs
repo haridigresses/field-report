@@ -1,4 +1,4 @@
-export const marker = "# field-report-commit-gate:v3";
+export const marker = "# field-report-commit-gate:v4";
 export const legacyMarker = "# field-report-managed-pre-commit:v2";
 
 export function quote(value) { return `'${String(value).replaceAll("'", "'\"'\"'")}'`; }
@@ -20,7 +20,7 @@ export function hookText(launcher, preserved = null) {
     "  cd \"$(dirname \"$worktree_gitdir\")\" || exit 1",
     "  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE",
     "fi",
-    `exec ${quote(launcher)} gate commit`,
+    `exec ${quote(launcher)} gate checkout`,
     ""
   ].join("\n");
 }
