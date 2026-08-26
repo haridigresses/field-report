@@ -153,7 +153,7 @@ export function validateReview(input, delegation) {
   if (!Array.isArray(input.findings) || !input.findings.every((item) => typeof item === "string" && item.trim())) throw new Error("Review findings must be a nonblank string array");
   if (input.unresolved != null && (!Array.isArray(input.unresolved) || !input.unresolved.every((item) => typeof item === "string" && item.trim()))) throw new Error("Review unresolved must be a nonblank string array");
   const unresolved = Array.isArray(input.unresolved) ? input.unresolved : [];
-  if (input.verdict === "NO_GO" && !input.findings.length && !unresolved.length) throw new Error("NO_GO requires at least one finding or unresolved item");
+  if (input.verdict === "NO_GO" && !noGoHasEvidence({ ...input, unresolved })) throw new Error("NO_GO requires at least one finding, unresolved item, or still_present reconciliation");
   if (!String(input.summary || "").trim()) throw new Error("Review requires a summary");
   for (const key of SCORE_KEYS) assertScore(input.scores?.[key], key);
   for (const key of SCORE_KEYS) if (!String(input.scoreRationale?.[key] || "").trim()) throw new Error(`${key} requires explanatory rationale`);
@@ -281,10 +281,15 @@ export function lastReadyMrr(reviews, workstream, delegations = []) {
   return null;
 }
 
+export function noGoHasEvidence(input) {
+  const unresolved = Array.isArray(input.unresolved) ? input.unresolved : [];
+  return Boolean((input.findings || []).length || unresolved.length || (input.reconciled || []).some((entry) => entry.disposition === "still_present"));
+}
+
 export function matchingWaiver(waivers, { target, workstream }) {
   const claim = workstream.claim ?? workstream.summary;
   const claimRevision = workstream.claimRevision ?? 1;
-  return [...(waivers || [])].reverse().find((item) => item.head === target.head && item.baseHead === target.baseHead && item.claim === claim && (item.claimRevision ?? 1) === claimRevision) || null;
+  return [...(waivers || [])].reverse().find((item) => item.head === target.head && item.baseHead === target.baseHead && item.claim === claim && (item.claimRevision ?? 1) === claimRevision && String(item.actor || "").trim()) || null;
 }
 
 export function evaluateMergeReady({ target, workstream, reviews, delegations = [], waivers = [] }) {
@@ -297,6 +302,7 @@ export function evaluateMergeReady({ target, workstream, reviews, delegations = 
   if (waiver) {
     const reasons = [];
     if (!last) reasons.push("waiver requires a prior finding-free MRR on this claim");
+    if (!String(waiver.actor || "").trim()) reasons.push("waiver requires a recorded actor");
     for (const finding of outstanding) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
     if (!reasons.length) return { ...exact, ready: true, reasons: [], phase: "waived", via: "waiver", waiver };
     return { ...exact, ready: false, reasons, phase: "blocked", via: "waiver-invalid", waiver };

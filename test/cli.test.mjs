@@ -171,9 +171,9 @@ const mrrModels = {
   "fable-challenge": { model: "claude-fable-5", provider: "anthropic" }
 };
 
-async function recordMrrLane(repo, state, role, taskId) {
-  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", role], repo, state));
-  await run(["review", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", taskId], repo, state);
+async function recordMrrLane(repo, state, role, taskId, stream = "outcome") {
+  const brief = JSON.parse(await run(["review", "brief", stream, "--kind", "mrr", "--role", role], repo, state));
+  await run(["review", "bind", stream, "--delegation", brief.delegation.id, "--task-id", taskId], repo, state);
   const seated = mrrModels[role];
   const review = {
     reviewComplete: true, independent: true, delegationId: brief.delegation.id, reviewerTaskId: taskId,
@@ -185,7 +185,7 @@ async function recordMrrLane(repo, state, role, taskId) {
   };
   const file = path.join(repo, `${taskId}.json`);
   await writeFile(file, JSON.stringify(review));
-  await run(["review", "record", "outcome", "--file", file], repo, state);
+  await run(["review", "record", stream, "--file", file], repo, state);
   return brief;
 }
 
@@ -193,6 +193,19 @@ test("a skip without prior MRR is rejected", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
   await assert.rejects(run(["review", "waive", "outcome", "--reason", "Not substantive"], repo, state), /prior finding-free MRR/);
+});
+
+test("a skip without a recorded actor is rejected", async () => {
+  const { repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  await run(["create", "unbound", "--project", "sample", "--title", "Unbound", "--outcome", "Ship bounded change", "--branch", "feature"], repo, state);
+  await recordMrrLane(repo, state, "deep-code-review", "sol-unbound", "unbound");
+  await recordMrrLane(repo, state, "structural-challenge", "grok-unbound", "unbound");
+  await recordMrrLane(repo, state, "fable-challenge", "fable-unbound", "unbound");
+  await writeFile(path.join(repo, "README.md"), "churn-unbound\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
+  await exec("git", ["commit", "-m", "churn-unbound"], { cwd: repo });
+  await assert.rejects(run(["review", "waive", "unbound", "--reason", "Not a substantive authority change"], repo, state), /recorded actor/);
 });
 
 test("later commits are churn until the user skips or asks for final MRR", async () => {
@@ -217,7 +230,7 @@ test("later commits are churn until the user skips or asks for final MRR", async
   await assert.rejects(run(["gate", "open", "outcome"], repo, state), /missing deep-code-review review|BLOCKED/);
   await assert.rejects(run(["gate", "bots", "outcome"], repo, state), /CRR until you ask for final MRR/);
   await assert.rejects(run(["review", "waive", "outcome"], repo, state), /Specify --reason/);
-  await run(["review", "waive", "outcome", "--reason", "Not a substantive authority change"], repo, state);
+  assert.match(await run(["review", "waive", "outcome", "--reason", "Not a substantive authority change"], repo, state), /actor owner-1/);
   await assert.rejects(run(["review", "waive", "outcome", "--reason", "duplicate"], repo, state), /already recorded for this exact head/);
   assert.match(await run(["context", "outcome"], repo, state), /merge-ready via skip/);
   await assert.rejects(run(["gate", "bots", "outcome"], repo, state), /no open pull request/i);

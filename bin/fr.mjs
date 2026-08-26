@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore } from "../src/store.mjs";
-import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 
@@ -45,7 +45,7 @@ fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-chall
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review fail <id> --delegation <uuid> --task-id <native-task-or-provider-run-id> --reason <text>
 fr review record <id> --file <review.json>
-fr review waive <id> --reason <text>
+fr review waive <id> --reason <text> [--actor <id>]
 fr review status <id> --kind crr|mrr
 fr gate checkout [id]
 fr gate crr [id]
@@ -126,7 +126,7 @@ function reviewPrompt(stream, delegation, inventory) {
         ? "Inspect necessity, simplicity, authority boundaries, scope, maintainability, and whether you would select the mechanism from scratch."
         : "Inspect the candidate as the independent challenge lane. Prefer Fable 5; a backup model is allowed when Fable cannot produce an envelope.";
   const outstanding = delegation.outstanding?.length
-    ? `\n\nOutstanding MRR findings requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nAccount for every delivered ID in reconciled: use disposition=resolved when fixed, rejected when inapplicable to the current claim, or still_present when it remains. Give evidence-based rationale. Findings and unresolved are only for newly discovered issues; do not restate a delivered issue there. Do not clear an issue on the owner's assurance alone.`
+    ? `\n\nOutstanding MRR findings requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nAccount for every delivered ID in reconciled: use disposition=resolved when fixed, rejected when inapplicable to the current claim, or still_present when it remains. Give evidence-based rationale. Findings and unresolved are only for newly discovered issues; do not restate a delivered issue there. A NO_GO may rest on still_present reconciliations alone. Do not clear an issue on the owner's assurance alone.`
     : "";
   const files = (inventory.files || []).map((file) => `- ${file}`).join("\n") || "- none listed";
   const envelope = kind === "crr"
@@ -340,7 +340,7 @@ async function main() {
     const validated = validateReview(envelope, delegation);
     const currentTarget = await targetFor(stream, delegation.kind);
     const stale = (delegation.claimRevision ?? 1) !== (stream.claimRevision ?? 1) || delegation.head !== currentTarget.head || delegation.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && delegation.tree !== currentTarget.tree);
-    if (stale && (validated.verdict !== "NO_GO" || (!validated.findings.length && !validated.unresolved.length))) throw new Error("A stale review may record new adverse evidence only; it may not record a GO");
+    if (stale && (validated.verdict !== "NO_GO" || !noGoHasEvidence(validated))) throw new Error("A stale review may record new adverse evidence only; it may not record a GO");
     if (stale && (validated.reconciled || []).some((entry) => entry.disposition !== "still_present")) throw new Error("A stale review may mark delivered findings still_present but may not resolve or reject them");
     const packet = new Set((delegation.outstanding || []).map((finding) => finding.id));
     for (const entry of validated.reconciled || []) if (!packet.has(entry.findingId)) throw new Error(`reconciled may only reference IDs from this brief's outstanding packet; out-of-packet ID: ${entry.findingId}`);
@@ -363,8 +363,10 @@ async function main() {
     const outstanding = outstandingFindings(reviews, stream.claim);
     if (outstanding.length) throw new Error(`Reconcile outstanding MRR findings before skipping the panel: ${outstanding.map((item) => item.id).join(", ")}`);
     if (matchingWaiver(waivers, { target, workstream: stream })) throw new Error("A skip is already recorded for this exact head");
-    const waiver = await store.addWaiver(stream.id, { head: target.head, baseHead: target.baseHead, claim: stream.claim, claimRevision: stream.claimRevision ?? 1, priorHead: last.head, reason, actor: process.env.CODEX_THREAD_ID || null });
-    return process.stdout.write(`Recorded MRR skip for ${waiver.head.slice(0, 12)} (prior MRR ${waiver.priorHead.slice(0, 12)}). This skip dies if HEAD moves. Do not record a skip unless the user explicitly agreed.\n`);
+    const actor = String(flags.actor || process.env.CODEX_THREAD_ID || stream.ownerTaskId || "").trim();
+    if (!actor) throw new Error("A skip requires a recorded actor: pass --actor, set CODEX_THREAD_ID, or bind an owner session");
+    const waiver = await store.addWaiver(stream.id, { head: target.head, baseHead: target.baseHead, claim: stream.claim, claimRevision: stream.claimRevision ?? 1, priorHead: last.head, reason, actor });
+    return process.stdout.write(`Recorded MRR skip for ${waiver.head.slice(0, 12)} (prior MRR ${waiver.priorHead.slice(0, 12)}, actor ${waiver.actor}). This skip dies if HEAD moves. Do not record a skip unless the user explicitly agreed.\n`);
   }
   if (command === "review" && positional[0] === "status") {
     const stream = await store.workstream(positional[1]);

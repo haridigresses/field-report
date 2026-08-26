@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const claim = "Ship the stated delivery unit";
@@ -175,13 +175,19 @@ test("merge-ready accepts an exact-head skip after a prior finding-free MRR", ()
   assert.equal(churn.ready, false);
   const waived = evaluateMergeReady({
     target: mrrTarget, workstream, reviews,
-    waivers: [{ head, baseHead, claim, claimRevision: 1, priorHead: older, reason: "Not a substantive authority change" }]
+    waivers: [{ head, baseHead, claim, claimRevision: 1, priorHead: older, reason: "Not a substantive authority change", actor: "owner" }]
   });
   assert.equal(waived.phase, "waived");
   assert.equal(waived.ready, true);
+  const missingActor = evaluateMergeReady({
+    target: mrrTarget, workstream, reviews,
+    waivers: [{ head, baseHead, claim, claimRevision: 1, priorHead: older, reason: "skip" }]
+  });
+  assert.equal(missingActor.phase, "churn");
+  assert.equal(missingActor.ready, false);
   const blocked = evaluateMergeReady({
     target: mrrTarget, workstream, reviews: reviews.slice(0, 1),
-    waivers: [{ head, baseHead, claim, claimRevision: 1, priorHead: older, reason: "skip" }]
+    waivers: [{ head, baseHead, claim, claimRevision: 1, priorHead: older, reason: "skip", actor: "owner" }]
   });
   assert.equal(blocked.ready, false);
   assert.match(blocked.reasons.join(" "), /prior finding-free MRR/);
@@ -271,4 +277,16 @@ test("latestClaimReviews keeps the latest seat on the claim even when HEAD moved
   assert.equal(latest["structural-challenge"].reviewerTaskId, "grok-new");
   assert.equal(latest.crr.reviewerTaskId, "crr-1");
   assert.equal(latest["deep-code-review"], null);
+});
+
+test("a still_present reconciliation is enough evidence for NO_GO", () => {
+  const d = mrrDelegation("deep-code-review");
+  const envelope = mrrEnvelope(d, "sol-run", {
+    verdict: "NO_GO",
+    findings: [],
+    reconciled: [{ findingId: "F2", disposition: "still_present", rationale: "The delivered defect remains on this target." }]
+  });
+  assert.equal(noGoHasEvidence(envelope), true);
+  assert.equal(validateReview(envelope, d).verdict, "NO_GO");
+  assert.throws(() => validateReview(mrrEnvelope(d, "sol-empty", { verdict: "NO_GO", findings: [] }), d), /finding, unresolved item, or still_present/);
 });
