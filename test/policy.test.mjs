@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const claim = "Ship the stated delivery unit";
@@ -93,6 +93,9 @@ test("crr gate needs one finding-free GO, not three personas", () => {
   assert.match(missing.reasons.join(" "), /missing crr/);
   const owner = evaluateGate({ kind: "crr", target: crrTarget, workstream, reviews: [crrComplete("owner")] });
   assert.match(owner.reasons.join(" "), /owner cannot satisfy/);
+  const later = evaluateGate({ kind: "crr", target: crrTarget, workstream, reviews: [crrComplete("crr-1"), crrComplete("crr-2", { verdict: "NO_GO", findings: ["Gap"] })] });
+  assert.equal(later.ready, false);
+  assert.match(later.reasons.join(" "), /not a finding-free GO/);
   assert.throws(() => evaluateGate({ kind: "commit", target: crrTarget, workstream, reviews: [] }), /crr or mrr/);
 });
 
@@ -182,6 +185,11 @@ test("merge-ready accepts an exact-head skip after a prior finding-free MRR", ()
   });
   assert.equal(blocked.ready, false);
   assert.match(blocked.reasons.join(" "), /prior finding-free MRR/);
+  const newer = "e".repeat(40);
+  const partial = [...reviews, { ...mrrComplete("deep-code-review", "sol-new"), head: newer }];
+  assert.equal(lastReadyMrr(partial, workstream).head, older);
+  const stillChurn = evaluateMergeReady({ target: { kind: "mrr", head: newer, baseHead }, workstream, reviews: partial });
+  assert.equal(stillChurn.phase, "churn");
 });
 
 test("mrr findings remain durable until explicitly reconciled", () => {

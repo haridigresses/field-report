@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore } from "../src/store.mjs";
-import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastAcceptedMrr, matchingWaiver, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, matchingWaiver, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 
@@ -345,14 +345,12 @@ async function main() {
     const [reviews, waivers] = await Promise.all([store.reviews(stream.id), store.waivers(stream.id)]);
     const exact = await gateFor(stream, "mrr");
     if (exact.gate.ready) throw new Error("Exact-head MRR is already READY; no skip is needed");
-    const last = lastAcceptedMrr(reviews, stream);
+    const last = lastReadyMrr(reviews, stream, await store.delegations(stream.id));
     if (!last) throw new Error("A skip requires a prior finding-free MRR on this claim");
-    const prior = evaluateGate({ kind: "mrr", target: { kind: "mrr", head: last.head, baseHead: last.baseHead }, workstream: stream, reviews, delegations: await store.delegations(stream.id) });
-    if (!prior.ready) throw new Error("A skip requires a prior finding-free MRR on this claim");
     const outstanding = outstandingFindings(reviews, stream.claim);
     if (outstanding.length) throw new Error(`Reconcile outstanding MRR findings before skipping the panel: ${outstanding.map((item) => item.id).join(", ")}`);
     if (matchingWaiver(waivers, { target, workstream: stream })) throw new Error("A skip is already recorded for this exact head");
-    const waiver = await store.addWaiver(stream.id, { head: target.head, baseHead: target.baseHead, claim: stream.claim, claimRevision: stream.claimRevision ?? 1, priorHead: last.head, reason });
+    const waiver = await store.addWaiver(stream.id, { head: target.head, baseHead: target.baseHead, claim: stream.claim, claimRevision: stream.claimRevision ?? 1, priorHead: last.head, reason, actor: process.env.CODEX_THREAD_ID || null });
     return process.stdout.write(`Recorded MRR skip for ${waiver.head.slice(0, 12)} (prior MRR ${waiver.priorHead.slice(0, 12)}). This skip dies if HEAD moves. Do not record a skip unless the user explicitly agreed.\n`);
   }
   if (command === "review" && positional[0] === "status") {

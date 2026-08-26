@@ -220,8 +220,8 @@ function evaluateCrrGate({ target, workstream, reviews }) {
   const claim = workstream.claim ?? workstream.summary;
   const claimRevision = workstream.claimRevision ?? 1;
   const matching = reviews.filter((review) => reviewKind(review.kind) === "crr" && review.role === CRR_ROLE && review.legacy !== true && review.claim === claim && (review.claimRevision ?? 1) === claimRevision && review.head === target.head && review.baseHead === target.baseHead && review.tree === target.tree);
-  const accepted = matching.filter(acceptedCrr);
   const latest = latestFor(matching, () => true);
+  const accepted = latest && acceptedCrr(latest) ? [latest] : [];
   const reasons = [];
   if (!accepted.length) reasons.push(latest && !acceptedCrr(latest) ? "crr is not a finding-free GO" : "missing crr");
   const reviewerIds = accepted.map((review) => review.reviewerTaskId).filter(Boolean);
@@ -267,6 +267,19 @@ export function lastAcceptedMrr(reviews, workstream) {
   return [...(reviews || [])].reverse().find((review) => acceptedMrr(review) && review.claim === claim && (review.claimRevision ?? 1) === claimRevision) || null;
 }
 
+export function lastReadyMrr(reviews, workstream, delegations = []) {
+  const seen = new Set();
+  for (const review of [...(reviews || [])].reverse()) {
+    if (!acceptedMrr(review)) continue;
+    const key = `${review.head}:${review.baseHead}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const gate = evaluateMrrGate({ target: { kind: "mrr", head: review.head, baseHead: review.baseHead }, workstream, reviews, delegations });
+    if (gate.ready) return { head: review.head, baseHead: review.baseHead };
+  }
+  return null;
+}
+
 export function matchingWaiver(waivers, { target, workstream }) {
   const claim = workstream.claim ?? workstream.summary;
   const claimRevision = workstream.claimRevision ?? 1;
@@ -278,12 +291,11 @@ export function evaluateMergeReady({ target, workstream, reviews, delegations = 
   if (exact.ready) return { ...exact, phase: "ready", via: "mrr" };
   const claim = workstream.claim ?? workstream.summary;
   const outstanding = outstandingFindings(reviews, claim);
-  const last = lastAcceptedMrr(reviews, workstream);
+  const last = lastReadyMrr(reviews, workstream, delegations);
   const waiver = matchingWaiver(waivers, { target, workstream });
   if (waiver) {
     const reasons = [];
-    const prior = last ? evaluateMrrGate({ target: { kind: "mrr", head: last.head, baseHead: last.baseHead }, workstream, reviews, delegations }) : null;
-    if (!prior?.ready) reasons.push("waiver requires a prior finding-free MRR on this claim");
+    if (!last) reasons.push("waiver requires a prior finding-free MRR on this claim");
     for (const finding of outstanding) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
     if (!reasons.length) return { ...exact, ready: true, reasons: [], phase: "waived", via: "waiver", waiver };
     return { ...exact, ready: false, reasons, phase: "blocked", via: "waiver-invalid", waiver };

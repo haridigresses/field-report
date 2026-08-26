@@ -238,6 +238,7 @@ export function createStore(root = defaultStateRoot()) {
       claimRevision: Number.isInteger(value.claimRevision) ? value.claimRevision : 1,
       priorHead: requiredString(value.priorHead, "Waiver priorHead", 40),
       reason: requiredString(value.reason, "Waiver reason", 4000),
+      actor: optionalString(value.actor, "Waiver actor", 200),
       createdAt: new Date().toISOString()
     };
     if (!SHA.test(waiver.head) || !SHA.test(waiver.baseHead) || !SHA.test(waiver.priorHead)) throw new Error("Waiver requires exact head, baseHead, and priorHead SHAs");

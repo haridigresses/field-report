@@ -65,8 +65,10 @@ function botsStatus(stream, projectView, mrr) {
   const target = { head: pr.headRefOid, branch: stream.branch };
   const ci = botsReasons({ project: projectView, target, checkout, pr });
   if (mrr.phase === "churn") {
-    const failing = ci.filter((reason) => /unsuccessful|incomplete/.test(reason));
-    return { ready: false, reasons: [...new Set([...(mrr.reasons || []), ...failing])] };
+    const checks = pr.statusCheckRollup || [];
+    const observed = [...(mrr.reasons || []), ...ci];
+    if (!checks.length) observed.push("No GitHub checks observed; this is not evidence that CI ran");
+    return { ready: false, reasons: [...new Set(observed)] };
   }
   const observed = [...mrr.reasons, ...ci];
   const checks = pr.statusCheckRollup || [];
