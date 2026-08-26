@@ -86,8 +86,15 @@ async function projectForCheckout() {
 }
 
 async function streamForCheckout(explicit = null) {
-  if (explicit) return store.workstream(explicit);
-  const [project, state, streams] = await Promise.all([projectForCheckout(), checkout(), store.workstreams()]);
+  const [project, state] = await Promise.all([projectForCheckout(), checkout()]);
+  if (explicit) {
+    const stream = await store.workstream(explicit);
+    if (stream.project !== project.id || stream.branch !== state.branch) {
+      throw new Error(`${stream.id} is not bound to this checkout (${project.id}/${state.branch})`);
+    }
+    return stream;
+  }
+  const streams = await store.workstreams();
   const matches = streams.filter((stream) => stream.project === project.id && stream.branch === state.branch);
   if (matches.length !== 1) {
     if (matches.length) throw new Error(`Multiple workstreams match ${state.branch}; keep one branch binding and move the others with fr update <id> --branch <branch>`);
@@ -212,9 +219,7 @@ async function botsGate(stream) {
     ...ci,
     ...workstreamBotsReasons({ workstream: stream, workstreams: await store.workstreams(), pr })
   ];
-  const checks = pr?.statusCheckRollup || [];
-  const observations = pr && !checks.length ? ["No GitHub checks observed; this is not evidence that CI ran"] : [];
-  return { ...result, pr, reasons, observations, ready: reasons.length === 0 };
+  return { ...result, pr, reasons, ready: reasons.length === 0 };
 }
 
 async function main() {
@@ -406,7 +411,7 @@ async function main() {
       const stream = await store.workstream(requireValue(streamId, "Specify a workstream ID"));
       const result = await botsGate(stream);
       const prLine = result.pr ? `PR #${result.pr.number}: ${result.pr.isDraft ? "draft" : "ready"}` : "No pull request";
-      const lines = [`${stream.id} bots gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, prLine, ...result.reasons.map((reason) => `- ${reason}`), ...(result.observations || []).map((reason) => `- ${reason}`), ...evidenceLines(result.gate)];
+      const lines = [`${stream.id} bots gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, prLine, ...result.reasons.map((reason) => `- ${reason}`), ...evidenceLines(result.gate)];
       if (!result.ready) throw new Error(lines.join("\n"));
       return process.stdout.write(`${lines.join("\n")}\n`);
     }

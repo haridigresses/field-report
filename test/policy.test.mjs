@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const claim = "Ship the stated delivery unit";
@@ -239,6 +239,21 @@ test("an already-ready PR with matching evidence is fine", () => {
     target: { head, branch: "feature" }
   });
   assert.deepEqual(reasons, []);
+});
+
+test("bots gate blocks an empty GitHub check rollup", () => {
+  const empty = botsReasons({
+    project: { baseBranch: "main" }, checkout: { dirty: false },
+    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [] },
+    target: { head, branch: "feature" }
+  });
+  assert.deepEqual(empty, [NO_GITHUB_CHECKS_REASON]);
+  const missing = botsReasons({
+    project: { baseBranch: "main" }, checkout: { dirty: false },
+    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main" },
+    target: { head, branch: "feature" }
+  });
+  assert.deepEqual(missing, [NO_GITHUB_CHECKS_REASON]);
 });
 
 test("bots gate blocks duplicate PR ownership", () => {

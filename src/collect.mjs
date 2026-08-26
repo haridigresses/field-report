@@ -64,16 +64,9 @@ function botsStatus(stream, projectView, mrr) {
   if (checkout.dirty == null) return { ready: false, reasons: ["workstream checkout cleanliness could not be observed"] };
   const target = { head: pr.headRefOid, branch: stream.branch };
   const ci = botsReasons({ project: projectView, target, checkout, pr });
-  if (mrr.phase === "churn") {
-    const checks = pr.statusCheckRollup || [];
-    const observed = [...(mrr.reasons || []), ...ci];
-    if (!checks.length) observed.push("No GitHub checks observed; this is not evidence that CI ran");
-    return { ready: false, reasons: [...new Set(observed)] };
-  }
-  const observed = [...mrr.reasons, ...ci];
-  const checks = pr.statusCheckRollup || [];
-  if (!checks.length) observed.push("No GitHub checks observed; this is not evidence that CI ran");
-  return { ready: mrr.ready && observed.filter((reason) => reason !== "No GitHub checks observed; this is not evidence that CI ran").length === 0, reasons: [...new Set(observed)] };
+  const observed = [...(mrr.reasons || []), ...ci];
+  if (mrr.phase === "churn") return { ready: false, reasons: [...new Set(observed)] };
+  return { ready: mrr.ready && observed.length === 0, reasons: [...new Set(observed)] };
 }
 
 export async function collect(output = process.env.FIELD_REPORT_PROJECTION || path.join(store.root, "projection.json")) {

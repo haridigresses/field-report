@@ -48,6 +48,7 @@ test("checkout gate prints a self-register command for an unbound branch", async
   assert.match(await run(["gate", "checkout", "outcome"], repo, state), /bound to this checkout/);
   assert.match(await run(["gate", "commit", "outcome"], repo, state), /bound to this checkout/);
   await exec("git", ["branch", "-m", "unsafe'quote"], { cwd: repo });
+  await assert.rejects(run(["gate", "checkout", "outcome"], repo, state), /not bound to this checkout/);
   await assert.rejects(run(["gate", "crr"], repo, state), (error) => /Self-register without coordinator approval/.test(error.stderr || "") && (error.stderr || "").includes(`--branch 'unsafe'"'"'quote'`));
 });
 
@@ -161,6 +162,8 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /Do not restore `claude-aws`/);
   assert.match(shared, /Do not add `fr question`/);
   assert.match(shared, /fr review waive/);
+  assert.match(shared, /empty GitHub check rollup is not evidence that CI ran/);
+  assert.match(shared, /fr gate bots` stays BLOCKED until checks are observed/);
   const help = await run(["help"], root, path.join(root, "state"));
   assert.doesNotMatch(help, /fr question|fr catchup|fr publish|fr delegate/);
 });

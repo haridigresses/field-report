@@ -23,7 +23,7 @@ function reasons(stream) {
   if (["planned", "active", "blocked"].includes(stream.status) && !stream.ownerTaskId) result.push("owner session unbound");
   if (pr && review?.phase === "blocked") result.push(...(review.reasons || ["MRR evidence missing or stale"]));
   else if (pr && review?.phase === "churn") result.push(...(bots(stream)?.reasons || []).filter((reason) => /unsuccessful|incomplete/.test(reason)));
-  else if (pr && !bots(stream)?.ready) result.push(...(bots(stream)?.reasons || ["bots evidence missing or stale"]).filter((reason) => reason !== "No GitHub checks observed; this is not evidence that CI ran"));
+  else if (pr && !bots(stream)?.ready) result.push(...(bots(stream)?.reasons || ["bots evidence missing or stale"]));
   return result;
 }
 

@@ -333,6 +333,8 @@ export function openReasons({ checkout }) {
   return reasons;
 }
 
+export const NO_GITHUB_CHECKS_REASON = "No GitHub checks observed; this is not evidence that CI ran";
+
 export function botsReasons({ project, target, checkout, pr }) {
   const reasons = openReasons({ checkout });
   if (!pr) {
@@ -345,6 +347,7 @@ export function botsReasons({ project, target, checkout, pr }) {
   if (pr.baseRefName !== project.baseBranch) reasons.push(`PR base ${pr.baseRefName} does not match configured base ${project.baseBranch}`);
   const accepted = new Set(["SUCCESS", "SKIPPED", "NEUTRAL"]);
   const checks = pr.statusCheckRollup || [];
+  if (!checks.length) reasons.push(NO_GITHUB_CHECKS_REASON);
   if (checks.some((check) => check.conclusion && !accepted.has(check.conclusion))) reasons.push("GitHub checks include an unsuccessful conclusion");
   if (checks.some((check) => !check.conclusion && !accepted.has(check.state))) reasons.push("GitHub checks are incomplete or unsuccessful");
   return reasons;
