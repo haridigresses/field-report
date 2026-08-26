@@ -3,7 +3,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createStore } from "./store.mjs";
-import { botsReasons, evaluateGate } from "./policy.mjs";
+import { botsReasons, evaluateMergeReady } from "./policy.mjs";
 
 const exec = promisify(execFile);
 const store = createStore();
@@ -38,17 +38,21 @@ async function collectProject(project) {
   };
 }
 
-function delegationState(events) {
+function delegationState(events, reviews = []) {
+  const recorded = new Set((reviews || []).map((review) => review.delegationId).filter(Boolean));
   const byId = new Map();
   for (const event of events) byId.set(event.id, { ...(byId.get(event.id) || {}), ...event });
-  return [...byId.values()].map((item) => ({ ...item, status: item.event === "completed" ? (item.completed && !(item.unresolved || []).length ? "complete" : "incomplete") : item.event === "bound" ? "active" : "open" }));
+  return [...byId.values()].map((item) => {
+    const status = recorded.has(item.id) || item.event === "completed" ? "complete" : item.event === "failed" ? "failed" : item.event === "bound" ? "active" : "open";
+    return { ...item, status };
+  });
 }
 
-function mrrStatus(stream, projectView, reviews, delegations) {
+function mrrStatus(stream, projectView, reviews, delegations, waivers) {
   const pr = projectView?.pullRequests.find((item) => stream.pullRequests.includes(item.number) || item.headRefName === stream.branch);
-  if (!pr) return { ready: false, reasons: ["no current pull request"] };
-  if (!pr.baseHead) return { ready: false, reasons: ["current PR base SHA could not be derived"] };
-  return evaluateGate({ kind: "mrr", target: { kind: "mrr", head: pr.headRefOid, baseHead: pr.baseHead }, workstream: stream, reviews, delegations });
+  if (!pr) return { ready: false, phase: "pre-open", reasons: ["no current pull request"] };
+  if (!pr.baseHead) return { ready: false, phase: "blocked", reasons: ["current PR base SHA could not be derived"] };
+  return evaluateMergeReady({ target: { kind: "mrr", head: pr.headRefOid, baseHead: pr.baseHead }, workstream: stream, reviews, delegations, waivers });
 }
 
 function botsStatus(stream, projectView, mrr) {
@@ -59,20 +63,27 @@ function botsStatus(stream, projectView, mrr) {
   if (checkout.head !== pr.headRefOid) return { ready: false, reasons: ["workstream checkout head does not match the pull request head"] };
   if (checkout.dirty == null) return { ready: false, reasons: ["workstream checkout cleanliness could not be observed"] };
   const target = { head: pr.headRefOid, branch: stream.branch };
-  const reasons = [...mrr.reasons, ...botsReasons({ project: projectView, target, checkout, pr })];
-  return { ready: reasons.length === 0, reasons: [...new Set(reasons)] };
+  const ci = botsReasons({ project: projectView, target, checkout, pr });
+  if (mrr.phase === "churn") {
+    const failing = ci.filter((reason) => /unsuccessful|incomplete/.test(reason));
+    return { ready: false, reasons: [...new Set([...(mrr.reasons || []), ...failing])] };
+  }
+  const observed = [...mrr.reasons, ...ci];
+  const checks = pr.statusCheckRollup || [];
+  if (!checks.length) observed.push("No GitHub checks observed; this is not evidence that CI ran");
+  return { ready: mrr.ready && observed.filter((reason) => reason !== "No GitHub checks observed; this is not evidence that CI ran").length === 0, reasons: [...new Set(observed)] };
 }
 
 export async function collect(output = process.env.FIELD_REPORT_PROJECTION || path.join(store.root, "projection.json")) {
   const projects = await Promise.all((await store.projects()).map(collectProject));
   const workstreams = await Promise.all((await store.workstreams()).map(async (stream) => {
-    const [reviews, delegations] = await Promise.all([store.reviews(stream.id), store.delegations(stream.id)]);
+    const [reviews, delegations, waivers] = await Promise.all([store.reviews(stream.id), store.delegations(stream.id), store.waivers(stream.id)]);
     const projectView = projects.find((project) => project.id === stream.project);
-    const mrr = mrrStatus(stream, projectView, reviews, delegations);
+    const mrr = mrrStatus(stream, projectView, reviews, delegations, waivers);
     const bots = botsStatus(stream, projectView, mrr);
-    return { ...stream, reviews, delegations: delegationState(delegations), events: (await store.events(stream.id)).slice(-20).reverse(), projectView, mrr, bots };
+    return { ...stream, reviews, delegations: delegationState(delegations, reviews), waivers, events: (await store.events(stream.id)).slice(-20).reverse(), projectView, mrr, bots };
   }));
-  const projection = { schemaVersion: 5, generatedAt: new Date().toISOString(), projects, workstreams };
+  const projection = { schemaVersion: 6, generatedAt: new Date().toISOString(), projects, workstreams };
   await mkdir(path.dirname(output), { recursive: true });
   const temporary = `${output}.${process.pid}.next`;
   await writeFile(temporary, `${JSON.stringify(projection, null, 2)}\n`, { mode: 0o600 });

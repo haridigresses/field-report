@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, identityKey, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const claim = "Ship the stated delivery unit";
@@ -146,6 +146,10 @@ test("a backup mrr review requires a terminal preferred-model failure", () => {
 test("preferred-model failure is scoped to claim and exact target", () => {
   const preferredId = randomUUID();
   const scope = { role: "fable-challenge", kind: "mrr", target: mrrTarget, claim, claimRevision: 1 };
+  const unused = [{ id: preferredId, event: "created", type: "review", role: "fable-challenge", kind: "mrr", model: "claude-fable-5", claim, claimRevision: 1, head, baseHead }];
+  assert.equal(preferredAlreadyAttempted(unused, scope), false);
+  const bound = [...unused, { id: preferredId, event: "bound", taskId: "run-1" }];
+  assert.equal(preferredAlreadyAttempted(bound, scope), true);
   const delegations = [
     { id: preferredId, event: "created", type: "review", role: "fable-challenge", kind: "mrr", model: "claude-fable-5", claim, claimRevision: 1, head, baseHead },
     { id: preferredId, event: "failed" }
@@ -154,6 +158,30 @@ test("preferred-model failure is scoped to claim and exact target", () => {
   assert.equal(preferredAttemptFailed(delegations, scope), true);
   assert.equal(preferredAttemptFailed(delegations, { ...scope, claim: "A different claim" }), false);
   assert.equal(preferredAlreadyAttempted(delegations, { ...scope, claim: "A different claim" }), false);
+});
+
+test("merge-ready accepts an exact-head skip after a prior finding-free MRR", () => {
+  const older = "d".repeat(40);
+  const reviews = [
+    { ...mrrComplete("deep-code-review", "sol-run"), head: older },
+    { ...mrrComplete("structural-challenge", "grok-run"), head: older },
+    { ...mrrComplete("fable-challenge", "fable-run"), head: older }
+  ];
+  const churn = evaluateMergeReady({ kind: "mrr", target: mrrTarget, workstream, reviews });
+  assert.equal(churn.phase, "churn");
+  assert.equal(churn.ready, false);
+  const waived = evaluateMergeReady({
+    target: mrrTarget, workstream, reviews,
+    waivers: [{ head, baseHead, claim, claimRevision: 1, priorHead: older, reason: "Not a substantive authority change" }]
+  });
+  assert.equal(waived.phase, "waived");
+  assert.equal(waived.ready, true);
+  const blocked = evaluateMergeReady({
+    target: mrrTarget, workstream, reviews: reviews.slice(0, 1),
+    waivers: [{ head, baseHead, claim, claimRevision: 1, priorHead: older, reason: "skip" }]
+  });
+  assert.equal(blocked.ready, false);
+  assert.match(blocked.reasons.join(" "), /prior finding-free MRR/);
 });
 
 test("mrr findings remain durable until explicitly reconciled", () => {

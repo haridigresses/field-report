@@ -3,6 +3,7 @@ import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "nod
 import os from "node:os";
 import path from "node:path";
 
+const SHA = /^[0-9a-f]{40}$/i;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const DEFAULT_ROOT = path.join(os.homedir(), ".local", "state", "field-report");
 
@@ -42,7 +43,7 @@ export function createStore(root = defaultStateRoot()) {
   const lock = path.join(root, ".write-lock");
 
   async function init() {
-    await Promise.all(["projects", "workstreams", "reviews", "delegations", "events"].map((entry) => mkdir(path.join(root, entry), { recursive: true })));
+    await Promise.all(["projects", "workstreams", "reviews", "delegations", "events", "waivers"].map((entry) => mkdir(path.join(root, entry), { recursive: true })));
     const configFile = path.join(root, "config.json");
     try { await readFile(configFile); }
     catch (error) { if (error.code !== "ENOENT") throw error; await writeJson(configFile, { schemaVersion: 2, createdAt: new Date().toISOString() }); }
@@ -217,6 +218,7 @@ export function createStore(root = defaultStateRoot()) {
       const priorFindingCount = prior.filter(durable).reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
       if (beforeAppend) await beforeAppend();
       await append("reviews", stream.id, review);
+      if (review.delegationId) await append("delegations", stream.id, { id: review.delegationId, workstreamId: stream.id, event: "completed", at: review.recordedAt });
       const assignedFindingIds = durable(review)
         ? Array.from({ length: (review.findings?.length || 0) + (review.unresolved?.length || 0) }, (_, index) => `F${priorFindingCount + index + 1}`)
         : [];
@@ -224,5 +226,24 @@ export function createStore(root = defaultStateRoot()) {
     });
   }
 
-  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), addDelegation, addDelegationEvent, addReview };
+  async function addWaiver(workstreamId, value) {
+    const stream = await workstream(workstreamId);
+    const waiver = {
+      id: randomUUID(),
+      workstreamId: stream.id,
+      event: "waived",
+      head: requiredString(value.head, "Waiver head", 40),
+      baseHead: requiredString(value.baseHead, "Waiver baseHead", 40),
+      claim: requiredString(value.claim, "Waiver claim", 4000),
+      claimRevision: Number.isInteger(value.claimRevision) ? value.claimRevision : 1,
+      priorHead: requiredString(value.priorHead, "Waiver priorHead", 40),
+      reason: requiredString(value.reason, "Waiver reason", 4000),
+      createdAt: new Date().toISOString()
+    };
+    if (!SHA.test(waiver.head) || !SHA.test(waiver.baseHead) || !SHA.test(waiver.priorHead)) throw new Error("Waiver requires exact head, baseHead, and priorHead SHAs");
+    await locked(() => append("waivers", stream.id, waiver));
+    return waiver;
+  }
+
+  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), waivers: (id) => lines("waivers", id), addDelegation, addDelegationEvent, addReview, addWaiver };
 }

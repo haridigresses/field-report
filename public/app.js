@@ -18,11 +18,22 @@ function mrr(stream) { return stream.mrr; }
 function reasons(stream) {
   const result = [];
   const pr = currentPr(stream);
+  const review = mrr(stream);
   if (stream.status === "blocked") result.push("blocked");
   if (["planned", "active", "blocked"].includes(stream.status) && !stream.ownerTaskId) result.push("owner session unbound");
-  if (pr && !mrr(stream)?.ready) result.push(...(mrr(stream)?.reasons || ["MRR evidence missing or stale"]));
-  else if (pr && !bots(stream)?.ready) result.push(...(bots(stream)?.reasons || ["bots evidence missing or stale"]));
+  if (pr && review?.phase === "blocked") result.push(...(review.reasons || ["MRR evidence missing or stale"]));
+  else if (pr && review?.phase === "churn") result.push(...(bots(stream)?.reasons || []).filter((reason) => /unsuccessful|incomplete/.test(reason)));
+  else if (pr && !bots(stream)?.ready) result.push(...(bots(stream)?.reasons || ["bots evidence missing or stale"]).filter((reason) => reason !== "No GitHub checks observed; this is not evidence that CI ran"));
   return result;
+}
+
+function rowSignals(stream) {
+  const attention = reasons(stream);
+  if (attention.length) return attention;
+  const review = mrr(stream);
+  if (review?.phase === "churn") return review.reasons || ["HEAD moved since last MRR"];
+  if (review?.phase === "waived") return [`merge-ready via skip${review.waiver?.reason ? ` — ${review.waiver.reason}` : ""}`];
+  return [];
 }
 
 function renderProjects() {
@@ -31,14 +42,15 @@ function renderProjects() {
 }
 
 function row(stream) {
-  const signals = reasons(stream);
+  const signals = rowSignals(stream);
   const pr = currentPr(stream);
   const scores = [...(stream.reviews || [])].reverse().find((review) => review.scores)?.scores;
+  const tone = reasons(stream).length ? "warn" : signals.length ? "" : "good";
   return `<button class="row" data-id="${escape(stream.id)}">
     <span><strong>${escape(stream.title)}</strong><small>${escape(stream.summary)}</small></span>
     <span>${escape(stream.status)}</span>
     <span>${pr ? `PR #${pr.number}` : escape(stream.branch || "No branch")}</span>
-    <span class="${signals.length ? "warn" : "good"}">${signals.length ? escape(signals.join(" · ")) : scores ? `Readiness ${scores.mergeReadiness}%` : "No active signal"}</span>
+    <span class="${tone}">${signals.length ? escape(signals.join(" · ")) : scores ? `Readiness ${scores.mergeReadiness}%` : "No active signal"}</span>
     <span>${escape(stream.claim || "No claim")}</span>
   </button>`;
 }

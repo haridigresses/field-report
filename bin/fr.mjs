@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore } from "../src/store.mjs";
-import { botsReasons, CRR_ROLE, evaluateGate, identityKey, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastAcceptedMrr, matchingWaiver, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 
@@ -45,6 +45,7 @@ fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-chall
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review fail <id> --delegation <uuid> --task-id <native-task-or-provider-run-id> --reason <text>
 fr review record <id> --file <review.json>
+fr review waive <id> --reason <text>
 fr review status <id> --kind crr|mrr
 fr gate checkout [id]
 fr gate crr [id]
@@ -157,6 +158,21 @@ function evidenceLines(gate) {
   });
 }
 
+async function mergeReadyFor(stream) {
+  const project = await store.project(stream.project);
+  const target = await targetFor(stream, "mrr");
+  const [reviews, delegations, waivers] = await Promise.all([store.reviews(stream.id), store.delegations(stream.id), store.waivers(stream.id)]);
+  const gate = evaluateMergeReady({ target, workstream: stream, reviews, delegations, waivers });
+  return { project, target, gate };
+}
+
+function printMergeReady(gate) {
+  if (gate.phase === "ready") return `READY on this HEAD`;
+  if (gate.phase === "waived") return `merge-ready via skip — ${gate.waiver.reason} (prior MRR ${(gate.waiver.priorHead || "").slice(0, 12)})`;
+  if (gate.phase === "churn") return gate.reasons.join("; ");
+  return `BLOCKED — ${gate.reasons.join("; ")}`;
+}
+
 function printGate(stream, result, includeEvidence = false) {
   const { gate, target } = result;
   const label = target.tree || target.head;
@@ -174,16 +190,19 @@ async function openGate(stream) {
 }
 
 async function botsGate(stream) {
-  const result = await gateFor(stream, "mrr");
+  const result = await mergeReadyFor(stream);
   const state = await checkout();
   let pr = null;
   try { pr = await pullRequest(result.project, stream); } catch { pr = null; }
+  const ci = botsReasons({ project: result.project, target: result.target, checkout: state, pr });
   const reasons = [
     ...result.gate.reasons,
-    ...botsReasons({ project: result.project, target: result.target, checkout: state, pr }),
+    ...ci,
     ...workstreamBotsReasons({ workstream: stream, workstreams: await store.workstreams(), pr })
   ];
-  return { ...result, pr, reasons, ready: reasons.length === 0 };
+  const checks = pr?.statusCheckRollup || [];
+  const observations = pr && !checks.length ? ["No GitHub checks observed; this is not evidence that CI ran"] : [];
+  return { ...result, pr, reasons, observations, ready: reasons.length === 0 };
 }
 
 async function main() {
@@ -233,8 +252,8 @@ async function main() {
     const state = await checkout();
     const identity = identityKey(project.id, stream.ownerTaskId ? "owner" : "coordinator");
     let mrr;
-    try { mrr = await gateFor(stream, "mrr"); } catch (error) { mrr = { gate: { ready: false, reasons: [error.message] } }; }
-    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nAF namespace: ${identity.key} (fallback ${identity.fallback})\nMRR: ${mrr.gate.ready ? "READY" : `BLOCKED — ${mrr.gate.reasons.join("; ")}`}\nDo not auto-open a pull request. After MRR is READY, you may open one or leave that to the user.\n`);
+    try { mrr = await mergeReadyFor(stream); } catch (error) { mrr = { gate: { phase: "blocked", reasons: [error.message] } }; }
+    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nAF namespace: ${identity.key} (fallback ${identity.fallback})\nMRR: ${printMergeReady(mrr.gate)}\nDo not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; wait until the user asks for final MRR.\n`);
   }
   if (command === "update") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
@@ -256,8 +275,8 @@ async function main() {
     const seated = seatingFor(role, flags.model, flags.route);
     const target = await targetFor(stream, kind);
     const scope = { role, kind, target, claim: stream.claim, claimRevision: stream.claimRevision };
-    const delegations = kind === "mrr" ? await store.delegations(stream.id) : [];
-    if (kind === "mrr" && seated.model === seated.preferred && preferredAlreadyAttempted(delegations, scope)) {
+    const [delegations, reviews] = kind === "mrr" ? await Promise.all([store.delegations(stream.id), store.reviews(stream.id)]) : [[], []];
+    if (kind === "mrr" && seated.model === seated.preferred && preferredAlreadyAttempted(delegations, scope, reviews)) {
       throw new Error(preferredAttemptFailed(delegations, scope)
         ? `${role} preferred ${seated.preferred} already failed on this claim and target; do not retry that provider`
         : `${role} preferred ${seated.preferred} was already attempted on this claim and target`);
@@ -319,10 +338,33 @@ async function main() {
     } });
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);
   }
+  if (command === "review" && positional[0] === "waive") {
+    const stream = await store.workstream(positional[1]);
+    const reason = requireValue(flags.reason, "Specify --reason");
+    const target = await targetFor(stream, "mrr");
+    const [reviews, waivers] = await Promise.all([store.reviews(stream.id), store.waivers(stream.id)]);
+    const exact = await gateFor(stream, "mrr");
+    if (exact.gate.ready) throw new Error("Exact-head MRR is already READY; no skip is needed");
+    const last = lastAcceptedMrr(reviews, stream);
+    if (!last) throw new Error("A skip requires a prior finding-free MRR on this claim");
+    const prior = evaluateGate({ kind: "mrr", target: { kind: "mrr", head: last.head, baseHead: last.baseHead }, workstream: stream, reviews, delegations: await store.delegations(stream.id) });
+    if (!prior.ready) throw new Error("A skip requires a prior finding-free MRR on this claim");
+    const outstanding = outstandingFindings(reviews, stream.claim);
+    if (outstanding.length) throw new Error(`Reconcile outstanding MRR findings before skipping the panel: ${outstanding.map((item) => item.id).join(", ")}`);
+    if (matchingWaiver(waivers, { target, workstream: stream })) throw new Error("A skip is already recorded for this exact head");
+    const waiver = await store.addWaiver(stream.id, { head: target.head, baseHead: target.baseHead, claim: stream.claim, claimRevision: stream.claimRevision ?? 1, priorHead: last.head, reason });
+    return process.stdout.write(`Recorded MRR skip for ${waiver.head.slice(0, 12)} (prior MRR ${waiver.priorHead.slice(0, 12)}). This skip dies if HEAD moves. Do not record a skip unless the user explicitly agreed.\n`);
+  }
   if (command === "review" && positional[0] === "status") {
     const stream = await store.workstream(positional[1]);
-    const result = await gateFor(stream, requireValue(flags.kind, "Specify --kind crr|mrr"));
-    return process.stdout.write(`${printGate(stream, result, true)}\n`);
+    const kind = requireValue(flags.kind, "Specify --kind crr|mrr");
+    const result = await gateFor(stream, kind);
+    const lines = [printGate(stream, result, true)];
+    if (kind === "mrr") {
+      const merge = await mergeReadyFor(stream);
+      lines.push(`Merge-ready: ${printMergeReady(merge.gate)}`);
+    }
+    return process.stdout.write(`${lines.join("\n")}\n`);
   }
 
   if (command === "gate") {
@@ -350,7 +392,7 @@ async function main() {
       const stream = await store.workstream(requireValue(streamId, "Specify a workstream ID"));
       const result = await botsGate(stream);
       const prLine = result.pr ? `PR #${result.pr.number}: ${result.pr.isDraft ? "draft" : "ready"}` : "No pull request";
-      const lines = [`${stream.id} bots gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, prLine, ...result.reasons.map((reason) => `- ${reason}`), ...evidenceLines(result.gate)];
+      const lines = [`${stream.id} bots gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, prLine, ...result.reasons.map((reason) => `- ${reason}`), ...(result.observations || []).map((reason) => `- ${reason}`), ...evidenceLines(result.gate)];
       if (!result.ready) throw new Error(lines.join("\n"));
       return process.stdout.write(`${lines.join("\n")}\n`);
     }

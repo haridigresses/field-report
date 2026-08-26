@@ -79,7 +79,9 @@ test("review failure and completion are one atomic terminal decision", async () 
   assert.equal(results.filter((result) => result.status === "rejected").length, 1);
   const recorded = (await store.reviews("sample-outcome")).some((review) => review.delegationId === delegation.id);
   const failed = (await store.delegations("sample-outcome")).some((event) => event.id === delegation.id && event.event === "failed");
+  const completed = (await store.delegations("sample-outcome")).some((event) => event.id === delegation.id && event.event === "completed");
   assert.notEqual(recorded, failed);
+  assert.equal(recorded, completed);
 });
 
 test("store rejects review recording against a concurrently changed claim", async () => {

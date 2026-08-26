@@ -111,10 +111,12 @@ export function preferredAttemptFailed(delegations, scope) {
   return (delegations || []).some((item) => preferredCreated(item, scope, preferred) && failed.has(item.id));
 }
 
-export function preferredAlreadyAttempted(delegations, scope) {
+export function preferredAlreadyAttempted(delegations, scope, reviews = []) {
   const preferred = LANE_SEATING[scope.role]?.preferred;
   if (!preferred) return false;
-  return (delegations || []).some((item) => preferredCreated(item, scope, preferred));
+  const used = new Set((delegations || []).filter((item) => item.event === "bound" || item.event === "failed" || item.event === "completed").map((item) => item.id));
+  for (const review of reviews || []) if (review.delegationId) used.add(review.delegationId);
+  return (delegations || []).some((item) => preferredCreated(item, scope, preferred) && used.has(item.id));
 }
 
 export function validateReview(input, delegation) {
@@ -257,6 +259,46 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
   }
   for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
   return { ready: reasons.length === 0 && acceptedCount >= 2, kind: "mrr", target, reasons, lanes };
+}
+
+export function lastAcceptedMrr(reviews, workstream) {
+  const claim = workstream.claim ?? workstream.summary;
+  const claimRevision = workstream.claimRevision ?? 1;
+  return [...(reviews || [])].reverse().find((review) => acceptedMrr(review) && review.claim === claim && (review.claimRevision ?? 1) === claimRevision) || null;
+}
+
+export function matchingWaiver(waivers, { target, workstream }) {
+  const claim = workstream.claim ?? workstream.summary;
+  const claimRevision = workstream.claimRevision ?? 1;
+  return [...(waivers || [])].reverse().find((item) => item.head === target.head && item.baseHead === target.baseHead && item.claim === claim && (item.claimRevision ?? 1) === claimRevision) || null;
+}
+
+export function evaluateMergeReady({ target, workstream, reviews, delegations = [], waivers = [] }) {
+  const exact = evaluateMrrGate({ target, workstream, reviews, delegations });
+  if (exact.ready) return { ...exact, phase: "ready", via: "mrr" };
+  const claim = workstream.claim ?? workstream.summary;
+  const outstanding = outstandingFindings(reviews, claim);
+  const last = lastAcceptedMrr(reviews, workstream);
+  const waiver = matchingWaiver(waivers, { target, workstream });
+  if (waiver) {
+    const reasons = [];
+    const prior = last ? evaluateMrrGate({ target: { kind: "mrr", head: last.head, baseHead: last.baseHead }, workstream, reviews, delegations }) : null;
+    if (!prior?.ready) reasons.push("waiver requires a prior finding-free MRR on this claim");
+    for (const finding of outstanding) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
+    if (!reasons.length) return { ...exact, ready: true, reasons: [], phase: "waived", via: "waiver", waiver };
+    return { ...exact, ready: false, reasons, phase: "blocked", via: "waiver-invalid", waiver };
+  }
+  if (last && last.head !== target.head) {
+    return {
+      ...exact,
+      ready: false,
+      phase: "churn",
+      via: "churn",
+      lastHead: last.head,
+      reasons: [`last MRR at ${last.head.slice(0, 12)}; HEAD ${target.head.slice(0, 12)}; CRR until you ask for final MRR`]
+    };
+  }
+  return { ...exact, phase: "blocked", via: "mrr" };
 }
 
 export function evaluateGate({ kind, target, workstream, reviews, delegations = [] }) {

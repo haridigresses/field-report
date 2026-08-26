@@ -7,8 +7,8 @@ Agent Fixes owns sessions, names, and todos. Each target repository's `merge-rea
 ## Core loop
 
 - Coordinators and owners name themselves (`fr identity`, then AF save). The user does not name agents. Reviewers stay unnamed and off AF.
-- CRR: 1–2 subagents, local models first, scores required. Findings are for the owner on that staged tree, not a durable ledger.
-- MRR (Sol / Grok / Fable personas) before a PR is opened, and again before merge-readiness if bot/CI churn changed the head. Durable findings live here. Attempt each preferred seat once; two GOs can pass when a lane fails.
+- CRR: 1–2 subagents, local models first, scores required. Findings are for the owner on that staged tree, not a durable ledger. CRR records still persist; they do not enter the SHA-by-SHA finding ledger.
+- MRR (Sol / Grok / Fable personas) before a PR is opened. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it dies if HEAD moves. Durable findings live on MRR. Attempt each preferred model once after it is actually started; two GOs can pass when a lane fails.
 - Do not auto-open a PR. After `fr gate open`, the owner or the user may open one.
 - Borderline CI flake vs real: consult Sol or Grok once. Not a hard gate.
 - Field Report never merges.
@@ -24,6 +24,7 @@ Canonical mutable state lives outside the source checkout:
   workstreams/
   reviews/
   delegations/
+  waivers/
   events/
   projection.json
 ```
@@ -67,6 +68,10 @@ fr review brief aon-example --kind mrr --role structural-challenge
 fr review brief aon-example --kind mrr --role fable-challenge
 fr gate open aon-example
 # Owner or user may now open a pull request. Field Report does not.
+# Feature work and bot cycles use CRR. Do not re-run MRR because HEAD moved.
+
+# When the user asks for final MRR, commission the panel on the current HEAD — or, only after they agree to skip, record:
+# fr review waive aon-example --reason "<why the delta is not substantive>"
 
 fr gate bots aon-example
 ```
