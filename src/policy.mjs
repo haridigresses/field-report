@@ -237,7 +237,7 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
   const claim = workstream.claim ?? workstream.summary;
   const claimRevision = workstream.claimRevision ?? 1;
   const matching = reviews.filter((review) => isDurableReview(review) && review.claim === claim && (review.claimRevision ?? 1) === claimRevision && review.head === target.head && review.baseHead === target.baseHead);
-  const lanes = Object.fromEntries(REVIEW_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role && acceptedMrr(review)) || latestFor(matching, (review) => review.role === role)]));
+  const lanes = Object.fromEntries(REVIEW_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
   const reasons = [];
   let acceptedCount = 0;
   let unavailable = 0;
@@ -259,12 +259,6 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
   }
   for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
   return { ready: reasons.length === 0 && acceptedCount >= 2, kind: "mrr", target, reasons, lanes };
-}
-
-export function lastAcceptedMrr(reviews, workstream) {
-  const claim = workstream.claim ?? workstream.summary;
-  const claimRevision = workstream.claimRevision ?? 1;
-  return [...(reviews || [])].reverse().find((review) => acceptedMrr(review) && review.claim === claim && (review.claimRevision ?? 1) === claimRevision) || null;
 }
 
 export function lastReadyMrr(reviews, workstream, delegations = []) {

@@ -248,3 +248,15 @@ test("mrr reviewer task IDs are distinct", () => {
   });
   assert.match(duplicate.reasons.join(" "), /distinct reviewer task IDs/);
 });
+
+test("the latest matching mrr review is authoritative for its persona", () => {
+  const reviews = [
+    mrrComplete("deep-code-review", "sol-run"),
+    mrrComplete("structural-challenge", "grok-run"),
+    mrrComplete("fable-challenge", "fable-run"),
+    mrrComplete("structural-challenge", "grok-later", { verdict: "NO_GO", findings: ["Later defect"] })
+  ];
+  const result = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /structural-challenge is not a finding-free GO/);
+});

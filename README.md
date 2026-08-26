@@ -50,6 +50,8 @@ fr hook status aon
 
 Agents may self-register an unbound branch with `fr create`, or bind the correct existing outcome with `fr update --branch <current> --owner-task <current-task>`. The checkout hook only checks that the branch is bound. It does not run a review panel and must not grow one.
 
+Repo `.cursor/permissions.json` is Auto-review classifier steering so seated `codex` / `fr-cursor-review` / `claude` launches are not treated as sensitive egress. It is not a Cursor IDE executable allowlist; that remains Settings → Agents → Approvals & Execution.
+
 Do not wrap `git commit`, add `fr catchup` / heartbeat, collapse MRR into a family panel, or put product questions in Field Report. Those were previous iterations.
 
 ## Flow
