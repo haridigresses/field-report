@@ -3,6 +3,7 @@ import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "nod
 import os from "node:os";
 import path from "node:path";
 
+const SHA = /^[0-9a-f]{40}$/i;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const DEFAULT_ROOT = path.join(os.homedir(), ".local", "state", "field-report");
 
@@ -42,7 +43,7 @@ export function createStore(root = defaultStateRoot()) {
   const lock = path.join(root, ".write-lock");
 
   async function init() {
-    await Promise.all(["projects", "workstreams", "reviews", "delegations", "events"].map((entry) => mkdir(path.join(root, entry), { recursive: true })));
+    await Promise.all(["projects", "workstreams", "reviews", "delegations", "events", "waivers"].map((entry) => mkdir(path.join(root, entry), { recursive: true })));
     const configFile = path.join(root, "config.json");
     try { await readFile(configFile); }
     catch (error) { if (error.code !== "ENOENT") throw error; await writeJson(configFile, { schemaVersion: 2, createdAt: new Date().toISOString() }); }
@@ -90,11 +91,6 @@ export function createStore(root = defaultStateRoot()) {
       repoPath: path.resolve(requiredString(value.repoPath, "Repository path", 1000)),
       githubRepo: optionalString(value.githubRepo, "GitHub repository", 300),
       baseBranch: optionalString(value.baseBranch, "Base branch", 200) || "main",
-      miniReview: {
-        maxFiles: Number.isInteger(Number(value.miniReview?.maxFiles)) ? Number(value.miniReview.maxFiles) : 5,
-        maxChangedLines: Number.isInteger(Number(value.miniReview?.maxChangedLines)) ? Number(value.miniReview.maxChangedLines) : 120,
-        riskyPaths: Array.isArray(value.miniReview?.riskyPaths) ? value.miniReview.riskyPaths.map(String) : ["migrations/", "schema", "auth", "security", "package.json", "lock", ".github/", "AGENTS.md"]
-      },
       updatedAt: new Date().toISOString()
     };
     await locked(async () => {
@@ -167,20 +163,12 @@ export function createStore(root = defaultStateRoot()) {
       summary: requiredString(value.summary || previous.summary || value.outcome || previous.outcome, "Summary"),
       claim,
       claimRevision: previous.id ? (previous.claimRevision ?? 1) + (claim === previousClaim ? 0 : 1) : 1,
-      next: optionalString(value.next ?? previous.next, "Next action"),
       ownerTaskId: optionalString(value.ownerTaskId ?? previous.ownerTaskId, "Owner task ID", 200),
       branch: optionalString(value.branch ?? previous.branch, "Branch", 300),
       pullRequests: Array.isArray(value.pullRequests) ? [...new Set(value.pullRequests.map(Number).filter(Number.isInteger))] : previous.pullRequests || [],
-      issues: Array.isArray(value.issues) ? [...new Set(value.issues.map(String))] : previous.issues || [],
-      references: Array.isArray(value.references) ? value.references : previous.references || [],
-      milestones: Array.isArray(value.milestones) ? value.milestones : previous.milestones || [],
-      questions: Array.isArray(value.questions) ? value.questions : previous.questions || [],
-      reviewClass: value.reviewClass || previous.reviewClass || "full",
-      miniClassification: value.miniClassification ?? previous.miniClassification ?? null,
       createdAt: previous.createdAt || value.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
       };
-      if (!["full", "mini"].includes(record.reviewClass)) throw new Error("Review class must be full or mini");
       await writeJson(path.join(root, "workstreams", `${record.id}.json`), record);
       if (event) await append("events", record.id, { id: randomUUID(), at: record.updatedAt, type: event.type, text: requiredString(event.text, "Event text"), actor: optionalString(event.actor, "Actor", 200) });
       return record;
@@ -204,6 +192,14 @@ export function createStore(root = defaultStateRoot()) {
         const existing = (await lines("delegations", stream.id)).findLast((item) => item.event === "bound" && item.id === delegationId);
         if (existing && existing.taskId !== value.taskId) throw new Error(`Delegation ${delegationId} is already bound to ${existing.taskId}`);
       }
+      if (value.event === "failed") {
+        const events = await lines("delegations", stream.id);
+        const terminal = events.findLast((item) => item.id === delegationId && ["failed", "completed"].includes(item.event));
+        if (terminal) throw new Error(`Delegation ${delegationId} is already terminal`);
+        if ((await lines("reviews", stream.id)).some((review) => review.delegationId === delegationId)) throw new Error(`Delegation ${delegationId} already has a recorded review`);
+        const bound = events.findLast((item) => item.id === delegationId && item.event === "bound");
+        if (!bound || bound.taskId !== value.taskId) throw new Error("Failed delegation taskId must match its binding");
+      }
       return append("delegations", stream.id, event);
     });
   }
@@ -217,22 +213,38 @@ export function createStore(root = defaultStateRoot()) {
       if (expectedClaimRevision != null && current.claimRevision !== expectedClaimRevision) throw new Error("Workstream claim changed while the review was being recorded; retry against current state");
       const prior = await lines("reviews", stream.id);
       if (prior.some((item) => item.delegationId === review.delegationId)) throw new Error("A review delegation may be recorded only once");
-      const priorFindingCount = prior.filter((item) => item.legacy !== true).reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
+      if ((await lines("delegations", stream.id)).some((item) => item.id === review.delegationId && item.event === "failed")) throw new Error("A failed review attempt is terminal; create a new brief to retry");
+      const durable = (item) => item.legacy !== true && item.kind === "mrr";
+      const priorFindingCount = prior.filter(durable).reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
       if (beforeAppend) await beforeAppend();
       await append("reviews", stream.id, review);
-      const assignedFindingIds = Array.from({ length: review.findings.length + review.unresolved.length }, (_, index) => `F${priorFindingCount + index + 1}`);
+      if (review.delegationId) await append("delegations", stream.id, { id: review.delegationId, workstreamId: stream.id, event: "completed", at: review.recordedAt });
+      const assignedFindingIds = durable(review)
+        ? Array.from({ length: (review.findings?.length || 0) + (review.unresolved?.length || 0) }, (_, index) => `F${priorFindingCount + index + 1}`)
+        : [];
       return { review, assignedFindingIds };
     });
   }
 
-  async function addDecision(workstreamId, questionId, answer, actor = null) {
+  async function addWaiver(workstreamId, value) {
     const stream = await workstream(workstreamId);
-    const questions = [...stream.questions];
-    const index = questions.findIndex((question) => question.id === questionId);
-    if (index < 0) throw new Error(`Unknown question: ${questionId}`);
-    questions[index] = { ...questions[index], status: "answered", answer: requiredString(answer, "Decision"), answeredAt: new Date().toISOString() };
-    return saveWorkstream({ ...stream, questions }, { type: "decision", text: `${questionId}: ${answer}`, actor });
+    const waiver = {
+      id: randomUUID(),
+      workstreamId: stream.id,
+      event: "waived",
+      head: requiredString(value.head, "Waiver head", 40),
+      baseHead: requiredString(value.baseHead, "Waiver baseHead", 40),
+      claim: requiredString(value.claim, "Waiver claim", 4000),
+      claimRevision: Number.isInteger(value.claimRevision) ? value.claimRevision : 1,
+      priorHead: requiredString(value.priorHead, "Waiver priorHead", 40),
+      reason: requiredString(value.reason, "Waiver reason", 4000),
+      actor: optionalString(value.actor, "Waiver actor", 200),
+      createdAt: new Date().toISOString()
+    };
+    if (!SHA.test(waiver.head) || !SHA.test(waiver.baseHead) || !SHA.test(waiver.priorHead)) throw new Error("Waiver requires exact head, baseHead, and priorHead SHAs");
+    await locked(() => append("waivers", stream.id, waiver));
+    return waiver;
   }
 
-  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), addDelegation, addDelegationEvent, addReview, addDecision };
+  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), waivers: (id) => lines("waivers", id), addDelegation, addDelegationEvent, addReview, addWaiver };
 }

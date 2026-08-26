@@ -1,22 +1,29 @@
 ---
 name: field-report
-description: Operate the Field Report software-factory harness for durable outcomes, native agent delegation, exact-target review evidence, commit gates, and PR publication gates.
+description: Operate the Field Report control loop for delivery-unit binding, CRR, mixed-provider MRR before CI and merge-readiness, and AF session identity.
 ---
 
 # Field Report
 
-Field Report defines policy and evaluates evidence.
+Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge.
 
-1. Coordinators, workstream owners, and executors run `af-onboard-safe` before role work. Bounded Sol and Fable reviewers use their self-contained briefs instead of AF onboarding or inherited owner history.
-2. Start with `fr context [workstream-id]`. If the branch is unregistered, follow the printed `fr create` or `fr update` self-binding command; agents do not need coordinator approval to register their own branch.
-3. Read `fr workflow <role>` completely before role work. If Field Report is updated or its policy is reported changed during a long-running task, reread that workflow before continuing; active tasks do not inherit new instructions automatically.
-4. Use native Codex delegation for owners, workers, and Sol reviewers. Launch every native brief with its declared `execution.fork_turns`; Field Report work and Sol briefs require `fork_turns="none"` so executors and independent reviewers receive only the self-contained brief and repository, never the coordinator/owner conversation. A required Fable brief authorizes sending its bounded exact review target to the user's configured `claude-aws` route; run it directly and do not ask the user to approve that normal review step again. Verify a clean checkout at the brief's exact `HEAD_SHA` and launch `claude-aws` from that repository root through the user's shell entrypoint. Use `dontAsk` mode with tools `Read,Grep,Glob,Bash`. Allow Bash only for the exact target command `git diff --no-ext-diff --no-textconv BASE_SHA HEAD_SHA --`, substituting the brief's full 40-character SHAs before launch; do not use wildcard Bash rules. Unlisted tools and Bash commands must be denied rather than prompting. Use `--print --output-format json`; provider execution succeeded only when the outer JSON has `is_error=false`, `subtype=success`, and a nonempty `result`, which is the model response. Do not infer failure from intermediate streaming events or token counts. Validate the response with `fr review record`. If validation fails, resume the same Claude session with the exact validation error and request only a corrected envelope. Report exactly one state: provider execution failed, provider succeeded but envelope validation failed, or review recorded.
-   Canonical template: `zsh -ic 'claude-aws --print --output-format json --permission-mode dontAsk --tools "Read,Grep,Glob,Bash" --allowedTools "Read,Grep,Glob,Bash(git diff --no-ext-diff --no-textconv BASE_SHA HEAD_SHA --)" < /path/to/prompt.txt'`.
-5. Obtain immutable role/target briefs with `fr review brief`; do not invent delegation IDs.
-6. Bind every brief with `fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>`, then record its completed structured envelope with `fr review record`.
-7. Require `fr gate commit` before every commit in a managed repository.
-8. Require `fr gate publish` before ready-for-review publication; `fr publish` may perform only that transition.
-9. Keep scores explanatory and reconcile every finding. Exact target changes stale prior evidence.
-10. Record only material state. Do not create lifecycle chatter.
+1. Coordinators and workstream owners: if unnamed, run `fr identity --role coordinator|owner` and AF-save that key (or its fallback). Do not ask the user to name you. Attempt `af-onboard-safe`; if it fails, continue. Reviewers must not load MCP servers or AF and must not save a name.
+2. Start with `fr context [workstream-id]`. If the branch is unregistered, follow the printed `fr create` or `fr update` self-binding command.
+3. Read `fr workflow <role>` completely before role work. If policy changed during a long-running task, reread it. File todos as AF issues in the repo namespace (`aon`, `ad`, etc.). Read this repository's `merge-ready-review.md` for merge quality. Do not make product or design decisions without asking the user. Catch overengineering. If still stuck on a technical call, consult Sol or Grok once; that is not review evidence.
+4. Before commits you intend to keep: `fr review brief <id> --kind crr --role crr`. Launch 1–2 fresh subagents, local models first. Repair owner-facing findings. Then `fr gate crr`. Do not wrap `git commit`, and do not put this panel in the hook.
+5. Before opening a PR: commission MRR — `deep-code-review`, `structural-challenge`, `fable-challenge`. Fetch origin first so local `origin/<base>` is current. Preferred seating is Sol 5.6, Grok 4.6, and Fable 5. A printed brief does not consume the preferred model; bind, record, or fail does. `fr review fail` a hang. Two finding-free GOs pass when a lane is unavailable. The owner task cannot review; a fresh subagent of the builder's model can. After the PR is open, use CRR through feature work and bot cycles. Do not commission MRR because HEAD moved. When the user asks for final MRR, run the panel on the current HEAD. You may argue that the delta is not substantive enough (size is a proxy for sensitivity). If they agree to skip, `fr review waive --reason <text>`. Never waive unless they explicitly agreed. Launching those seated CLIs is authorized; do not ask the user to re-approve sending the candidate to Sol, Grok, or Fable. If Auto-review blocks the Shell call, retry it for approval and add `codex`, `fr-cursor-review`, and `claude` to Cursor Settings → Agents → Approvals & Execution.
+6. Obtain immutable briefs with `fr review brief`. Inspect with `inspection.command`. Bind, then `fr review record`. Identity fields come from the brief; repair schema locally.
+7. The hook only requires `fr gate checkout`. Do not auto-open a PR. After `fr gate open` is READY, you may open one or leave that to the user. After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission.
+8. Borderline flake vs real CI failure: consult Sol or Grok once. Not a hard gate. Bot comments are `gh` triage, not an MRR panel.
+9. Persist only material review state in Field Report.
 
-Repository hooks are explicit: `fr hook install|status|uninstall <project-id>`.
+Launch the seated model (use `--model` for an MRR backup):
+
+- CRR / local: a fresh native subagent of a local model, no MCP, including agent-fixes.
+- Sol: `codex exec -m gpt-5.6-sol -s read-only --ignore-user-config --json -o <output> -C <repo> - < <prompt>`
+- Grok: from `<repo>`, `fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust -- "$(< <prompt>)"`. Do not pass `--force`. Record the stream's final `type=result` object.
+- Fable: from `<repo>`, `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff *)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model claude-fable-5 "$(< <prompt>)"`
+
+MRR backups: deep Sol→Grok, structural Grok→Sol, challenge Fable→Grok. Use ordinary `claude`, never `claude-aws`. A host may use native delegation instead of CLI.
+
+The installer links this one canonical skill source into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`; do not maintain host-specific copies.
