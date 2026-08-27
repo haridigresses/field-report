@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const claim = "Ship the stated delivery unit";
@@ -222,7 +222,7 @@ test("claim edits do not launder mrr evidence", () => {
 
 test("bots gate rejects branch, base, and unsuccessful checks without draft ceremony", () => {
   const reasons = botsReasons({
-    project: { baseBranch: "main" }, checkout: { dirty: false },
+    project: { baseBranch: "main" }, checkout: { dirty: false, head },
     pr: { number: 7, state: "OPEN", isDraft: true, headRefOid: head, headRefName: "feature", baseRefName: "develop", statusCheckRollup: [{ conclusion: "CANCELLED", status: "COMPLETED" }] },
     target: { head, branch: "other" }
   });
@@ -234,22 +234,33 @@ test("bots gate rejects branch, base, and unsuccessful checks without draft cere
 
 test("an already-ready PR with matching evidence is fine", () => {
   const reasons = botsReasons({
-    project: { baseBranch: "main" }, checkout: { dirty: false },
+    project: { baseBranch: "main" }, checkout: { dirty: false, head },
     pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [{ conclusion: "SUCCESS", status: "COMPLETED" }] },
     target: { head, branch: "feature" }
   });
   assert.deepEqual(reasons, []);
 });
 
+test("open and bots gates block when checkout HEAD does not match the reviewed head", () => {
+  const moved = "e".repeat(40);
+  assert.match(openReasons({ checkout: { dirty: false, head: moved }, target: { head } }).join(" "), /does not match reviewed head/);
+  const reasons = botsReasons({
+    project: { baseBranch: "main" }, checkout: { dirty: false, head: moved },
+    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [{ conclusion: "SUCCESS", status: "COMPLETED" }] },
+    target: { head, branch: "feature" }
+  });
+  assert.match(reasons.join(" "), /does not match reviewed head/);
+});
+
 test("bots gate blocks an empty GitHub check rollup", () => {
   const empty = botsReasons({
-    project: { baseBranch: "main" }, checkout: { dirty: false },
+    project: { baseBranch: "main" }, checkout: { dirty: false, head },
     pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [] },
     target: { head, branch: "feature" }
   });
   assert.deepEqual(empty, [NO_GITHUB_CHECKS_REASON]);
   const missing = botsReasons({
-    project: { baseBranch: "main" }, checkout: { dirty: false },
+    project: { baseBranch: "main" }, checkout: { dirty: false, head },
     pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main" },
     target: { head, branch: "feature" }
   });

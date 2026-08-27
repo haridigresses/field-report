@@ -57,7 +57,7 @@ function row(stream) {
   return `<button class="row" data-id="${escape(stream.id)}">
     <span><strong>${escape(stream.title)}</strong><small>${escape(stream.next || stream.summary)}</small></span>
     <span>${escape(stream.status)}</span>
-    <span>${prLabel(stream)}</span>
+    <span>${escape(prLabel(stream))}</span>
     <span class="${tone}">${escape(attention)}</span>
     <span>${escape(stream.claim || "No claim")}</span>
   </button>`;

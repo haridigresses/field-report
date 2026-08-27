@@ -327,16 +327,19 @@ export function evaluateGate({ kind, target, workstream, reviews, delegations = 
   throw new Error("Gate kind must be crr or mrr");
 }
 
-export function openReasons({ checkout }) {
+export function openReasons({ checkout, target } = {}) {
   const reasons = [];
-  if (checkout.dirty) reasons.push("checkout has uncommitted changes");
+  if (checkout?.dirty) reasons.push("checkout has uncommitted changes");
+  if (target?.head && checkout?.head !== target.head) {
+    reasons.push(`checkout HEAD ${(checkout.head || "unknown").slice(0, 12)} does not match reviewed head ${target.head.slice(0, 12)}`);
+  }
   return reasons;
 }
 
 export const NO_GITHUB_CHECKS_REASON = "No GitHub checks observed; this is not evidence that CI ran";
 
 export function botsReasons({ project, target, checkout, pr }) {
-  const reasons = openReasons({ checkout });
+  const reasons = openReasons({ checkout, target });
   if (!pr) {
     reasons.push("no open pull request");
     return reasons;

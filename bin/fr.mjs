@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore } from "../src/store.mjs";
-import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 
@@ -204,7 +204,7 @@ function printGate(stream, result, includeEvidence = false) {
 async function openGate(stream) {
   const result = await gateFor(stream, "mrr");
   const state = await checkout();
-  const reasons = [...result.gate.reasons, ...(state.dirty ? ["checkout has uncommitted changes"] : [])];
+  const reasons = [...result.gate.reasons, ...openReasons({ checkout: state, target: result.target })];
   return { ...result, reasons, ready: reasons.length === 0 };
 }
 
