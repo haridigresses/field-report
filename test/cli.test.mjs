@@ -8,7 +8,12 @@ import test from "node:test";
 
 const exec = promisify(execFile);
 const cli = path.resolve("bin/fr.mjs");
-const run = async (args, cwd, state) => (await exec(process.execPath, [cli, ...args], { cwd, env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout;
+function testEnv(state) {
+  const env = { ...process.env, FIELD_REPORT_STATE_ROOT: state };
+  delete env.CODEX_THREAD_ID;
+  return env;
+}
+const run = async (args, cwd, state) => (await exec(process.execPath, [cli, ...args], { cwd, env: testEnv(state) })).stdout;
 
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "fr-cli-"));
@@ -144,6 +149,7 @@ test("an mrr provider failure does not satisfy its persona", async () => {
   const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
   const unused = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
   assert.notEqual(unused.delegation.id, structural.delegation.id);
+  await assert.rejects(run(["review", "fail", "outcome", "--delegation", structural.delegation.id, "--task-id", "never-started", "--reason", "no envelope"], repo, state), /already-bound run/);
   await run(["review", "bind", "outcome", "--delegation", unused.delegation.id, "--task-id", "cursor-cli"], repo, state);
   await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state), /already attempted on this claim and target/);
   await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state), /backup requires a terminal grok-4.6 failure/);
@@ -209,16 +215,23 @@ test("a skip without prior MRR is rejected", async () => {
 });
 
 test("a skip without a recorded actor is rejected", async () => {
-  const { repo, state } = await fixture();
-  await featureBranch({ repo, state });
-  await run(["create", "unbound", "--project", "sample", "--title", "Unbound", "--outcome", "Ship bounded change", "--branch", "feature"], repo, state);
-  await recordMrrLane(repo, state, "deep-code-review", "sol-unbound", "unbound");
-  await recordMrrLane(repo, state, "structural-challenge", "grok-unbound", "unbound");
-  await recordMrrLane(repo, state, "fable-challenge", "fable-unbound", "unbound");
-  await writeFile(path.join(repo, "README.md"), "churn-unbound\n");
-  await exec("git", ["add", "README.md"], { cwd: repo });
-  await exec("git", ["commit", "-m", "churn-unbound"], { cwd: repo });
-  await assert.rejects(run(["review", "waive", "unbound", "--reason", "Not a substantive authority change"], repo, state), /recorded actor/);
+  const previous = process.env.CODEX_THREAD_ID;
+  process.env.CODEX_THREAD_ID = "ambient-thread";
+  try {
+    const { repo, state } = await fixture();
+    await featureBranch({ repo, state });
+    await run(["create", "unbound", "--project", "sample", "--title", "Unbound", "--outcome", "Ship bounded change", "--branch", "feature"], repo, state);
+    await recordMrrLane(repo, state, "deep-code-review", "sol-unbound", "unbound");
+    await recordMrrLane(repo, state, "structural-challenge", "grok-unbound", "unbound");
+    await recordMrrLane(repo, state, "fable-challenge", "fable-unbound", "unbound");
+    await writeFile(path.join(repo, "README.md"), "churn-unbound\n");
+    await exec("git", ["add", "README.md"], { cwd: repo });
+    await exec("git", ["commit", "-m", "churn-unbound"], { cwd: repo });
+    await assert.rejects(run(["review", "waive", "unbound", "--reason", "Not a substantive authority change"], repo, state), /recorded actor/);
+  } finally {
+    if (previous == null) delete process.env.CODEX_THREAD_ID;
+    else process.env.CODEX_THREAD_ID = previous;
+  }
 });
 
 test("later commits are churn until the user skips or asks for final MRR", async () => {
@@ -246,5 +259,5 @@ test("later commits are churn until the user skips or asks for final MRR", async
   assert.match(await run(["review", "waive", "outcome", "--reason", "Not a substantive authority change"], repo, state), /actor owner-1/);
   await assert.rejects(run(["review", "waive", "outcome", "--reason", "duplicate"], repo, state), /already recorded for this exact head/);
   assert.match(await run(["context", "outcome"], repo, state), /merge-ready via skip/);
-  await assert.rejects(run(["gate", "bots", "outcome"], repo, state), /no open pull request/i);
+  await assert.rejects(run(["gate", "bots", "outcome"], repo, state), /GitHub lookup failed:/);
 });

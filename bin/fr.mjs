@@ -212,14 +212,16 @@ async function botsGate(stream) {
   const result = await mergeReadyFor(stream);
   const state = await checkout();
   let pr = null;
-  try { pr = await pullRequest(result.project, stream); } catch { pr = null; }
-  const ci = botsReasons({ project: result.project, target: result.target, checkout: state, pr });
+  let githubError = null;
+  try { pr = await pullRequest(result.project, stream); }
+  catch (error) { githubError = error.message; }
+  const ci = githubError ? [`GitHub lookup failed: ${githubError}`] : botsReasons({ project: result.project, target: result.target, checkout: state, pr });
   const reasons = [
     ...result.gate.reasons,
     ...ci,
     ...workstreamBotsReasons({ workstream: stream, workstreams: await store.workstreams(), pr })
   ];
-  return { ...result, pr, reasons, ready: reasons.length === 0 };
+  return { ...result, pr, githubError, reasons, ready: reasons.length === 0 };
 }
 
 async function main() {
@@ -324,8 +326,8 @@ async function main() {
     if (!delegation) throw new Error(`Unknown review delegation: ${delegationId}`);
     if ((await store.reviews(stream.id)).some((review) => review.delegationId === delegationId)) throw new Error("A recorded review attempt is already terminal");
     const bound = events.findLast((item) => item.id === delegationId && item.event === "bound");
-    if (!bound) await store.addDelegationEvent(stream.id, delegationId, { event: "bound", taskId });
-    else if (bound.taskId !== taskId) throw new Error("Failed review task ID must match its explicit delegation binding");
+    if (!bound) throw new Error("Review fail requires an already-bound run");
+    if (bound.taskId !== taskId) throw new Error("Failed review task ID must match its explicit delegation binding");
     await store.addDelegationEvent(stream.id, delegationId, { event: "failed", taskId, reason });
     return process.stdout.write(`Recorded terminal ${delegation.role} review failure for ${delegationId}. Do not retry that provider.${reviewKind(delegation.kind) === "mrr" ? " Use the named backup only if you still need that persona; two finding-free GOs already pass when this lane is unavailable." : ""}\n`);
   }
@@ -411,7 +413,7 @@ async function main() {
     if (action === "bots") {
       const stream = await store.workstream(requireValue(streamId, "Specify a workstream ID"));
       const result = await botsGate(stream);
-      const prLine = result.pr ? `PR #${result.pr.number}: ${result.pr.isDraft ? "draft" : "ready"}` : "No pull request";
+      const prLine = result.pr ? `PR #${result.pr.number}: ${result.pr.isDraft ? "draft" : "ready"}` : result.githubError ? `GitHub lookup failed: ${result.githubError}` : "No pull request";
       const lines = [`${stream.id} bots gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, prLine, ...result.reasons.map((reason) => `- ${reason}`), ...evidenceLines(result.gate)];
       if (!result.ready) throw new Error(lines.join("\n"));
       return process.stdout.write(`${lines.join("\n")}\n`);
