@@ -22,6 +22,10 @@ test("store keeps canonical runtime state outside application source", async () 
   assert.equal(changedClaim.claimRevision, 2);
   const changedSummary = await store.saveWorkstream({ ...changedClaim, summary: "New status only" });
   assert.equal(changedSummary.claimRevision, 2);
+  const withNext = await store.saveWorkstream({ ...changedSummary, next: "Record CRR then commit" });
+  assert.equal(withNext.next, "Record CRR then commit");
+  const cleared = await store.saveWorkstream({ ...withNext, next: "" });
+  assert.equal(cleared.next, null);
 });
 
 test("store records only explicit material events", async () => {

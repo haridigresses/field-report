@@ -40,7 +40,7 @@ fr create <id> --project <id> --title <title> --outcome <text> [--branch <branch
 fr list [--project <id>]
 fr show <id> [--json]
 fr context [id]
-fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
+fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
 fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli] [--reconcile]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review fail <id> --delegation <uuid> --task-id <native-task-or-provider-run-id> --reason <text>
@@ -261,7 +261,7 @@ async function main() {
   if (command === "show") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
     if (flags.json) return process.stdout.write(`${JSON.stringify({ ...stream, reviews: await store.reviews(stream.id), delegations: await store.delegations(stream.id) }, null, 2)}\n`);
-    return process.stdout.write(`${stream.id}\n${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\n${stream.summary}\nBranch: ${stream.branch || "not assigned"}\n`);
+    return process.stdout.write(`${stream.id}\n${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\n${stream.summary}\nNext: ${stream.next || "not recorded"}\nBranch: ${stream.branch || "not assigned"}\n`);
   }
   if (command === "context") {
     const stream = await streamForCheckout(positional[0]);
@@ -271,13 +271,14 @@ async function main() {
     let mrr;
     try { mrr = await mergeReadyFor(stream); } catch (error) { mrr = { gate: { phase: "blocked", reasons: [error.message] } }; }
     const reviews = await store.reviews(stream.id);
-    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nAF namespace: ${identity.key} (fallback ${identity.fallback})\nMRR: ${printMergeReady(mrr.gate)}\n${scoreLines(reviews, stream, state.head).join("\n")}\nDo not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; wait until the user asks for final MRR.\n`);
+    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nAF namespace: ${identity.key} (fallback ${identity.fallback})\nMRR: ${printMergeReady(mrr.gate)}\n${scoreLines(reviews, stream, state.head).join("\n")}\nDo not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; wait until the user asks for final MRR.\n`);
   }
   if (command === "update") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
+    if (flags.next === true) throw new Error("Specify --next <text>");
     const pullRequests = flags.prs ? flags.prs.split(",").map(Number) : stream.pullRequests;
-    const eventText = flags.claim ? `Delivery claim set to ${flags.claim}` : flags.summary || (flags.status ? `Status set to ${flags.status}` : flags.prs ? `Linked PRs ${flags.prs}` : flags.branch ? `Branch set to ${flags.branch}` : flags["owner-task"] ? `Owner task set to ${flags["owner-task"]}` : "Updated workstream metadata");
-    const next = await store.saveWorkstream({ ...stream, status: flags.status || stream.status, summary: flags.summary || stream.summary, claim: flags.claim ?? stream.claim, branch: flags.branch ?? stream.branch, ownerTaskId: flags["owner-task"] ?? stream.ownerTaskId, pullRequests }, { type: "status", text: eventText, actor: process.env.CODEX_THREAD_ID });
+    const eventText = flags.claim ? `Delivery claim set to ${flags.claim}` : flags.next ? `Next action: ${flags.next}` : flags.summary || (flags.status ? `Status set to ${flags.status}` : flags.prs ? `Linked PRs ${flags.prs}` : flags.branch ? `Branch set to ${flags.branch}` : flags["owner-task"] ? `Owner task set to ${flags["owner-task"]}` : "Updated workstream metadata");
+    const next = await store.saveWorkstream({ ...stream, status: flags.status || stream.status, summary: flags.summary || stream.summary, claim: flags.claim ?? stream.claim, next: flags.next === undefined ? stream.next : flags.next, branch: flags.branch ?? stream.branch, ownerTaskId: flags["owner-task"] ?? stream.ownerTaskId, pullRequests }, { type: "status", text: eventText, actor: process.env.CODEX_THREAD_ID });
     if (flags.claim && flags.claim !== stream.claim) process.stdout.write("Delivery claim changed; prior MRR evidence for the old claim is stale.\n");
     return process.stdout.write(`Updated ${next.id}.\n`);
   }

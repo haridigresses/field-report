@@ -21,6 +21,7 @@ function reasons(stream) {
   const review = mrr(stream);
   if (stream.status === "blocked") result.push("blocked");
   if (["planned", "active", "blocked"].includes(stream.status) && !stream.ownerTaskId) result.push("owner session unbound");
+  if (["planned", "active", "blocked"].includes(stream.status) && !stream.next) result.push("next action missing");
   if (pr && review?.phase === "blocked") result.push(...(review.reasons || ["MRR evidence missing or stale"]));
   else if (pr && review?.phase === "churn") result.push(...(bots(stream)?.reasons || []).filter((reason) => /unsuccessful|incomplete/.test(reason)));
   else if (pr && !bots(stream)?.ready) result.push(...(bots(stream)?.reasons || ["bots evidence missing or stale"]));
@@ -54,7 +55,7 @@ function row(stream) {
   const scoreBit = scores ? `Readiness ${scores.mergeReadiness}% · risk ${scores.structuralRisk}%` : "";
   const attention = [signals.length ? signals.join(" · ") : "", scoreBit].filter(Boolean).join(" · ") || "No active signal";
   return `<button class="row" data-id="${escape(stream.id)}">
-    <span><strong>${escape(stream.title)}</strong><small>${escape(stream.summary)}</small></span>
+    <span><strong>${escape(stream.title)}</strong><small>${escape(stream.next || stream.summary)}</small></span>
     <span>${escape(stream.status)}</span>
     <span>${prLabel(stream)}</span>
     <span class="${tone}">${escape(attention)}</span>
@@ -74,6 +75,7 @@ function open(stream) {
   detailBody.innerHTML = `<p class="eyebrow">${escape(stream.project)} · ${escape(stream.id)}</p><h2>${escape(stream.title)}</h2><p>${escape(stream.summary)}</p>
     <dl><div><dt>Status</dt><dd>${escape(stream.status)}</dd></div><div><dt>Branch</dt><dd>${escape(stream.branch || "None")}</dd></div><div><dt>Owner session</dt><dd>${escape(stream.ownerTaskId || "Unassigned")}</dd></div></dl>
     <h3>Claim</h3><p>${escape(stream.claim || "Not recorded")}</p>
+    <h3>Next</h3><p>${escape(stream.next || "Not recorded")}</p>
     <h3>Review evidence</h3>${reviews.length ? `<ul>${reviews.map((review) => `<li><b>${escape(review.role)}</b> ${escape(review.kind)} ${escape(review.verdict)} · ${escape((review.tree || review.head || "").slice(0, 12))}${review.legacy ? " · historical" : ""}<br><small>${escape(review.summary)}</small>${score(review)}${signals(review)}</li>`).join("")}</ul>` : `<p class="quiet">None</p>`}`;
   detail.showModal();
 }

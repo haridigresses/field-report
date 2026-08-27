@@ -163,6 +163,7 @@ export function createStore(root = defaultStateRoot()) {
       summary: requiredString(value.summary || previous.summary || value.outcome || previous.outcome, "Summary"),
       claim,
       claimRevision: previous.id ? (previous.claimRevision ?? 1) + (claim === previousClaim ? 0 : 1) : 1,
+      next: optionalString(value.next ?? previous.next, "Next action", 400),
       ownerTaskId: optionalString(value.ownerTaskId ?? previous.ownerTaskId, "Owner task ID", 200),
       branch: optionalString(value.branch ?? previous.branch, "Branch", 300),
       pullRequests: Array.isArray(value.pullRequests) ? [...new Set(value.pullRequests.map(Number).filter(Number.isInteger))] : previous.pullRequests || [],

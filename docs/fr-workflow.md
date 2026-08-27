@@ -14,7 +14,7 @@ Field Report binds a delivery unit and records review evidence. The owner launch
 
 ### CRR
 
-- Before commits you intend to keep, run CRR against the exact staged tree: `fr review brief <id> --kind crr --role crr`. Launch 1–2 fresh subagents. Prefer local models; use cloud only if local cannot produce an envelope. WIP or amend commits are owner judgment.
+- Before you run `git commit` on a commit you intend to keep, stop and run CRR against the exact staged tree: `fr review brief <id> --kind crr --role crr`. Launch 1–2 fresh subagents. Prefer local models; use cloud only if local cannot produce an envelope. A green checkout hook is not CRR. WIP or amend commits are owner judgment.
 - The envelope is small: verdict, findings, summary, scores. Those findings are for the owner on this tree. CRR records persist, but they are not a durable SHA-by-SHA ledger.
 - The owner cannot review their own work. A fresh subagent of the builder's model can.
 - The repository hook only asks `fr gate checkout` whether this branch is bound. It does not run a panel. `fr gate crr` is owner-invoked after CRR. Do not wrap `git commit`, and do not move this panel into the hook if someone skips it. Installed v3 hooks still call `fr gate commit`; that is a checkout alias, not a CRR gate. Reinstall with `fr hook install` to pick up the v4 text. Older Field Report-managed hooks are replaced; a non-Field-Report hook is preserved and chained.
@@ -56,7 +56,8 @@ Field Report binds a delivery unit and records review evidence. The owner launch
 - Name this session with `fr identity --role owner` if unnamed. Own the stated outcome. Choose a coherent, reviewable delivery unit and state exactly what it claims.
 - Use judgment. Bring uncertainty about product behavior to the user. Catch overengineering.
 - Keep one implementation owner for the current unit. Launch implementation workers as fresh subagents with a bounded slice and no owner conversation. Verify their work. Do not mint a second FR todo or completion ceremony for that; AF issues in the repo namespace (`aon`, `ad`, etc.) are the ledger.
-- CRR before commits you intend to keep. MRR before opening a PR. After that, CRR through churn. Final MRR only when the user asks; argue substantiveness if a skip seems right, then wait. Launch each MRR persona's preferred model once after it is actually started; on hang or missing envelope, `fr review fail` and do not retry that provider. Two finding-free GOs pass when the third lane is unavailable.
+- Keep a one-line next action with `fr update <id> --next`. Update it when you stop or the next step changes. It is a sticky note, not a todo ledger. AF issues remain the todos.
+- CRR before you run `git commit` on a commit you intend to keep. A green checkout hook is not CRR. WIP and amend are owner judgment. MRR before opening a PR. After that, CRR through churn. Final MRR only when the user asks; argue substantiveness if a skip seems right, then wait. Launch each MRR persona's preferred model once after it is actually started; on hang or missing envelope, `fr review fail` and do not retry that provider. Two finding-free GOs pass when the third lane is unavailable.
 - Do not auto-open a pull request. After `fr gate open` is READY, you may open one or leave that to the user. Never merge.
 - Summarize stored MRR evidence clearly, leading with anything that needs attention.
 
@@ -73,7 +74,7 @@ Field Report binds a delivery unit and records review evidence. The owner launch
 
 These are swings this program already made. Do not take them again.
 
-- Do not grow Field Report back into a portfolio OS: session aliases, `fr catchup` / heartbeat / watch, checkpoints, holds, `fr commit`, in-repo snapshots, or a second issue tracker. AF owns people and todos. GitHub owns PRs. This repository's `merge-ready-review.md` owns merge quality.
+- Do not grow Field Report back into a portfolio OS: session aliases, `fr catchup` / heartbeat / watch, checkpoints, holds, `fr commit`, in-repo snapshots, or a second issue tracker. A one-line `--next` sticky note is allowed. AF owns people and todos. GitHub owns PRs. This repository's `merge-ready-review.md` owns merge quality.
 - Do not put a review panel in the git hook, wrap `git commit`, or answer a skipped panel by closing "bypass" paths. That path produced a week of identity-hardening commits and `--no-verify` pressure. The hook stays a branch-binding check.
 - Do not collapse MRR into a generic family panel, and do not add mini-review eligibility to skip a persona. Named seats, one attempt, two GOs on a failed lane.
 - Do not strip scores, exact-head evidence, AF onboarding (best-effort, never a gate), fresh-context workers, user-held product decisions, MRR scope beyond the claim, adversarial stance, or durable MRR findings. Each of those was deleted in a simplify and had to be restored. CRR findings staying out of the durable ledger is the one intentional exception. Do not put a live GitHub round-trip inside ordinary MRR target derivation. Do not hide scores when a gate is blocked. Do not restore schema v1 migrate.

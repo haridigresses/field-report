@@ -7,7 +7,8 @@ Agent Fixes owns sessions, names, and todos. Each target repository's `merge-rea
 ## Core loop
 
 - Coordinators and owners name themselves (`fr identity`, then AF save). The user does not name agents. Reviewers stay unnamed and off AF.
-- CRR: 1–2 subagents, local models first, scores required. Findings are for the owner on that staged tree, not a durable ledger. CRR records still persist; they do not enter the SHA-by-SHA finding ledger. `fr context` always prints the latest scores and structural risk (higher = more risk), even when the gate is blocked.
+- Before you run `git commit` on a commit you intend to keep, stop and run CRR (1–2 subagents, local models first, scores required). A green checkout hook is not CRR. WIP or amend is owner judgment. Findings are for the owner on that staged tree, not a durable ledger. CRR records still persist; they do not enter the SHA-by-SHA finding ledger. `fr context` always prints the latest scores and structural risk (higher = more risk), even when the gate is blocked.
+- Keep a one-line next action with `fr update <id> --next`. It is a sticky note, not a todo ledger.
 - MRR (Sol / Grok / Fable personas) before a PR is opened. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR. Attempt each preferred model once after it is actually started; two GOs can pass when a lane fails.
 - Do not auto-open a PR. After `fr gate open`, the owner or the user may open one.
 - After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission. An empty GitHub check rollup keeps that gate blocked.
@@ -61,8 +62,10 @@ Do not wrap `git commit`, add `fr catchup` / heartbeat, collapse MRR into a fami
 fr identity --role owner
 fr create aon-example --project aon --title "Example" --outcome "Deliver the bounded outcome" --branch cursor/example
 fr context aon-example
+fr update aon-example --next "CRR the staged tree, then commit"
 fr workflow workstream
 
+# Before git commit on a commit you intend to keep:
 fr review brief aon-example --kind crr --role crr
 fr gate crr aon-example
 

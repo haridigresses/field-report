@@ -60,6 +60,14 @@ test("identity names the coordinator into the project namespace", async () => {
   assert.match(identity.instruction, /Do not ask the user to name you/);
 });
 
+test("a next action is a sticky note on context and show", async () => {
+  const { repo, state } = await fixture();
+  await assert.rejects(run(["update", "outcome", "--next"], repo, state), /Specify --next/);
+  assert.match(await run(["update", "outcome", "--next", "Record CRR then commit"], repo, state), /Updated outcome/);
+  assert.match(await run(["context", "outcome"], repo, state), /Next: Record CRR then commit/);
+  assert.match(await run(["show", "outcome"], repo, state), /Next: Record CRR then commit/);
+});
+
 test("crr briefs prefer a local native subagent", async () => {
   const { repo, state } = await fixture();
   await writeFile(path.join(repo, "README.md"), "review me\n");
@@ -162,6 +170,8 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /Do not restore `claude-aws`/);
   assert.match(shared, /Do not add `fr question`/);
   assert.match(shared, /fr review waive/);
+  assert.match(shared, /one-line next action/);
+  assert.match(shared, /green checkout hook is not CRR/);
   assert.match(shared, /empty GitHub check rollup is not evidence that CI ran/);
   assert.match(shared, /fr gate bots` stays BLOCKED until checks are observed/);
   const help = await run(["help"], root, path.join(root, "state"));
