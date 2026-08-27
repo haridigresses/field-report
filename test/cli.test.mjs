@@ -193,8 +193,10 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /green checkout hook is not CRR/);
   assert.match(shared, /empty GitHub check rollup is not evidence that CI ran/);
   assert.match(shared, /fr gate bots` stays BLOCKED until checks are observed/);
+  assert.match(shared, /My Machines worker/);
   const help = await run(["help"], root, path.join(root, "state"));
   assert.doesNotMatch(help, /fr question|fr catchup|fr publish|fr delegate/);
+  assert.match(help, /fr machines/);
 });
 
 const mrrModels = {

@@ -2,7 +2,7 @@
 
 Field Report is a thin control loop around a delivery unit. It binds repo, branch, claim, and owner session; records CRR and mixed-provider MRR; and gates readiness for CI bots. It does not launch reviewers, open pull requests, or merge.
 
-Agent Fixes owns sessions, names, and todos. Each target repository's `merge-ready-review.md` owns merge quality.
+Agent Fixes owns sessions, names, and todos. Each target repository's `merge-ready-review.md` owns merge quality. Cursor Cloud Agents reach Sol and Fable on this host through My Machines when a worker is online.
 
 ## Core loop
 
@@ -55,6 +55,17 @@ Agents may self-register an unbound branch with `fr create`, or bind the correct
 Repo `.cursor/permissions.json` is Auto-review classifier steering so seated `codex` / `fr-cursor-review` / `claude` launches are not treated as sensitive egress. It is not a Cursor IDE executable allowlist; that remains Settings → Agents → Approvals & Execution.
 
 Do not wrap `git commit`, add `fr catchup` / heartbeat, collapse MRR into a family panel, or put product questions in Field Report. Those were previous iterations.
+
+## My Machines
+
+Cursor Cloud Agents can invoke Sol (`codex`) and Fable (`claude`) on this host when a My Machines worker is running for the target checkout:
+
+```bash
+fr machines status
+fr machines worker
+```
+
+Start the printed `agent worker start --name local` command in each Field Report checkout and keep it running. Route a Cloud Agent to this host from the environment picker, or with `worker=local` / `machine=local` from Slack, GitHub, or Linear. See `docs/mymachines.md`. Use ordinary `claude`, never `claude-aws`.
 
 ## Flow
 

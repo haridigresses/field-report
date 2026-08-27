@@ -9,6 +9,7 @@ import { createStore } from "../src/store.mjs";
 import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
+import { DEFAULT_WORKER_NAME, fableInvokeCommand, machinesStatus, printMachinesStatus, solInvokeCommand } from "../src/machines.mjs";
 
 const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -52,9 +53,11 @@ fr gate crr [id]
 fr gate open [id]
 fr gate bots <id>
 fr hook install|status|uninstall <project-id>
+fr machines [status|worker]
+fr machines invoke sol|fable --prompt-file <path> [--cwd <path>] [--kind review|work] [--base <sha>] [--head <sha>]
 fr workflow [shared|coordinator|workstream|reviewer]
 
-Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge.`;
+Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge. Cursor Cloud Agents reach Sol and Fable on this host through My Machines when a worker is online.`;
 }
 
 function parse(values) {
@@ -448,6 +451,26 @@ async function main() {
       return process.stdout.write(`${project.id}: removed checkout hook.\n`);
     }
     throw new Error("Use fr hook install|status|uninstall <project-id>");
+  }
+
+  if (command === "machines") {
+    const action = positional[0] || "status";
+    const workerName = flags.name || DEFAULT_WORKER_NAME;
+    const cwd = flags.cwd ? path.resolve(flags.cwd) : process.cwd();
+    if (action === "status" || action === "worker") {
+      const status = await machinesStatus({ run: exec, workerName, projects: await store.projects(), cwd });
+      if (flags.json) return process.stdout.write(`${JSON.stringify(action === "worker" ? { workerName: status.workerName, workers: status.workers } : status, null, 2)}\n`);
+      if (action === "worker") return process.stdout.write(`${status.workers.map((worker) => worker.command).join("\n")}\n`);
+      return process.stdout.write(`${printMachinesStatus(status)}\n`);
+    }
+    if (action === "invoke") {
+      const provider = requireValue(positional[1], "Specify sol or fable");
+      const promptFile = path.resolve(requireValue(flags["prompt-file"], "Specify --prompt-file"));
+      if (provider === "sol") return process.stdout.write(`${solInvokeCommand({ promptFile, cwd, kind: flags.kind || "review" })}\n`);
+      if (provider === "fable") return process.stdout.write(`${fableInvokeCommand({ promptFile, cwd, baseSha: requireValue(flags.base, "Specify --base <sha>"), headSha: requireValue(flags.head, "Specify --head <sha>") })}\n`);
+      throw new Error("Invoke provider must be sol or fable");
+    }
+    throw new Error("Use fr machines status|worker|invoke");
   }
 
   if (command === "workflow") {

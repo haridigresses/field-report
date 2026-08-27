@@ -27,4 +27,6 @@ Launch the seated model (use `--model` for an MRR backup):
 
 MRR backups: deep Sol→Grok, structural Grok→Sol, challenge Fable→Grok. Use ordinary `claude`, never `claude-aws`. A host may use native delegation instead of CLI.
 
+Cursor Cloud Agents reach Sol (`codex`) and Fable (`claude`) on the user's machine only when this session's tool calls execute on a My Machines worker for that checkout. Before invoking either CLI, run `fr machines status --json`. If `accessible` is false, stop and report that the local machine is not serving Sol/Fable; do not substitute Cursor-hosted models for those required routes. If `accessible` is true, write the brief to a prompt file and launch the exact command from `fr machines invoke sol|fable`. Prefer `fr machines worker` on the user's host to print the `agent worker start --name local` commands, one per checkout, and keep those workers running while Cloud Agents should be able to invoke the CLIs.
+
 The installer links this one canonical skill source into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`; do not maintain host-specific copies.

@@ -1,0 +1,13 @@
+---
+description: Invoke Sol and Fable on the user's machine through My Machines when that host is online
+alwaysApply: true
+---
+
+# My Machines CLI invocation
+
+This repository's required Sol and Fable routes run as login-shell CLIs on the user's machine, not as Cursor-hosted models.
+
+- Probe with `fr machines status --json` before invoking `codex` or ordinary `claude`. Do not restore `claude-aws`.
+- If `accessible` is false, this session is not executing on the user's My Machines worker (or the CLIs are missing). Report that and stop. Do not substitute Cursor-hosted Sol/Fable models.
+- If `accessible` is true, write the Field Report brief to a prompt file and run the exact command from `fr machines invoke sol|fable`.
+- Route future Cloud Agent sessions to this host with `worker=local` / `machine=local`, or by selecting `local` in the environment picker, only while the worker process is running.
