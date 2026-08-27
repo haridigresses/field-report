@@ -33,7 +33,7 @@ function successfulClaudeResult(value) {
 
 function successfulCursorResult(value) {
   if (!isObject(value) || value.type !== "result") return undefined;
-  if (value.subtype && value.subtype !== "success") return undefined;
+  if (value.is_error !== false || value.subtype !== "success") return undefined;
   if (typeof value.result === "string") return String(value.result).trim() ? parseObject(value.result) : undefined;
   if (isObject(value.result) && value.result.reviewComplete != null) return value.result;
   return undefined;

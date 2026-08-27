@@ -22,7 +22,7 @@ Launch the seated model (use `--model` for an MRR backup):
 
 - CRR / local: a fresh native subagent of a local model, no MCP, including agent-fixes.
 - Sol: `codex exec -m gpt-5.6-sol -s read-only --ignore-user-config --json -o <output> -C <repo> - < <prompt>`
-- Grok: from `<repo>`, `fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust -- "$(< <prompt>)"`. Do not pass `--force`. Record the stream's final `type=result` object.
+- Grok: from `<repo>`, `fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust -- "$(< <prompt>)"`. Do not pass `--force`. Record the stream's final `type=result` object. The wrapper points HOME at a temp dir with empty user-level MCP; it does not suppress repository-scoped Cursor MCP. Reviewers remain instructed not to use MCP.
 - Fable: from `<repo>`, `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff *)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model claude-fable-5 "$(< <prompt>)"`
 
 MRR backups: deep Sol→Grok, structural Grok→Sol, challenge Fable→Grok. Use ordinary `claude`, never `claude-aws`. A host may use native delegation instead of CLI.

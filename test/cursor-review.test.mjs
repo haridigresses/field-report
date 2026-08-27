@@ -30,7 +30,7 @@ test("Cursor review helper does not write the live user MCP file", async () => {
   assert.equal(await readFile(mcp, "utf8"), original);
 });
 
-test("isolated Cursor home is empty MCP and does not replace the live file", async () => {
+test("Cursor review helper writes empty user-level MCP and does not replace the live file", async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), "fr-cursor-home-"));
   const mcp = userMcpPath(home);
   await mkdir(path.dirname(mcp), { recursive: true });

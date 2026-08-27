@@ -4,6 +4,11 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync 
 import os from "node:os";
 import path from "node:path";
 
+// Launch cursor-agent with HOME pointed at a temp dir that contains an empty
+// user-level ~/.cursor/mcp.json. That removes ambient user MCP servers; it does
+// not hide repository-scoped Cursor MCP in the working tree. Reviewers are
+// still instructed not to use MCP.
+
 const EMPTY = `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`;
 const AUTH_FILES = ["cli-config.json", "agent-cli-state.json"];
 

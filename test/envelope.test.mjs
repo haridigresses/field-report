@@ -45,6 +45,21 @@ test("parseEnvelope accepts a Cursor CLI stream-json result line", () => {
   assert.deepEqual(parseEnvelope(stream), review);
 });
 
+test("parseEnvelope does not unwrap a failed Cursor result wrapper", () => {
+  const wrapper = { type: "result", subtype: "error", is_error: true, result: JSON.stringify(review) };
+  assert.deepEqual(parseEnvelope(JSON.stringify(wrapper)), wrapper);
+});
+
+test("parseEnvelope does not unwrap a Cursor result missing is_error", () => {
+  const wrapper = { type: "result", subtype: "success", result: JSON.stringify(review) };
+  assert.deepEqual(parseEnvelope(JSON.stringify(wrapper)), wrapper);
+});
+
+test("parseEnvelope does not unwrap a Cursor result missing subtype", () => {
+  const wrapper = { type: "result", is_error: false, result: JSON.stringify(review) };
+  assert.deepEqual(parseEnvelope(JSON.stringify(wrapper)), wrapper);
+});
+
 test("parseEnvelope extracts a JSON object after wrapper preamble", () => {
   const wrapper = { is_error: false, subtype: "success", result: `Sure.\n${JSON.stringify(review)}` };
   assert.deepEqual(parseEnvelope(JSON.stringify(wrapper)), review);

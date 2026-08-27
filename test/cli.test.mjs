@@ -170,6 +170,8 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /two finding-free persona GOs/i);
   assert.match(shared, /Do not auto-open a pull request/);
   assert.match(shared, /Reviewers must not use MCP servers or AF/);
+  assert.match(shared, /empty user-level MCP file/);
+  assert.match(shared, /does not hide repository-scoped Cursor MCP/);
   assert.match(shared, /Do not wrap `git commit`/);
   assert.match(shared, /Do not collapse MRR into a generic family panel/);
   assert.match(shared, /Launch implementation workers as fresh subagents/);
