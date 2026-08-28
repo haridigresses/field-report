@@ -15,18 +15,17 @@ const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const store = createStore();
 const REVIEW_EXECUTION = Object.freeze({ conversationInheritance: "none", mcp: "none" });
-const LAUNCH = Object.freeze({
-  "gpt-5.6-sol": "codex exec -m gpt-5.6-sol -s read-only --ignore-user-config --json -o <output> -C <repo> - < <prompt>",
-  "grok-4.6": "fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust -- \"$(< <prompt>)\"",
-  "claude-fable-5": "claude --print --permission-mode dontAsk --allowedTools \"Read,Grep,Glob,Bash(git diff *)\" --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --output-format json --no-session-persistence --model claude-fable-5 \"$(< <prompt>)\""
-});
+const GROK_LAUNCH = "fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust -- \"$(< <prompt>)\"";
 
-function launchFor(seated) {
+function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = {}) {
   if (seated.role === CRR_ROLE && seated.route === "native") {
     return `Launch a fresh ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes. Prefer a local model; use cloud only if local cannot produce an envelope. Do not pass the owner conversation.`;
   }
   if (seated.route === "native") return `Launch a fresh native ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes; do not pass the owner conversation.`;
-  return LAUNCH[seated.model] || `Launch ${seated.model} without MCP servers or AF. Prefer local; cloud only if needed.`;
+  if (seated.model === "gpt-5.6-sol") return solInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review" });
+  if (seated.model === "claude-fable-5") return fableInvokeCommand({ promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA" });
+  if (seated.model === "grok-4.6") return GROK_LAUNCH;
+  return `Launch ${seated.model} without MCP servers or AF. Prefer local; cloud only if needed.`;
 }
 
 function usage() {
@@ -310,8 +309,9 @@ async function main() {
     }
     const outstanding = kind === "mrr" && (role === "deep-code-review" || flags.reconcile) ? outstandingFindings(await store.reviews(stream.id), stream.claim).map(({ id, category, text }) => ({ id, category, text })) : [];
     const inventory = await diffInventory(target);
+    const project = await store.project(stream.project);
     const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ...(outstanding.length ? { outstanding } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
-    const execution = { ...REVIEW_EXECUTION, preferred: seated.preferred, backup: seated.backup, model: seated.model, route: seated.route, launch: launchFor(seated) };
+    const execution = { ...REVIEW_EXECUTION, preferred: seated.preferred, backup: seated.backup, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: project.repoPath, baseSha: target.baseHead, headSha: target.head }) };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "bind") {

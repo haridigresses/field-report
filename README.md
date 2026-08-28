@@ -65,7 +65,7 @@ fr machines status
 fr machines worker
 ```
 
-Start the printed `agent worker start --name local` command (one daemon; extra checkouts are repeatable `--worker-dir` flags) and keep it running. Route a Cloud Agent to this host from the environment picker, or with `worker=local` / `machine=local` from Slack, GitHub, or Linear. See `docs/mymachines.md`. Use ordinary `claude`, never `claude-aws`.
+Start the printed `agent worker start --name local` command (one daemon; extra checkouts are repeatable `--worker-dir` flags) and keep it running. Route a Cloud Agent to this host from the environment picker, or with `worker=local` / `machine=local` from Slack, GitHub, or Linear. See `docs/mymachines.md`. Prefer native same-type launch; Cloud Agents use the CLI. Use ordinary `claude`, never `claude-aws`.
 
 ## Flow
 

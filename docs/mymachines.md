@@ -22,7 +22,7 @@ zsh -ic 'command -v claude'
 fr machines status
 ```
 
-`accessible` is true only when both `codex` and `claude` resolve. Do not restore `claude-aws`.
+`accessible.sol` and `accessible.fable` are independent. Missing Codex does not make Fable unavailable. Do not restore `claude-aws`.
 
 3. Start one long-lived worker. Field Report prints a single command with a `--worker-dir` for each checkout:
 
@@ -41,7 +41,7 @@ The default machine name is `local`. Override with `--name`. Keep that process r
 
 ## Cloud Agent invocation
 
-Before launching Sol or Fable, run `fr machines status --json`. If `accessible` is false, stop and report that the local machine is not serving those CLIs. Do not substitute Cursor-hosted models for required Sol or Fable evidence.
+Before launching a third-party Sol or Fable CLI, run `fr machines status --json` and check `accessible.sol` or `accessible.fable` for the CLI you need. Missing Sol does not block Fable. If that flag is false, stop and report that the local machine is not serving that CLI. Do not substitute Cursor-hosted models. Prefer a native same-type path when the invoking agent is that family.
 
 Write the Field Report brief to a prompt file, then print the exact host command:
 
@@ -50,6 +50,6 @@ fr machines invoke sol --prompt-file /tmp/sol.txt --cwd /path/to/repo --kind rev
 fr machines invoke fable --prompt-file /tmp/fable.txt --cwd /path/to/repo --base <40-char-sha> --head <40-char-sha>
 ```
 
-Sol reviews use `gpt-5.6-sol` through `codex exec` with `--ephemeral --sandbox read-only --ask-for-approval never`. Sol work uses `--sandbox workspace-write`. Fable uses `claude-fable-5` through ordinary `claude` in `dontAsk` mode, with Bash limited to the exact `git diff` of the brief SHAs.
+Sol CLI reviews use `gpt-5.6-sol` through `codex exec -m gpt-5.6-sol -s read-only --ignore-user-config`. Sol work uses `-s workspace-write`. Fable CLI uses `claude-fable-5` through ordinary `claude` in `dontAsk` mode after confirming `HEAD` matches the brief, with Bash limited to the exact `git diff` of the brief SHAs.
 
 Bind the provider-run ID or last-message path with `fr review bind` before `fr review record`.

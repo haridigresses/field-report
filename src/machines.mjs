@@ -66,12 +66,19 @@ function requireSha(value, label) {
   return text;
 }
 
+function resolveMaybe(value) {
+  const text = String(value);
+  if (text.includes("<")) return text;
+  return path.resolve(text);
+}
+
 export function solInvokeInner({ promptFile, cwd, kind = "review", lastMessageFile = null }) {
   if (!["review", "work"].includes(kind)) throw new Error("Sol invoke kind must be review or work");
   const sandbox = kind === "work" ? "workspace-write" : "read-only";
-  const prompt = path.resolve(promptFile);
-  const lastMessage = path.resolve(lastMessageFile || `${prompt}.last.txt`);
-  return `cd ${doubleQuote(path.resolve(cwd))} && codex exec --model ${SOL_MODEL} --ephemeral --sandbox ${sandbox} --ask-for-approval never --output-last-message ${doubleQuote(lastMessage)} - < ${doubleQuote(prompt)}`;
+  const repo = resolveMaybe(cwd);
+  const prompt = resolveMaybe(promptFile);
+  const lastMessage = resolveMaybe(lastMessageFile || `${prompt}.last.txt`);
+  return `cd ${doubleQuote(repo)} && codex exec -m ${SOL_MODEL} -s ${sandbox} --ignore-user-config --json --color never -o ${doubleQuote(lastMessage)} -C ${doubleQuote(repo)} - < ${doubleQuote(prompt)}`;
 }
 
 export function solInvokeCommand(options, shell = LOGIN_SHELL) {
@@ -80,7 +87,11 @@ export function solInvokeCommand(options, shell = LOGIN_SHELL) {
 
 function fableCli({ promptFile, cwd, baseSha, headSha }) {
   const diff = `git diff --no-ext-diff --no-textconv ${baseSha} ${headSha} --`;
-  return `cd ${doubleQuote(path.resolve(cwd))} && claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(${diff})" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model ${FABLE_MODEL} "$(< ${doubleQuote(path.resolve(promptFile))})"`;
+  const repo = resolveMaybe(cwd);
+  const prompt = resolveMaybe(promptFile);
+  const claude = `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(${diff})" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model ${FABLE_MODEL} "$(< ${doubleQuote(prompt)})"`;
+  const headCheck = SHA.test(headSha) ? `test "$(git rev-parse HEAD)" = ${doubleQuote(headSha)} && ` : "";
+  return `cd ${doubleQuote(repo)} && ${headCheck}${claude}`;
 }
 
 export function fableInvokeInner({ promptFile, cwd, baseSha, headSha }) {
@@ -98,17 +109,11 @@ export function fableInvokeCommand(options, shell = LOGIN_SHELL) {
 
 export async function resolveCommand(name, { run = exec, env = process.env, shell = LOGIN_SHELL } = {}) {
   if (!SIMPLE_COMMAND.test(name)) throw new Error("CLI name must be a simple command");
-  const attempts = [
-    [shell, ["-ic", `command -v ${name}`]],
-    ["sh", ["-c", `command -v ${name}`]]
-  ];
-  for (const [bin, args] of attempts) {
-    try {
-      const { stdout } = await run(bin, args, { env, timeout: 8_000 });
-      const resolved = String(stdout || "").trim().split("\n").filter(Boolean).at(-1);
-      if (resolved) return resolved;
-    } catch {}
-  }
+  try {
+    const { stdout } = await run(shell, ["-ic", `command -v ${name}`], { env, timeout: 8_000 });
+    const resolved = String(stdout || "").trim().split("\n").filter(Boolean).at(-1);
+    if (resolved) return resolved;
+  } catch {}
   return null;
 }
 
@@ -139,7 +144,10 @@ export async function machinesStatus({
     argv: workerStartArgv({ name: workerName, workerDir: entry.dir }),
     command: workerStartCommand({ name: workerName, workerDir: entry.dir })
   }));
-  const accessible = Boolean(resolved.codex && resolved[FABLE_ROUTE]);
+  const accessible = {
+    sol: Boolean(resolved.codex),
+    fable: Boolean(resolved[FABLE_ROUTE])
+  };
   const prompt = path.resolve(cwd, promptFile);
   const fableInner = SHA.test(baseSha) && SHA.test(headSha)
     ? fableInvokeInner({ promptFile: prompt, cwd, baseSha, headSha })
@@ -168,7 +176,8 @@ export async function machinesStatus({
 export function printMachinesStatus(status) {
   const lines = [
     `My Machines worker name: ${status.workerName}`,
-    `Local Sol+Fable CLIs: ${status.accessible ? "ACCESSIBLE" : "UNAVAILABLE"}`,
+    `Local Sol CLI: ${status.accessible.sol ? "ACCESSIBLE" : "UNAVAILABLE"}`,
+    `Local Fable CLI: ${status.accessible.fable ? "ACCESSIBLE" : "UNAVAILABLE"}`,
     ...Object.values(status.clis).map((cli) => `- ${cli.name}: ${cli.available ? cli.path : "missing"}`),
     "",
     "Start one worker daemon and keep it running. Extra checkouts are repeatable --worker-dir flags:",

@@ -18,15 +18,15 @@ Field Report binds a delivery unit and records review evidence. It does not laun
 9. Borderline flake vs real CI failure: consult Sol or Grok once. Not a hard gate. Bot comments are `gh` triage, not an MRR panel.
 10. Persist only material review state in Field Report.
 
-Launch the seated model (use `--model` for an MRR backup):
+Launch the seated model (use `--model` for an MRR backup). Prefer a native same-type path when the invoking agent is that family (a Codex host launching Sol, a Claude host launching Fable). Use the known CLI, or another documented path, for third-party agents. Cloud Agents are third-party.
 
 - CRR / local: a fresh native subagent of a local model, no MCP, including agent-fixes.
-- Sol: `codex exec -m gpt-5.6-sol -s read-only --ignore-user-config --json -o <output> -C <repo> - < <prompt>`
+- Sol CLI: `codex exec -m gpt-5.6-sol -s read-only --ignore-user-config --json --color never -o <output> -C <repo> - < <prompt>`
 - Grok: from `<repo>`, `fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust -- "$(< <prompt>)"`. Do not pass `--force`. Record the stream's final `type=result` object. The wrapper points HOME at a temp dir with empty user-level MCP; it does not suppress repository-scoped Cursor MCP. Reviewers remain instructed not to use MCP.
-- Fable: from `<repo>`, `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff *)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model claude-fable-5 "$(< <prompt>)"`
+- Fable CLI: from `<repo>`, after `test "$(git rev-parse HEAD)"` matches the brief head, `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff --no-ext-diff --no-textconv BASE_SHA HEAD_SHA --)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model claude-fable-5 "$(< <prompt>)"`
 
-MRR backups: deep Sol→Grok, structural Grok→Sol, challenge Fable→Grok. Use ordinary `claude`, never `claude-aws`. A host may use native delegation instead of CLI.
+MRR backups: deep Sol→Grok, structural Grok→Sol, challenge Fable→Grok. Use ordinary `claude`, never `claude-aws`.
 
-Cursor Cloud Agents reach Sol (`codex`) and Fable (`claude`) on the user's machine only when this session's tool calls execute on a My Machines worker for that checkout. Before invoking either CLI, run `fr machines status --json`. If `accessible` is false, stop and report that the local machine is not serving Sol/Fable; do not substitute Cursor-hosted models for those required routes. If `accessible` is true, write the brief to a prompt file and launch the exact command from `fr machines invoke sol|fable`. Prefer `fr machines worker` on the user's host to print the single `agent worker start --name local` command with a `--worker-dir` per checkout, and keep that worker running while Cloud Agents should be able to invoke the CLIs.
+Cursor Cloud Agents reach Sol (`codex`) and Fable (`claude`) on the user's machine only when this session's tool calls execute on a My Machines worker for that checkout. Before invoking either CLI, run `fr machines status --json` and check `accessible.sol` / `accessible.fable` for the CLI you need. Missing Sol does not block Fable. If that CLI is unavailable, stop and report it; do not substitute Cursor-hosted models. If it is available, write the brief to a prompt file and run the exact command from `fr machines invoke sol|fable` (that printer is the CLI recipe). Prefer `fr machines worker` on the user's host to print the single `agent worker start --name local` command with a `--worker-dir` per checkout, and keep that worker running while Cloud Agents should be able to invoke the CLIs.
 
 The installer links this one canonical skill source into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`; do not maintain host-specific copies.
