@@ -443,7 +443,7 @@ async function main() {
       return process.stdout.write(`${project.id}: installed or refreshed checkout hook at ${hook}.\n`);
     }
     if (action === "uninstall") {
-      if (!existing?.includes(marker)) throw new Error("Field Report checkout hook is not installed");
+      if (!isManagedHook(existing)) throw new Error("Field Report checkout hook is not installed");
       try { await rename(preserved, hook); } catch (error) { if (error.code === "ENOENT") await rm(hook); else throw error; }
       return process.stdout.write(`${project.id}: removed checkout hook.\n`);
     }

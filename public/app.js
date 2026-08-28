@@ -22,9 +22,10 @@ function reasons(stream) {
   if (stream.status === "blocked") result.push("blocked");
   if (["planned", "active", "blocked"].includes(stream.status) && !stream.ownerTaskId) result.push("owner session unbound");
   if (["planned", "active", "blocked"].includes(stream.status) && !stream.next) result.push("next action missing");
-  if (pr && review?.phase === "blocked") result.push(...(review.reasons || ["MRR evidence missing or stale"]));
-  else if (pr && review?.phase === "churn") result.push(...(bots(stream)?.reasons || []).filter((reason) => /unsuccessful|incomplete/.test(reason)));
-  else if (pr && !bots(stream)?.ready) result.push(...(bots(stream)?.reasons || ["bots evidence missing or stale"]));
+  if (!pr) result.push(...(review?.reasons?.length ? review.reasons : ["pre-open MRR evidence missing"]));
+  else if (review?.phase === "blocked") result.push(...(review.reasons || ["MRR evidence missing or stale"]));
+  else if (review?.phase === "churn") result.push(...(bots(stream)?.reasons || []).filter((reason) => /unsuccessful|incomplete/.test(reason)));
+  else if (!bots(stream)?.ready) result.push(...(bots(stream)?.reasons || ["bots evidence missing or stale"]));
   return result;
 }
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -71,6 +71,17 @@ test("a next action is a sticky note on context and show", async () => {
   assert.match(await run(["update", "outcome", "--next", "Record CRR then commit"], repo, state), /Updated outcome/);
   assert.match(await run(["context", "outcome"], repo, state), /Next: Record CRR then commit/);
   assert.match(await run(["show", "outcome"], repo, state), /Next: Record CRR then commit/);
+});
+
+test("hook uninstall removes a v3 managed hook without a v4 reinstall", async () => {
+  const { repo, state } = await fixture();
+  const hook = (await exec("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: repo })).stdout.trim();
+  await mkdir(path.dirname(hook), { recursive: true });
+  await writeFile(hook, "#!/bin/sh\n# field-report-commit-gate:v3\nexit 0\n", { mode: 0o755 });
+  assert.match(await run(["hook", "uninstall", "sample"], repo, state), /removed checkout hook/);
+  await assert.rejects(readFile(hook), (error) => error.code === "ENOENT");
+  await writeFile(hook, "#!/bin/sh\nnpm test\n", { mode: 0o755 });
+  await assert.rejects(run(["hook", "uninstall", "sample"], repo, state), /not installed/);
 });
 
 test("crr briefs prefer a local native subagent", async () => {

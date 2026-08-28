@@ -48,9 +48,24 @@ function delegationState(events, reviews = []) {
   });
 }
 
-function mrrStatus(stream, projectView, reviews, delegations, waivers) {
+async function checkoutMrrTarget(stream, projectView) {
+  const checkout = projectView?.worktrees.find((item) => item.branch === stream.branch);
+  if (!checkout?.head || !projectView?.repoPath) return null;
+  const base = await command("git", ["merge-base", `refs/remotes/origin/${projectView.baseBranch || "main"}`, checkout.head], projectView.repoPath);
+  if (!base.ok) return null;
+  return { kind: "mrr", head: checkout.head, baseHead: base.value };
+}
+
+function mrrStatus(stream, projectView, reviews, delegations, waivers, preOpenTarget) {
   const pr = projectView?.pullRequests.find((item) => stream.pullRequests.includes(item.number) || item.headRefName === stream.branch);
-  if (!pr) return { ready: false, phase: "pre-open", reasons: ["no current pull request"] };
+  if (!pr) {
+    const reasons = ["no current pull request"];
+    if (preOpenTarget) {
+      const gate = evaluateMergeReady({ target: preOpenTarget, workstream: stream, reviews, delegations, waivers });
+      reasons.push(...(gate.reasons || []));
+    }
+    return { ready: false, phase: "pre-open", reasons: [...new Set(reasons)] };
+  }
   if (!pr.baseHead) return { ready: false, phase: "blocked", reasons: ["current PR base SHA could not be derived"] };
   return evaluateMergeReady({ target: { kind: "mrr", head: pr.headRefOid, baseHead: pr.baseHead }, workstream: stream, reviews, delegations, waivers });
 }
@@ -74,7 +89,8 @@ export async function collect(output = process.env.FIELD_REPORT_PROJECTION || pa
   const workstreams = await Promise.all((await store.workstreams()).map(async (stream) => {
     const [reviews, delegations, waivers] = await Promise.all([store.reviews(stream.id), store.delegations(stream.id), store.waivers(stream.id)]);
     const projectView = projects.find((project) => project.id === stream.project);
-    const mrr = mrrStatus(stream, projectView, reviews, delegations, waivers);
+    const preOpenTarget = await checkoutMrrTarget(stream, projectView);
+    const mrr = mrrStatus(stream, projectView, reviews, delegations, waivers, preOpenTarget);
     const bots = botsStatus(stream, projectView, mrr);
     return { ...stream, reviews, delegations: delegationState(delegations, reviews), waivers, events: (await store.events(stream.id)).slice(-20).reverse(), projectView, mrr, bots };
   }));
