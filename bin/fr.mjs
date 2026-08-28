@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore } from "../src/store.mjs";
-import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, findingLedger, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, RECONCILIATION_ROLE, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 import { fableInvokeCommand, solInvokeCommand } from "../src/machines.mjs";
@@ -41,7 +41,8 @@ fr list [--project <id>]
 fr show <id> [--json]
 fr context [id]
 fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
-fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli] [--reconcile]
+fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli]
+fr review brief <id> --kind mrr --role reconciliation --reconcile --model <sol|grok|fable-id> [--route native|cli]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review fail <id> --delegation <uuid> --task-id <native-task-or-provider-run-id> --reason <text>
 fr review record <id> --file <review.json>
@@ -121,6 +122,12 @@ function inspection(delegation, inventory) {
   return { command: inspectCommand(delegation), files: inventory.files, additions: inventory.additions, deletions: inventory.deletions };
 }
 
+function sameReconciliationPacket(review, scope, ids) {
+  if (review?.reconciliationOnly !== true || review.claim !== scope.claim || (review.claimRevision ?? 1) !== (scope.claimRevision ?? 1) || review.head !== scope.target.head || review.baseHead !== scope.target.baseHead) return false;
+  const recorded = (review.reconciled || []).map((entry) => entry.findingId).sort();
+  return recorded.length === ids.length && recorded.every((id, index) => id === ids[index]);
+}
+
 function reviewPrompt(stream, delegation, inventory) {
   const kind = reviewKind(delegation.kind);
   const target = kind === "crr"
@@ -128,6 +135,8 @@ function reviewPrompt(stream, delegation, inventory) {
     : `base ${delegation.baseHead} and exact MRR head ${delegation.head}`;
   const rubric = kind === "crr"
     ? "CRR: is this commit competent, and are there any gaps the owner should fix before keeping it? Stay short. Do not invent product or design decisions."
+    : delegation.role === RECONCILIATION_ROLE
+      ? "Reconciliation only: adjudicate every delivered finding against the exact code, tests, and contracts. Attempt to falsify both the finding and any rebuttal. This evidence can update only the delivered finding packet, cannot add findings or unresolved items, and cannot fill or replace an MRR persona lane."
     : delegation.role === "deep-code-review"
       ? "Inspect correctness, security, data integrity, error paths, regressions, and test adequacy."
       : delegation.role === "structural-challenge"
@@ -292,24 +301,30 @@ async function main() {
     if (!kind) throw new Error("Review kind must be crr or mrr");
     const role = requireValue(flags.role, kind === "crr" ? "Specify --role crr" : "Specify --role deep-code-review|structural-challenge|fable-challenge");
     if (kind === "crr" && role !== CRR_ROLE) throw new Error("CRR briefs use --role crr");
-    if (kind === "mrr" && !REVIEW_ROLES.includes(role)) throw new Error("MRR briefs use a persona role");
+    const reconciliationOnly = kind === "mrr" && role === RECONCILIATION_ROLE;
+    if (kind === "mrr" && !REVIEW_ROLES.includes(role) && !reconciliationOnly) throw new Error("MRR briefs use a persona role or reconciliation");
+    if (reconciliationOnly && flags.reconcile !== true) throw new Error("Reconciliation briefs require --reconcile");
+    if (!reconciliationOnly && flags.reconcile) throw new Error("--reconcile requires --role reconciliation");
     if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");
     const seated = seatingFor(role, flags.model, flags.route);
     const target = await targetFor(stream, kind);
     const scope = { role, kind, target, claim: stream.claim, claimRevision: stream.claimRevision };
     const [delegations, reviews] = kind === "mrr" ? await Promise.all([store.delegations(stream.id), store.reviews(stream.id)]) : [[], []];
-    if (kind === "mrr" && seated.model === seated.preferred && preferredAlreadyAttempted(delegations, scope, reviews)) {
+    if (kind === "mrr" && !reconciliationOnly && seated.model === seated.preferred && preferredAlreadyAttempted(delegations, scope, reviews)) {
       throw new Error(preferredAttemptFailed(delegations, scope)
         ? `${role} preferred ${seated.preferred} already failed on this claim and target; do not retry that provider`
         : `${role} preferred ${seated.preferred} was already attempted on this claim and target`);
     }
-    if (kind === "mrr" && seated.model === seated.backup && seated.model !== seated.preferred && !preferredAttemptFailed(delegations, scope)) {
+    if (kind === "mrr" && !reconciliationOnly && seated.model === seated.backup && seated.model !== seated.preferred && !preferredAttemptFailed(delegations, scope)) {
       throw new Error(`${role} backup requires a terminal ${seated.preferred} failure on this target first`);
     }
-    const outstanding = kind === "mrr" && (role === "deep-code-review" || flags.reconcile) ? outstandingFindings(await store.reviews(stream.id), stream.claim).map(({ id, category, text }) => ({ id, category, text })) : [];
+    const outstanding = kind === "mrr" && (role === "deep-code-review" || reconciliationOnly) ? outstandingFindings(reviews, stream.claim).filter((finding) => !reconciliationOnly || (finding.head === target.head && finding.baseHead === target.baseHead)).map(({ id, category, text }) => ({ id, category, text })) : [];
+    if (reconciliationOnly && !outstanding.length) throw new Error("Reconciliation requires outstanding MRR findings");
+    const packetIds = outstanding.map((finding) => finding.id).sort();
+    if (reconciliationOnly && reviews.some((review) => sameReconciliationPacket(review, scope, packetIds))) throw new Error("This exact-head finding packet already has a completed reconciliation; do not shop for another adjudicator");
     const inventory = await diffInventory(target);
     const project = await store.project(stream.project);
-    const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ...(outstanding.length ? { outstanding } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
+    const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ...(reconciliationOnly ? { reconciliationOnly: true } : {}), ...(outstanding.length ? { outstanding } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
     const execution = { ...REVIEW_EXECUTION, preferred: seated.preferred, backup: seated.backup, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: project.repoPath, baseSha: target.baseHead, headSha: target.head }) };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
@@ -348,8 +363,15 @@ async function main() {
     if (!bound || bound.taskId !== envelope.reviewerTaskId) throw new Error("Review task ID must match its explicit delegation binding. Repair the envelope from the brief; do not relaunch the reviewer for a schema mismatch.");
     if (delegationEvents.some((item) => item.id === envelope.delegationId && item.event === "failed")) throw new Error("A failed review attempt is terminal; create a new brief to retry");
     const validated = validateReview(envelope, delegation);
+    if (delegation.reconciliationOnly) {
+      if (validated.reviewerTaskId === stream.ownerTaskId || validated.reviewerTaskId === delegation.ownerTaskIdAtBrief) throw new Error("Workstream owner cannot adjudicate MRR findings");
+      const delivered = new Set((delegation.outstanding || []).map((finding) => finding.id));
+      const authors = new Set(findingLedger(await store.reviews(stream.id)).filter((finding) => delivered.has(finding.id)).map((finding) => finding.reviewerTaskId).filter(Boolean));
+      if (authors.has(validated.reviewerTaskId)) throw new Error("A reviewer cannot adjudicate its own MRR finding");
+    }
     const currentTarget = await targetFor(stream, delegation.kind);
     const stale = (delegation.claimRevision ?? 1) !== (stream.claimRevision ?? 1) || delegation.head !== currentTarget.head || delegation.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && delegation.tree !== currentTarget.tree);
+    if (stale && delegation.reconciliationOnly) throw new Error("Reconciliation-only evidence must match the current exact head and claim");
     if (stale && (validated.verdict !== "NO_GO" || !noGoHasEvidence(validated))) throw new Error("A stale review may record new adverse evidence only; it may not record a GO");
     if (stale && (validated.reconciled || []).some((entry) => entry.disposition !== "still_present")) throw new Error("A stale review may mark delivered findings still_present but may not resolve or reject them");
     const packet = new Set((delegation.outstanding || []).map((finding) => finding.id));
@@ -358,6 +380,11 @@ async function main() {
     const { review, assignedFindingIds: assigned } = await store.addReview(stream.id, { ...validated, expectedClaimRevision: stream.claimRevision ?? 1, claimRevision: delegation.claimRevision ?? 1, ...(stale ? { staleAtRecord: true } : {}), ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null }, { beforeAppend: async () => {
       const latest = await targetFor(stream, delegation.kind);
       if (latest.head !== currentTarget.head || latest.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && latest.tree !== currentTarget.tree)) throw new Error("Repository target changed while the review was being recorded; retry against current state");
+      if (delegation.reconciliationOnly) {
+        const ids = (delegation.outstanding || []).map((finding) => finding.id).sort();
+        const scope = { claim: delegation.claim, claimRevision: delegation.claimRevision, target: delegation };
+        if ((await store.reviews(stream.id)).some((review) => sameReconciliationPacket(review, scope, ids))) throw new Error("This exact-head finding packet already has a completed reconciliation; do not shop for another adjudicator");
+      }
     } });
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);
   }

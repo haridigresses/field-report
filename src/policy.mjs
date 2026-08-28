@@ -9,6 +9,7 @@ const SIGNAL_VALUES = {
 };
 
 export const CRR_ROLE = "crr";
+export const RECONCILIATION_ROLE = "reconciliation";
 export const REVIEW_ROLES = ["deep-code-review", "structural-challenge", "fable-challenge"];
 export const REVIEW_MODELS = Object.freeze({
   sol: "gpt-5.6-sol",
@@ -76,6 +77,11 @@ export function seatingFor(role, model = null, route = null) {
     if (!selected) throw new Error("crr requires a model id");
     return { role: CRR_ROLE, preferred: "local", backup: null, model: selected, route: route || "native" };
   }
+  if (role === RECONCILIATION_ROLE) {
+    const selected = canonicalReviewModel(model);
+    if (!selected) throw new Error("Reconciliation requires an explicit Sol, Grok, or Fable model");
+    return { role, preferred: null, backup: null, model: selected, route: route || "cli" };
+  }
   if (!REVIEW_ROLES.includes(role)) throw new Error("Unknown review role");
   const lane = LANE_SEATING[role];
   const selected = model ? canonicalReviewModel(model) : lane.preferred;
@@ -127,7 +133,8 @@ export function validateReview(input, delegation) {
   const role = input.role;
   if (!kind) throw new Error("Review kind must be crr or mrr");
   if (kind === "crr" && role !== CRR_ROLE) throw new Error("CRR must use role crr");
-  if (kind === "mrr" && (!REVIEW_ROLES.includes(role) || role !== delegation?.role)) throw new Error("MRR must identify its exact review role");
+  const reconciliationOnly = role === RECONCILIATION_ROLE && delegation?.reconciliationOnly === true;
+  if (kind === "mrr" && ((!REVIEW_ROLES.includes(role) && !reconciliationOnly) || role !== delegation?.role)) throw new Error("MRR must identify its exact review role");
   if (kind === "crr" && role !== delegation?.role) throw new Error("Review must identify its exact review role");
   if (!UUID.test(input.delegationId || "") || input.delegationId !== delegation?.id) throw new Error("Review must reference its exact Field Report delegation ID");
   if (!String(input.claim || "").trim() || input.claim !== delegation?.claim) throw new Error("Review claim must match its exact Field Report delegation");
@@ -144,7 +151,7 @@ export function validateReview(input, delegation) {
     const model = canonicalReviewModel(input.model);
     if (!model) throw new Error("Review model must be gpt-5.6-sol, grok-4.6, or claude-fable-5");
     const lane = LANE_SEATING[role];
-    if (model !== lane.preferred && model !== lane.backup) throw new Error(`${role} must use ${lane.preferred} or its named backup ${lane.backup}`);
+    if (lane && model !== lane.preferred && model !== lane.backup) throw new Error(`${role} must use ${lane.preferred} or its named backup ${lane.backup}`);
     if (delegation.model && canonicalReviewModel(delegation.model) !== model) throw new Error("Review model must match its exact delegation");
     if (!providersFor(model).includes(input.provider)) throw new Error(`Provider does not match review model ${model}`);
     input = { ...input, model };
@@ -153,6 +160,7 @@ export function validateReview(input, delegation) {
   if (!Array.isArray(input.findings) || !input.findings.every((item) => typeof item === "string" && item.trim())) throw new Error("Review findings must be a nonblank string array");
   if (input.unresolved != null && (!Array.isArray(input.unresolved) || !input.unresolved.every((item) => typeof item === "string" && item.trim()))) throw new Error("Review unresolved must be a nonblank string array");
   const unresolved = Array.isArray(input.unresolved) ? input.unresolved : [];
+  if (reconciliationOnly && (input.findings.length || unresolved.length)) throw new Error("Reconciliation-only evidence cannot create new findings or unresolved items");
   if (input.verdict === "NO_GO" && !noGoHasEvidence({ ...input, unresolved })) throw new Error("NO_GO requires at least one finding, unresolved item, or still_present reconciliation");
   if (!String(input.summary || "").trim()) throw new Error("Review requires a summary");
   for (const key of SCORE_KEYS) assertScore(input.scores?.[key], key);
@@ -171,7 +179,7 @@ export function validateReview(input, delegation) {
     const ids = input.reconciled.map((entry) => entry.findingId);
     if (new Set(ids).size !== ids.length) throw new Error("reconciled entries must reference distinct finding IDs");
   }
-  return { ...input, kind, role, unresolved, findings: [...input.findings], scores: { ...input.scores }, ...(input.reconciled ? { reconciled: input.reconciled.map((entry) => ({ ...entry })) } : {}) };
+  return { ...input, kind, role, ...(reconciliationOnly ? { reconciliationOnly: true } : {}), unresolved, findings: [...input.findings], scores: { ...input.scores }, ...(input.reconciled ? { reconciled: input.reconciled.map((entry) => ({ ...entry })) } : {}) };
 }
 
 export function findingLedger(reviews) {
@@ -182,7 +190,7 @@ export function findingLedger(reviews) {
     for (const [category, items] of [["finding", review.findings], ["unresolved", review.unresolved]]) {
       for (const text of items || []) {
         counter += 1;
-        entries.push({ id: `F${counter}`, category, text, role: review.role, claim: review.claim });
+        entries.push({ id: `F${counter}`, category, text, role: review.role, claim: review.claim, head: review.head, baseHead: review.baseHead, reviewerTaskId: review.reviewerTaskId, delegationId: review.delegationId });
       }
     }
   }
@@ -239,6 +247,8 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
   const matching = reviews.filter((review) => isDurableReview(review) && review.claim === claim && (review.claimRevision ?? 1) === claimRevision && review.head === target.head && review.baseHead === target.baseHead);
   const lanes = Object.fromEntries(REVIEW_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
   const reasons = [];
+  const outstandingIds = new Set(outstandingFindings(reviews, claim).map((finding) => finding.id));
+  const ledger = findingLedger(reviews);
   let acceptedCount = 0;
   let unavailable = 0;
   for (const role of REVIEW_ROLES) {
@@ -246,6 +256,11 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
     const backupWithoutFailure = review && acceptedMrr(review) && canonicalReviewModel(review.model) === LANE_SEATING[role].backup && LANE_SEATING[role].backup !== LANE_SEATING[role].preferred && !preferredAttemptFailed(delegations, { role, kind: "mrr", target, claim, claimRevision });
     if (review && acceptedMrr(review) && !backupWithoutFailure) acceptedCount += 1;
     else if (backupWithoutFailure) reasons.push(`${role} backup requires a terminal preferred-model failure`);
+    else if (review && review.verdict === "NO_GO") {
+      const reviewFindingIds = ledger.filter((finding) => finding.delegationId === review.delegationId).map((finding) => finding.id);
+      if (reviewFindingIds.length && reviewFindingIds.every((id) => !outstandingIds.has(id))) unavailable += 1;
+      else reasons.push(`${role} is not a finding-free GO`);
+    }
     else if (review && !acceptedMrr(review)) reasons.push(`${role} is not a finding-free GO`);
     else if (preferredAttemptFailed(delegations, { role, kind: "mrr", target, claim, claimRevision })) unavailable += 1;
     else reasons.push(`missing ${role} review`);

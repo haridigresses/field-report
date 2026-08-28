@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, RECONCILIATION_ROLE, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const claim = "Ship the stated delivery unit";
@@ -203,6 +203,38 @@ test("mrr findings remain durable until explicitly reconciled", () => {
   assert.deepEqual(outstandingFindings([adverse], claim).map((item) => item.id), ["F1"]);
   const reconciled = mrrComplete("deep-code-review", "sol-retry", { reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed and regression-tested." }] });
   assert.deepEqual(outstandingFindings([adverse, reconciled], claim), []);
+});
+
+test("finding provenance retains the exact review target", () => {
+  const adverse = mrrComplete("deep-code-review", "sol-run", { verdict: "NO_GO", findings: ["Defect"] });
+  const [finding] = outstandingFindings([adverse], claim);
+  assert.equal(finding.head, head);
+  assert.equal(finding.baseHead, baseHead);
+});
+
+test("reconciliation-only evidence clears findings without filling or replacing a persona lane", () => {
+  const adverse = mrrComplete("deep-code-review", "sol-run", { verdict: "NO_GO", findings: ["Claimed defect is contradicted by the contract"] });
+  const structural = mrrComplete("structural-challenge", "grok-run");
+  const fable = mrrComplete("fable-challenge", "fable-run");
+  const delegation = {
+    id: randomUUID(), event: "created", type: "review", role: RECONCILIATION_ROLE, kind: "mrr", reconciliationOnly: true,
+    claim, claimRevision: 1, head, baseHead, model: "gpt-5.6-sol", route: "cli", ownerTaskIdAtBrief: "owner",
+    outstanding: [{ id: "F1", category: "finding", text: "Claimed defect is contradicted by the contract" }]
+  };
+  const adjudication = validateReview({
+    ...mrrEnvelope({ ...delegation, role: "deep-code-review" }, "fresh-sol", {
+      reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "The executable contract proves the flagged state is impossible." }]
+    }),
+    delegationId: delegation.id, role: RECONCILIATION_ROLE
+  }, delegation);
+  assert.throws(() => validateReview({ ...adjudication, findings: ["New issue"] }, delegation), /cannot create new findings/);
+  assert.throws(() => validateReview({ ...adjudication, unresolved: ["New question"] }, delegation), /cannot create new findings/);
+  assert.equal(adjudication.reconciliationOnly, true);
+  assert.deepEqual(outstandingFindings([adverse, structural, fable, adjudication], claim), []);
+  const gate = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [adverse, structural, fable, adjudication] });
+  assert.equal(gate.ready, true);
+  assert.equal(gate.lanes["deep-code-review"].reviewerTaskId, "sol-run");
+  assert.deepEqual(gate.reasons, []);
 });
 
 test("a later mrr GO does not silently clear a recorded finding", () => {

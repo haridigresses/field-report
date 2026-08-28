@@ -162,6 +162,90 @@ test("deep mrr briefs carry outstanding findings; crr findings do not", async ()
   assert.deepEqual(deep.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
 });
 
+test("a fresh reconciliation-only reviewer adjudicates the same-head packet without becoming a persona", async () => {
+  const { repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
+  await run(["review", "bind", "outcome", "--delegation", structural.delegation.id, "--task-id", "grok-author"], repo, state);
+  const adverse = {
+    reviewComplete: true, independent: true, delegationId: structural.delegation.id, reviewerTaskId: "grok-author",
+    claim: structural.delegation.claim, kind: "mrr", role: "structural-challenge", head: structural.delegation.head, baseHead: structural.delegation.baseHead,
+    provider: "cursor", model: "grok-4.6", route: "cli", verdict: "NO_GO", findings: ["False positive", "Second false positive"], unresolved: [], summary: "Adverse review", ...scores("NO_GO")
+  };
+  const adverseFile = path.join(repo, "adverse.json");
+  await writeFile(adverseFile, JSON.stringify(adverse));
+  await run(["review", "record", "outcome", "--file", adverseFile], repo, state);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "reconciliation", "--model", "gpt-5.6-sol"], repo, state), /require --reconcile/);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--reconcile"], repo, state), /requires --role reconciliation/);
+  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "reconciliation", "--reconcile", "--model", "gpt-5.6-sol"], repo, state));
+  assert.equal(brief.delegation.reconciliationOnly, true);
+  assert.deepEqual(brief.delegation.outstanding, [
+    { id: "F1", category: "finding", text: "False positive" },
+    { id: "F2", category: "finding", text: "Second false positive" }
+  ]);
+  assert.match(brief.prompt, /cannot fill or replace an MRR persona lane/);
+  await run(["review", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "grok-author"], repo, state);
+  const review = {
+    ...adverse, delegationId: brief.delegation.id, reviewerTaskId: "grok-author", role: "reconciliation", provider: "openai", model: "gpt-5.6-sol",
+    verdict: "GO", findings: [], summary: "The finding is false", reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "The executable contract proves this state cannot occur." }], ...scores("GO")
+  };
+  const reviewFile = path.join(repo, "reconcile.json");
+  await writeFile(reviewFile, JSON.stringify(review));
+  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /cannot adjudicate its own/);
+  const fresh = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "reconciliation", "--reconcile", "--model", "gpt-5.6-sol"], repo, state));
+  await run(["review", "bind", "outcome", "--delegation", fresh.delegation.id, "--task-id", "fresh-sol"], repo, state);
+  await writeFile(reviewFile, JSON.stringify({ ...review, delegationId: fresh.delegation.id, reviewerTaskId: "fresh-sol" }));
+  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /must account for delivered issue F2/);
+  review.reconciled.push({ findingId: "F2", disposition: "rejected", rationale: "The second assertion is also contradicted by the executable contract." });
+  review.reconciled.push({ findingId: "F3", disposition: "rejected", rationale: "Not delivered." });
+  await writeFile(reviewFile, JSON.stringify({ ...review, delegationId: fresh.delegation.id, reviewerTaskId: "fresh-sol" }));
+  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /out-of-packet ID: F3/);
+  review.reconciled.pop();
+  await writeFile(reviewFile, JSON.stringify({ ...review, delegationId: fresh.delegation.id, reviewerTaskId: "fresh-sol" }));
+  assert.match(await run(["review", "record", "outcome", "--file", reviewFile], repo, state), /Recorded reconciliation GO/);
+  await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /only once/);
+  await recordMrrLane(repo, state, "deep-code-review", "sol-lane");
+  await recordMrrLane(repo, state, "fable-challenge", "fable-lane");
+  assert.match(await run(["review", "status", "outcome", "--kind", "mrr"], repo, state), /READY/);
+});
+
+test("reconciliation-only briefs exclude findings from older heads", async () => {
+  const { repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
+  await run(["review", "bind", "outcome", "--delegation", structural.delegation.id, "--task-id", "grok-old"], repo, state);
+  const file = path.join(repo, "old.json");
+  await writeFile(file, JSON.stringify({
+    reviewComplete: true, independent: true, delegationId: structural.delegation.id, reviewerTaskId: "grok-old", claim: structural.delegation.claim,
+    kind: "mrr", role: "structural-challenge", head: structural.delegation.head, baseHead: structural.delegation.baseHead,
+    provider: "cursor", model: "grok-4.6", route: "cli", verdict: "NO_GO", findings: ["Old-head defect"], unresolved: [], summary: "Adverse", ...scores("NO_GO")
+  }));
+  await run(["review", "record", "outcome", "--file", file], repo, state);
+  const adjudication = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "reconciliation", "--reconcile", "--model", "gpt-5.6-sol"], repo, state));
+  const staleAdjudication = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "reconciliation", "--reconcile", "--model", "gpt-5.6-sol"], repo, state));
+  await run(["review", "bind", "outcome", "--delegation", adjudication.delegation.id, "--task-id", "sol-adjudicator"], repo, state);
+  await run(["review", "bind", "outcome", "--delegation", staleAdjudication.delegation.id, "--task-id", "sol-stale"], repo, state);
+  await writeFile(file, JSON.stringify({
+    reviewComplete: true, independent: true, delegationId: adjudication.delegation.id, reviewerTaskId: "sol-adjudicator", claim: adjudication.delegation.claim,
+    kind: "mrr", role: "reconciliation", head: adjudication.delegation.head, baseHead: adjudication.delegation.baseHead,
+    provider: "openai", model: "gpt-5.6-sol", route: "cli", verdict: "NO_GO", findings: [], unresolved: [], summary: "The issue remains",
+    reconciled: [{ findingId: "F1", disposition: "still_present", rationale: "The exact target still exhibits the defect." }], ...scores("NO_GO")
+  }));
+  await run(["review", "record", "outcome", "--file", file], repo, state);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "reconciliation", "--reconcile", "--model", "gpt-5.6-sol"], repo, state), /do not shop for another adjudicator/);
+  await writeFile(path.join(repo, "README.md"), "new head\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
+  await exec("git", ["commit", "-m", "new head"], { cwd: repo });
+  await writeFile(file, JSON.stringify({
+    reviewComplete: true, independent: true, delegationId: staleAdjudication.delegation.id, reviewerTaskId: "sol-stale", claim: staleAdjudication.delegation.claim,
+    kind: "mrr", role: "reconciliation", head: staleAdjudication.delegation.head, baseHead: staleAdjudication.delegation.baseHead,
+    provider: "openai", model: "gpt-5.6-sol", route: "cli", verdict: "NO_GO", findings: [], unresolved: [], summary: "The old issue remained",
+    reconciled: [{ findingId: "F1", disposition: "still_present", rationale: "The reviewed old target still exhibited the defect." }], ...scores("NO_GO")
+  }));
+  await assert.rejects(run(["review", "record", "outcome", "--file", file], repo, state), /must match the current exact head and claim/);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "reconciliation", "--reconcile", "--model", "gpt-5.6-sol"], repo, state), /requires outstanding MRR findings/);
+});
+
 test("an mrr provider failure does not satisfy its persona", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
