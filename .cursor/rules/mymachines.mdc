@@ -1,5 +1,5 @@
 ---
-description: Invoke Sol and Fable on the user's machine through My Machines when that host is online
+description: Reach Sol and Fable from Cursor Cloud Agents via My Machines for this checkout
 alwaysApply: true
 ---
 
@@ -7,8 +7,6 @@ alwaysApply: true
 
 This repository's required Sol and Fable routes run as login-shell CLIs on the user's machine, not as Cursor-hosted models.
 
-- Probe with `fr machines status --json` before invoking `codex` or ordinary `claude`. Check `accessible.sol` or `accessible.fable` for the CLI you need. Missing Sol does not block Fable. Do not restore `claude-aws`.
-- Prefer a native same-type path when the invoking agent is that family. Cloud Agents are third-party: use `fr machines invoke sol|fable` for the CLI they need. Do not substitute Cursor-hosted Sol/Fable models.
-- If that CLI's `accessible` flag is false, this session is not serving it (or the binary is missing). Report that and stop.
-- If it is true, write the Field Report brief to a prompt file and run the exact command from `fr machines invoke sol|fable`.
-- Route future Cloud Agent sessions to this host with `worker=local` / `machine=local`, or by selecting `local` in the environment picker, only while the worker process is running.
+- Prefer a native same-type path when the invoking agent is that family. Cloud Agents are third-party: write the Field Report brief to a prompt file and run the exact command from `fr machines invoke sol|fable`. Do not substitute Cursor-hosted Sol/Fable models. Do not restore `claude-aws`.
+- Field Report does not probe whether a CLI is installed, authenticated, or reachable. If the invoke fails, report the failure and stop.
+- Start a My Machines worker for this checkout only, using Cursor's CLI: `agent worker start --name local --worker-dir <this-repo>`. Do not add other Field Report repositories as extra `--worker-dir` flags. Route Cloud Agent sessions to that worker with `worker=local` / `machine=local`, or by selecting `local` in the environment picker, only while the worker process is running.

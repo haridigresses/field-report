@@ -202,10 +202,12 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /fr gate bots` stays BLOCKED until checks are observed/);
   assert.match(shared, /My Machines worker/);
   assert.match(shared, /native same-type/);
-  assert.match(shared, /accessible\.sol/);
+  assert.match(shared, /fr machines invoke/);
+  assert.doesNotMatch(shared, /accessible\.sol|fr machines status|fr machines worker/);
   const help = await run(["help"], root, path.join(root, "state"));
   assert.doesNotMatch(help, /fr question|fr catchup|fr publish|fr delegate/);
-  assert.match(help, /fr machines/);
+  assert.match(help, /fr machines invoke/);
+  assert.doesNotMatch(help, /fr machines \[status\|worker\]|fr machines status|fr machines worker/);
 });
 
 const mrrModels = {

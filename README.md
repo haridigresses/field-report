@@ -2,7 +2,7 @@
 
 Field Report is a thin control loop around a delivery unit. It binds repo, branch, claim, and owner session; records CRR and mixed-provider MRR; and gates readiness for CI bots. It does not launch reviewers, open pull requests, or merge.
 
-Agent Fixes owns sessions, names, and todos. Each target repository's `merge-ready-review.md` owns merge quality. Cursor Cloud Agents reach Sol and Fable on this host through My Machines when a worker is online.
+Agent Fixes owns sessions, names, and todos. Each target repository's `merge-ready-review.md` owns merge quality. Cursor Cloud Agents reach Sol and Fable on this host through My Machines when a worker for that checkout is online.
 
 ## Core loop
 
@@ -58,14 +58,14 @@ Do not wrap `git commit`, add `fr catchup` / heartbeat, collapse MRR into a fami
 
 ## My Machines
 
-Cursor Cloud Agents can invoke Sol (`codex`) and Fable (`claude`) on this host when a My Machines worker is running for the target checkout:
+Cursor Cloud Agents can invoke Sol (`codex`) and Fable (`claude`) on this host when a My Machines worker is running for the target checkout. Field Report prints the CLI recipe; Cursor owns the worker.
 
 ```bash
-fr machines status
-fr machines worker
+agent worker start --name local --worker-dir /path/to/this/repo
+fr machines invoke sol --prompt-file /tmp/sol.txt --cwd /path/to/this/repo --kind review
 ```
 
-Start the printed `agent worker start --name local` command (one daemon; extra checkouts are repeatable `--worker-dir` flags) and keep it running. Route a Cloud Agent to this host from the environment picker, or with `worker=local` / `machine=local` from Slack, GitHub, or Linear. See `docs/mymachines.md`. Prefer native same-type launch; Cloud Agents use the CLI. Use ordinary `claude`, never `claude-aws`.
+Start that worker for this checkout only. Route a Cloud Agent from the environment picker, or with `worker=local` / `machine=local`. See `docs/mymachines.md`. Prefer native same-type launch; Cloud Agents use the CLI. Use ordinary `claude`, never `claude-aws`.
 
 ## Flow
 

@@ -1,55 +1,32 @@
 # My Machines for Sol and Fable
 
-Cursor Cloud Agents run their model loop in Cursor's cloud. My Machines makes their tool calls execute on this host, so `codex` (Sol) and ordinary `claude` (Fable) can run with the user's existing login-shell credentials.
+Cursor Cloud Agents run their model loop in Cursor's cloud. My Machines makes their tool calls execute on a specific checkout on this host, so `codex` (Sol) and ordinary `claude` (Fable) can use the user's existing login-shell credentials.
 
-Managed Cursor VMs cannot reach those CLIs. If this session is not executing on a My Machines worker, `fr machines status` reports them unavailable.
+Field Report prints the Sol and Fable CLI recipes. It does not probe host accessibility, start workers, or enumerate other repositories. Cursor owns worker lifecycle, authentication, and connectivity. See [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines).
 
-## Host setup
+## Host setup for one checkout
 
-1. Install the Cursor CLI and sign in:
+Install and sign in with Cursor's CLI, then start a worker in the target repository only:
 
 ```bash
 curl https://cursor.com/install -fsS | bash
 agent login
-agent --version
+agent worker start --name local --worker-dir /path/to/this/repo
 ```
 
-2. Confirm the review CLIs resolve in the login shell Field Report uses:
+Keep that process running while Cloud Agents should be able to invoke the CLIs. Do not pass other Field Report checkouts as extra `--worker-dir` flags. Cursor registers the git remote from that directory; a request for another repo should not run here.
 
-```bash
-zsh -ic 'command -v codex'
-zsh -ic 'command -v claude'
-fr machines status
-```
+Route work to this host while it is online: choose `local` in the Cloud Agent environment picker, or pass `worker=local` / `machine=local` from Slack, GitHub, or Linear. `agent worker debug` is Cursor's preflight.
 
-`accessible.sol` and `accessible.fable` are independent. Missing Codex does not make Fable unavailable. Do not restore `claude-aws`.
+## Invocation
 
-3. Start one long-lived worker. Field Report prints a single command with a `--worker-dir` for each checkout:
-
-```bash
-fr machines worker
-```
-
-The default machine name is `local`. Override with `--name`. Keep that process running while Cloud Agents should be able to invoke the CLIs. The Cursor agent CLI allows only one worker daemon per user data dir; extra `agent worker start` processes fail on `worker.lock`. `--worker-dir` is repeatable, so one `local` process can expose every Field Report checkout.
-
-4. Route work to this host while it is online:
-
-- In the Cloud Agent environment picker, choose `local` under My Machines / Remote Control.
-- From Slack, GitHub, or Linear, include `worker=local` or `machine=local`. Those are the only trigger options that target My Machines.
-
-`agent worker debug` reports whether Cursor can see a matching worker.
-
-## Cloud Agent invocation
-
-Before launching a third-party Sol or Fable CLI, run `fr machines status --json` and check `accessible.sol` or `accessible.fable` for the CLI you need. Missing Sol does not block Fable. If that flag is false, stop and report that the local machine is not serving that CLI. Do not substitute Cursor-hosted models. Prefer a native same-type path when the invoking agent is that family.
-
-Write the Field Report brief to a prompt file, then print the exact host command:
+Prefer a native same-type path when the invoking agent is that family. Cloud Agents are third-party: write the Field Report brief to a prompt file, then print the exact host command:
 
 ```bash
 fr machines invoke sol --prompt-file /tmp/sol.txt --cwd /path/to/repo --kind review
 fr machines invoke fable --prompt-file /tmp/fable.txt --cwd /path/to/repo --base <40-char-sha> --head <40-char-sha>
 ```
 
-Sol CLI reviews use `gpt-5.6-sol` through `codex exec -m gpt-5.6-sol -s read-only --ignore-user-config`. Sol work uses `-s workspace-write`. Fable CLI uses `claude-fable-5` through ordinary `claude` in `dontAsk` mode after confirming `HEAD` matches the brief, with Bash limited to the exact `git diff` of the brief SHAs.
+If that command fails, report the failure. Do not treat a missing binary, a failed login, or a disconnected worker as a reason to substitute Cursor-hosted Sol/Fable models. Use ordinary `claude`, never `claude-aws`.
 
 Bind the provider-run ID or last-message path with `fr review bind` before `fr review record`.
