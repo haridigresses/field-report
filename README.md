@@ -1,17 +1,19 @@
 # Field Report
 
-Field Report is a local software-factory policy and evidence harness. It keeps durable outcome state, gives coordinators and workstream owners canonical operating instructions, issues exact-target review briefs, validates completed evidence, and evaluates commit and publication gates.
+Field Report is a thin control loop around a delivery unit. It binds repo, branch, claim, and owner session; records CRR and mixed-provider MRR; and gates readiness for CI bots. It does not launch reviewers, open pull requests, or merge.
 
-Field Report defines policy and evaluates evidence. Coordinators launch native Codex agents. Required Fable review uses `claude-aws` through the user's shell entrypoint.
+Agent Fixes owns sessions, names, and todos. Each target repository's `merge-ready-review.md` owns merge quality.
 
-## Core policies
+## Core loop
 
-- Every commit in a managed repository requires distinct Sol deep-code and structural reviews of the exact base HEAD and staged tree.
-- Every final candidate requires distinct exact-head Sol deep-code and structural reviews.
-- Full final review also requires Fable through `claude-aws`.
-- Mini review may waive only Fable after deterministic eligibility and agreement from both final Sol reviewers.
-- Review scores are explanatory; findings and deterministic gates remain authoritative.
-- Field Report may mark a draft PR ready only after the publication gate passes. It never merges.
+- Coordinators and owners name themselves (`fr identity`, then AF save). The user does not name agents. Reviewers stay unnamed and off AF.
+- Before you run `git commit` on a commit you intend to keep, stop and run CRR (1–2 subagents, local models first, scores required). A green checkout hook is not CRR. WIP or amend is owner judgment. Findings are for the owner on that staged tree, not a durable ledger. CRR records still persist; they do not enter the SHA-by-SHA finding ledger. `fr context` always prints the latest scores and structural risk (higher = more risk), even when the gate is blocked.
+- Keep a one-line next action with `fr update <id> --next`. It is a sticky note, not a todo ledger.
+- MRR (Sol / Grok / Fable personas) before a PR is opened. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR. Attempt each preferred model once after it is actually started; two GOs can pass when a lane fails.
+- Do not auto-open a PR. After `fr gate open`, the owner or the user may open one.
+- After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission. An empty GitHub check rollup keeps that gate blocked.
+- Borderline CI flake vs real: consult Sol or Grok once. Not a hard gate.
+- Field Report never merges.
 
 ## State
 
@@ -24,6 +26,7 @@ Canonical mutable state lives outside the source checkout:
   workstreams/
   reviews/
   delegations/
+  waivers/
   events/
   projection.json
 ```
@@ -37,6 +40,8 @@ node scripts/install.mjs
 fr init
 ```
 
+The installer writes `~/.local/bin/fr` and links the same canonical skill sources into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. It refuses to replace a real directory at any of those paths.
+
 Add repositories deliberately and install hooks explicitly:
 
 ```bash
@@ -45,58 +50,34 @@ fr hook install aon
 fr hook status aon
 ```
 
-Agents may self-register an unbound branch with `fr create`, or bind the correct existing outcome with `fr update --branch <current> --owner-task <current-task>`. This requires no coordinator approval; the commit gate prints exact commands when registration is missing.
+Agents may self-register an unbound branch with `fr create`, or bind the correct existing outcome with `fr update --branch <current> --owner-task <current-task>`. The checkout hook only checks that the branch is bound. It does not run a review panel and must not grow one.
 
-The hook asks `fr gate commit` to verify exact staged-tree evidence for every commit in the managed repository.
+Repo `.cursor/permissions.json` is Auto-review classifier steering so seated `codex` / `fr-cursor-review` / `claude` launches are not treated as sensitive egress. It is not a Cursor IDE executable allowlist; that remains Settings → Agents → Approvals & Execution.
 
-## Factory flow
+Do not wrap `git commit`, add `fr catchup` / heartbeat, collapse MRR into a family panel, or put product questions in Field Report. Those were previous iterations.
+
+## Flow
 
 ```bash
-fr create aon-example --project aon --title "Example" --outcome "Deliver the bounded outcome" --branch codex/example
+fr identity --role owner
+fr create aon-example --project aon --title "Example" --outcome "Deliver the bounded outcome" --branch cursor/example
 fr context aon-example
+fr update aon-example --next "CRR the staged tree, then commit"
 fr workflow workstream
 
-fr review brief aon-example --kind commit --role deep-code-review
-fr review brief aon-example --kind commit --role structural-challenge
-# Launch two distinct native Sol subagents and save their JSON envelopes.
-fr review bind aon-example --delegation <deep-uuid> --task-id <deep-native-task-id>
-fr review bind aon-example --delegation <structural-uuid> --task-id <structural-native-task-id>
-fr review record aon-example --file /tmp/deep.json
-fr review record aon-example --file /tmp/structural.json
-fr gate commit aon-example
+# Before git commit on a commit you intend to keep:
+fr review brief aon-example --kind crr --role crr
+fr gate crr aon-example
 
-fr review brief aon-example --kind final --role deep-code-review
-fr review brief aon-example --kind final --role structural-challenge
-fr review brief aon-example --kind final --role fable-challenge
-# Invoke claude-aws through the user's shell entrypoint for the Fable brief.
-# Bind every final brief to its native task or provider-run ID before recording it.
-fr review status aon-example --kind final
-fr gate publish aon-example
-fr publish aon-example
+fr review brief aon-example --kind mrr --role deep-code-review
+fr review brief aon-example --kind mrr --role structural-challenge
+fr review brief aon-example --kind mrr --role fable-challenge
+fr gate open aon-example
+# Owner or user may now open a pull request. Field Report does not.
+# Feature work and bot cycles use CRR. Do not re-run MRR because HEAD moved.
+
+# When the user asks for final MRR, commission the panel on the current HEAD — or, only after they agree to skip, record:
+# fr review waive aon-example --reason "<why the delta is not substantive>"
+
+fr gate bots aon-example
 ```
-
-## Mini review
-
-```bash
-fr classify aon-example mini --reason "Bounded presentation-only correction"
-```
-
-Eligibility combines configured size limits, risky-path exclusions, a recorded reason, and affirmative judgment from both final Sol reviewers. Commit review is unchanged.
-
-## Migration
-
-Schema v1 corpus migration is intentionally one-way:
-
-```bash
-FIELD_REPORT_STATE_ROOT=/path/to/new-state node scripts/migrate-v1.mjs /path/to/legacy-field-report
-```
-
-Projects, workstreams, questions, links, milestones, and historical review records are preserved best-effort. Historical reviews remain visible but cannot satisfy schema-v2 gates.
-
-## Dashboard
-
-```bash
-npm run dev
-```
-
-The dashboard is read-only except for refreshing external projections. All canonical changes and evidence recording go through the CLI.

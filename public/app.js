@@ -13,17 +13,29 @@ const relative = (value) => new Intl.RelativeTimeFormat(undefined, { numeric: "a
 
 function projectFor(stream) { return state.projects.find((project) => project.id === stream.project); }
 function currentPr(stream) { return projectFor(stream)?.pullRequests?.find((pr) => stream.pullRequests.includes(pr.number) || pr.headRefName === stream.branch); }
-function openQuestions(stream) { return stream.questions.filter((question) => question.status === "open"); }
+function bots(stream) { return stream.bots; }
+function mrr(stream) { return stream.mrr; }
 function reasons(stream) {
   const result = [];
   const pr = currentPr(stream);
+  const review = mrr(stream);
   if (stream.status === "blocked") result.push("blocked");
-  if (["planned", "active", "blocked"].includes(stream.status) && !stream.ownerTaskId) result.push("owner task unassigned");
+  if (["planned", "active", "blocked"].includes(stream.status) && !stream.ownerTaskId) result.push("owner session unbound");
   if (["planned", "active", "blocked"].includes(stream.status) && !stream.next) result.push("next action missing");
-  if (openQuestions(stream).length) result.push(`${openQuestions(stream).length} open question${openQuestions(stream).length === 1 ? "" : "s"}`);
-  if (stream.delegations.some((item) => item.type === "work" && item.status !== "complete")) result.push("work delegation incomplete");
-  if (stream.branch && !stream.publication?.ready) result.push(...(stream.publication?.reasons || ["publication evidence missing or stale"]));
+  if (!pr) result.push(...(review?.reasons?.length ? review.reasons : ["pre-open MRR evidence missing"]));
+  else if (review?.phase === "blocked") result.push(...(review.reasons || ["MRR evidence missing or stale"]));
+  else if (review?.phase === "churn") result.push(...(bots(stream)?.reasons || []).filter((reason) => /unsuccessful|incomplete/.test(reason)));
+  else if (!bots(stream)?.ready) result.push(...(bots(stream)?.reasons || ["bots evidence missing or stale"]));
   return result;
+}
+
+function rowSignals(stream) {
+  const attention = reasons(stream);
+  if (attention.length) return attention;
+  const review = mrr(stream);
+  if (review?.phase === "churn") return review.reasons || ["HEAD moved since last MRR"];
+  if (review?.phase === "waived") return [`merge-ready via skip${review.waiver?.reason ? ` — ${review.waiver.reason}` : ""}`];
+  return [];
 }
 
 function renderProjects() {
@@ -31,17 +43,30 @@ function renderProjects() {
   projects.querySelectorAll("button").forEach((button) => button.onclick = () => { activeProject = button.dataset.project; render(); });
 }
 
+function lastScores(stream) {
+  const reviews = [...(stream.reviews || [])].reverse();
+  const latest = reviews.find((review) => review.kind === "mrr" && review.scores) || reviews.find((review) => review.scores);
+  return latest?.scores || null;
+}
+
 function row(stream) {
-  const signals = reasons(stream);
-  const pr = currentPr(stream);
+  const signals = rowSignals(stream);
+  const scores = lastScores(stream);
+  const tone = reasons(stream).length ? "warn" : signals.length ? "" : "good";
+  const scoreBit = scores ? `Readiness ${scores.mergeReadiness}% · risk ${scores.structuralRisk}%` : "";
+  const attention = [signals.length ? signals.join(" · ") : "", scoreBit].filter(Boolean).join(" · ") || "No active signal";
   return `<button class="row" data-id="${escape(stream.id)}">
-    <span><strong>${escape(stream.title)}</strong><small>${escape(stream.summary)}</small></span>
+    <span><strong>${escape(stream.title)}</strong><small>${escape(stream.next || stream.summary)}</small></span>
     <span>${escape(stream.status)}</span>
-    <span>${escape(stream.reviewClass)}</span>
-    <span>${pr ? `PR #${pr.number} · ${pr.isDraft ? "draft" : "ready"}` : escape(stream.branch || "No branch")}</span>
-    <span class="${signals.length ? "warn" : "good"}">${signals.length ? escape(signals.join(" · ")) : "No active signal"}</span>
-    <span>${escape(stream.next || "Not recorded")}</span>
+    <span>${escape(prLabel(stream))}</span>
+    <span class="${tone}">${escape(attention)}</span>
+    <span>${escape(stream.claim || "No claim")}</span>
   </button>`;
+}
+
+function prLabel(stream) {
+  const pr = currentPr(stream);
+  return pr ? `PR #${pr.number}` : stream.branch || "No branch";
 }
 
 function open(stream) {
@@ -49,10 +74,10 @@ function open(stream) {
   const score = (review) => review.scores ? `<br><small>Readiness ${review.scores.mergeReadiness}% · Structural risk ${review.scores.structuralRisk}% · Implementation quality ${review.scores.implementationQuality}% · Evidence confidence ${review.scores.evidenceConfidence}% · Outcome confidence ${review.scores.outcomeConfidence}%</small><br><small>${escape(Object.values(review.scoreRationale || {}).join(" · "))}</small>` : "";
   const signals = (review) => review.necessity ? `<br><small>Necessity ${escape(review.necessity)} · Scope drift ${escape(review.scopeDrift)} · Contract integrity ${escape(review.contractIntegrity)} · Evidence quality ${escape(review.evidenceQuality)}</small><br><small>Simpler path: ${escape(review.simplerPath)}</small>` : "";
   detailBody.innerHTML = `<p class="eyebrow">${escape(stream.project)} · ${escape(stream.id)}</p><h2>${escape(stream.title)}</h2><p>${escape(stream.summary)}</p>
-    <dl><div><dt>Status</dt><dd>${escape(stream.status)}</dd></div><div><dt>Review</dt><dd>${escape(stream.reviewClass)}</dd></div><div><dt>Branch</dt><dd>${escape(stream.branch || "None")}</dd></div><div><dt>Owner task</dt><dd>${escape(stream.ownerTaskId || "Unassigned")}</dd></div></dl>
+    <dl><div><dt>Status</dt><dd>${escape(stream.status)}</dd></div><div><dt>Branch</dt><dd>${escape(stream.branch || "None")}</dd></div><div><dt>Owner session</dt><dd>${escape(stream.ownerTaskId || "Unassigned")}</dd></div></dl>
+    <h3>Claim</h3><p>${escape(stream.claim || "Not recorded")}</p>
     <h3>Next</h3><p>${escape(stream.next || "Not recorded")}</p>
-    <h3>Open questions</h3>${openQuestions(stream).length ? `<ul>${openQuestions(stream).map((question) => `<li><b>${escape(question.id)}</b> ${escape(question.text)}</li>`).join("")}</ul>` : `<p class="quiet">None</p>`}
-    <h3>Review evidence</h3>${reviews.length ? `<ul>${reviews.map((review) => `<li><b>${escape(review.role)}</b> ${escape(review.verdict)} · ${escape((review.tree || review.head || "").slice(0, 12))}${review.legacy ? " · historical" : ""}<br><small>${escape(review.summary)}</small>${score(review)}${signals(review)}</li>`).join("")}</ul>` : `<p class="quiet">None</p>`}`;
+    <h3>Review evidence</h3>${reviews.length ? `<ul>${reviews.map((review) => `<li><b>${escape(review.role)}</b> ${escape(review.kind)} ${escape(review.verdict)} · ${escape((review.tree || review.head || "").slice(0, 12))}${review.legacy ? " · historical" : ""}<br><small>${escape(review.summary)}</small>${score(review)}${signals(review)}</li>`).join("")}</ul>` : `<p class="quiet">None</p>`}`;
   detail.showModal();
 }
 
@@ -61,7 +86,7 @@ function render() {
   const visible = state.workstreams.filter((stream) => activeProject === "all" || stream.project === activeProject);
   const urgent = visible.filter((stream) => stream.status !== "complete" && reasons(stream).length);
   attention.innerHTML = `<h2>Needs attention</h2>${urgent.length ? urgent.map(row).join("") : `<p class="quiet">Nothing currently requires intervention.</p>`}`;
-  portfolio.innerHTML = `<h2>Outcomes</h2>${visible.map(row).join("")}`;
+  portfolio.innerHTML = `<h2>Workstreams</h2>${visible.map(row).join("")}`;
   document.querySelectorAll(".row").forEach((element) => element.onclick = () => open(state.workstreams.find((stream) => stream.id === element.dataset.id)));
 }
 

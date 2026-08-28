@@ -1,12 +1,18 @@
-export const marker = "# field-report-commit-gate:v3";
-export const legacyMarker = "# field-report-managed-pre-commit:v2";
+export const marker = "# field-report-commit-gate:v4";
 
 export function quote(value) { return `'${String(value).replaceAll("'", "'\"'\"'")}'`; }
 
+export function isManagedHook(text) {
+  return Boolean(text) && /field-report-(?:commit-gate|managed-pre-commit):/.test(text);
+}
+
 export function shouldRunPreserved(existing, preservedExists) {
   if (existing == null) return false;
-  if (existing.includes(marker)) return preservedExists && existing.includes(".field-report-preserved");
-  return !existing.includes(legacyMarker) || preservedExists;
+  if (isManagedHook(existing)) {
+    if (existing.includes(".field-report-preserved")) return preservedExists;
+    return preservedExists && /field-report-managed-pre-commit:/.test(existing);
+  }
+  return true;
 }
 
 export function hookText(launcher, preserved = null) {
@@ -20,7 +26,7 @@ export function hookText(launcher, preserved = null) {
     "  cd \"$(dirname \"$worktree_gitdir\")\" || exit 1",
     "  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE",
     "fi",
-    `exec ${quote(launcher)} gate commit`,
+    `exec ${quote(launcher)} gate checkout`,
     ""
   ].join("\n");
 }
