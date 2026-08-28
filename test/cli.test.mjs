@@ -271,6 +271,8 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   const shared = await run(["workflow"], root, path.join(root, "state"));
   assert.match(shared, /CRR against the exact staged tree/);
   assert.match(shared, /two finding-free persona GOs/i);
+  assert.match(shared, /independently adjudicated/);
+  assert.match(shared, /--role reconciliation --reconcile/);
   assert.match(shared, /Do not auto-open a pull request/);
   assert.match(shared, /Reviewers must not use MCP servers or AF/);
   assert.match(shared, /empty user-level MCP file/);
