@@ -29,7 +29,7 @@ test("Sol and Fable invoke commands use the login shell and the shared CLI recip
   assert.match(fable, new RegExp(`test "\\$\\(git rev-parse HEAD\\)" = "${head}"`));
   assert.match(fable, new RegExp(`Bash\\(git diff --no-ext-diff --no-textconv ${sha} ${head} --\\)`));
   assert.match(fable, /git status --porcelain/);
-  assert.equal(fable, `zsh -ic ${quote(`cd "/tmp/work repo" && test "$(git rev-parse HEAD)" = "${head}" && test -z "$(git status --porcelain)" && claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff --no-ext-diff --no-textconv ${sha} ${head} --)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model claude-fable-5 "$(< "/tmp/brief's.txt")"`)}`);
+  assert.equal(fable, `zsh -ic ${quote(`cd "/tmp/work repo" && test "$(git rev-parse HEAD)" = "${head}" && test -z "$(git status --porcelain)" && claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff --no-ext-diff --no-textconv ${sha} ${head} --)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --model claude-fable-5 "$(< "/tmp/brief's.txt")"`)}`);
 });
 
 test("CLI prints exact invoke lines and refuses status or worker commands", async () => {

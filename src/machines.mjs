@@ -44,7 +44,7 @@ function fableCli({ promptFile, cwd, baseSha, headSha }) {
   const diff = `git diff --no-ext-diff --no-textconv ${baseSha} ${headSha} --`;
   const repo = resolveMaybe(cwd);
   const prompt = resolveMaybe(promptFile);
-  const claude = `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(${diff})" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model ${FABLE_MODEL} "$(< ${doubleQuote(prompt)})"`;
+  const claude = `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(${diff})" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --model ${FABLE_MODEL} "$(< ${doubleQuote(prompt)})"`;
   const headCheck = SHA.test(headSha) ? `test "$(git rev-parse HEAD)" = ${doubleQuote(headSha)} && test -z "$(git status --porcelain)" && ` : "";
   return `cd ${doubleQuote(repo)} && ${headCheck}${claude}`;
 }

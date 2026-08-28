@@ -1,36 +1,28 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-// Launch cursor-agent with HOME pointed at a temp dir that contains an empty
-// user-level ~/.cursor/mcp.json. That removes ambient user MCP servers; it does
-// not hide repository-scoped Cursor MCP in the working tree. Reviewers are
-// still instructed not to use MCP.
+// Preserve HOME so cursor-agent can use the caller's Keychain-backed login.
+// Point only CURSOR_CONFIG_DIR at a temp directory with an empty mcp.json.
+// This removes ambient user MCP servers without hiding repository-scoped MCP.
 
 const EMPTY = `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`;
-const AUTH_FILES = ["cli-config.json", "agent-cli-state.json"];
-
-export function userMcpPath(home = os.homedir()) {
-  return path.join(home, ".cursor", "mcp.json");
+export function userMcpPath(configDir = path.join(os.homedir(), ".cursor")) {
+  return path.join(configDir, "mcp.json");
 }
 
-export function isolatedCursorHome(realHome = os.homedir()) {
-  const home = mkdtempSync(path.join(os.tmpdir(), "fr-cursor-review-"));
-  const cursor = path.join(home, ".cursor");
-  mkdirSync(cursor, { recursive: true });
-  writeFileSync(path.join(cursor, "mcp.json"), EMPTY, { mode: 0o600 });
-  for (const name of AUTH_FILES) {
-    const source = path.join(realHome, ".cursor", name);
-    if (existsSync(source)) symlinkSync(source, path.join(cursor, name));
-  }
-  return home;
+export function isolatedCursorConfig() {
+  const config = mkdtempSync(path.join(os.tmpdir(), "fr-cursor-review-"));
+  mkdirSync(config, { recursive: true });
+  writeFileSync(userMcpPath(config), EMPTY, { mode: 0o600 });
+  return config;
 }
 
 export async function runWithEmptyUserMcp(command, args, { home = os.homedir(), env = process.env, spawnFn = spawn } = {}) {
-  const isolated = isolatedCursorHome(home);
-  const childEnv = { ...env, HOME: isolated };
+  const isolated = isolatedCursorConfig();
+  const childEnv = { ...env, HOME: home, CURSOR_CONFIG_DIR: isolated };
   const cleanup = () => { try { rmSync(isolated, { recursive: true, force: true }); } catch {} };
   return new Promise((resolve, reject) => {
     const child = spawnFn(command, args, { stdio: "inherit", env: childEnv });

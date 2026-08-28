@@ -206,6 +206,14 @@ test("a fresh reconciliation-only reviewer adjudicates the same-head packet with
   await assert.rejects(run(["review", "record", "outcome", "--file", reviewFile], repo, state), /only once/);
   await recordMrrLane(repo, state, "deep-code-review", "sol-lane");
   await recordMrrLane(repo, state, "fable-challenge", "fable-lane");
+  assert.match(await run(["review", "status", "outcome", "--kind", "mrr"], repo, state), /BLOCKED[\s\S]*structural-challenge is not a finding-free GO/);
+  const backup = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state));
+  await run(["review", "bind", "outcome", "--delegation", backup.delegation.id, "--task-id", "sol-structural-backup"], repo, state);
+  await writeFile(reviewFile, JSON.stringify({
+    ...adverse, delegationId: backup.delegation.id, reviewerTaskId: "sol-structural-backup",
+    provider: "openai", model: "gpt-5.6-sol", verdict: "GO", findings: [], summary: "Independent backup review", ...scores("GO")
+  }));
+  await run(["review", "record", "outcome", "--file", reviewFile], repo, state);
   assert.match(await run(["review", "status", "outcome", "--kind", "mrr"], repo, state), /READY/);
 });
 
@@ -270,12 +278,12 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(output, /When the user explicitly asks for an agent they will work with directly, create a user-owned task/);
   const shared = await run(["workflow"], root, path.join(root, "state"));
   assert.match(shared, /CRR against the exact staged tree/);
-  assert.match(shared, /two finding-free persona GOs/i);
-  assert.match(shared, /independently adjudicated/);
+  assert.match(shared, /All three personas require finding-free GOs/i);
+  assert.match(shared, /independent same-head adjudication/);
   assert.match(shared, /--role reconciliation --reconcile/);
   assert.match(shared, /Do not auto-open a pull request/);
   assert.match(shared, /Reviewers must not use MCP servers or AF/);
-  assert.match(shared, /empty user-level MCP file/);
+  assert.match(shared, /isolated empty user-level MCP config/);
   assert.match(shared, /does not hide repository-scoped Cursor MCP/);
   assert.match(shared, /Do not wrap `git commit`/);
   assert.match(shared, /Do not collapse MRR into a generic family panel/);

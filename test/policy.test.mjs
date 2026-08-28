@@ -106,7 +106,7 @@ test("crr findings do not enter the durable ledger", () => {
   assert.deepEqual(outstandingFindings([crr, mrr], claim).map((item) => item.id), ["F1"]);
 });
 
-test("mrr gate requires persona lanes and accepts two GOs after a terminal failure", () => {
+test("mrr gate requires finding-free GOs from all three personas", () => {
   const reviews = [
     mrrComplete("deep-code-review", "sol-run"),
     mrrComplete("structural-challenge", "grok-run"),
@@ -122,7 +122,8 @@ test("mrr gate requires persona lanes and accepts two GOs after a terminal failu
       { id: preferredId, event: "failed" }
     ]
   });
-  assert.equal(two.ready, true);
+  assert.equal(two.ready, false);
+  assert.match(two.reasons.join(" "), /missing fable-challenge review/);
   const missing = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: reviews.slice(0, 2) });
   assert.equal(missing.ready, false);
   assert.match(missing.reasons.join(" "), /missing fable-challenge review/);
@@ -229,12 +230,13 @@ test("reconciliation-only evidence clears findings without filling or replacing 
   }, delegation);
   assert.throws(() => validateReview({ ...adjudication, findings: ["New issue"] }, delegation), /cannot create new findings/);
   assert.throws(() => validateReview({ ...adjudication, unresolved: ["New question"] }, delegation), /cannot create new findings/);
+  assert.throws(() => validateReview({ ...adjudication, reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "No code changed." }] }, delegation), /rejected\|still_present/);
   assert.equal(adjudication.reconciliationOnly, true);
   assert.deepEqual(outstandingFindings([adverse, structural, fable, adjudication], claim), []);
   const gate = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [adverse, structural, fable, adjudication] });
-  assert.equal(gate.ready, true);
+  assert.equal(gate.ready, false);
   assert.equal(gate.lanes["deep-code-review"].reviewerTaskId, "sol-run");
-  assert.deepEqual(gate.reasons, []);
+  assert.match(gate.reasons.join(" "), /deep-code-review is not a finding-free GO/);
 });
 
 test("a later mrr GO does not silently clear a recorded finding", () => {

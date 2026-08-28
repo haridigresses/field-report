@@ -117,6 +117,27 @@ export function preferredAttemptFailed(delegations, scope) {
   return (delegations || []).some((item) => preferredCreated(item, scope, preferred) && failed.has(item.id));
 }
 
+export function preferredAttemptNeedsBackup(delegations, reviews, scope) {
+  if (preferredAttemptFailed(delegations, scope)) return true;
+  const preferred = LANE_SEATING[scope.role]?.preferred;
+  if (!preferred) return false;
+  const adverse = [...(reviews || [])].reverse().find((review) => review.role === scope.role
+    && review.verdict === "NO_GO"
+    && canonicalReviewModel(review.model) === preferred
+    && sameReviewTarget(review, scope.kind, scope.target)
+    && sameDeliveryUnit(review, scope));
+  if (!adverse) return false;
+  const ids = findingLedger(reviews).filter((finding) => finding.delegationId === adverse.delegationId).map((finding) => finding.id);
+  if (!ids.length) return false;
+  const adjudications = (reviews || []).filter((review) => review.reconciliationOnly === true
+    && sameReviewTarget(review, scope.kind, scope.target)
+    && sameDeliveryUnit(review, scope));
+  const rejected = new Set(adjudications.flatMap((review) => (review.reconciled || [])
+    .filter((entry) => entry.disposition === "rejected")
+    .map((entry) => entry.findingId)));
+  return ids.every((id) => rejected.has(id));
+}
+
 export function preferredAlreadyAttempted(delegations, scope, reviews = []) {
   const preferred = LANE_SEATING[scope.role]?.preferred;
   if (!preferred) return false;
@@ -174,7 +195,8 @@ export function validateReview(input, delegation) {
     if (!Array.isArray(input.reconciled)) throw new Error("reconciled must be an array of finding reconciliations");
     for (const entry of input.reconciled) {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Each reconciled entry must be an object");
-      if (!String(entry.findingId || "").trim() || !["resolved", "rejected", "still_present"].includes(entry.disposition) || !String(entry.rationale || "").trim()) throw new Error("Each reconciled entry requires findingId, disposition resolved|rejected|still_present, and evidence-based rationale");
+      const dispositions = reconciliationOnly ? ["rejected", "still_present"] : ["resolved", "rejected", "still_present"];
+      if (!String(entry.findingId || "").trim() || !dispositions.includes(entry.disposition) || !String(entry.rationale || "").trim()) throw new Error(`Each reconciled entry requires findingId, disposition ${dispositions.join("|")}, and evidence-based rationale`);
     }
     const ids = input.reconciled.map((entry) => entry.findingId);
     if (new Set(ids).size !== ids.length) throw new Error("reconciled entries must reference distinct finding IDs");
@@ -247,25 +269,16 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
   const matching = reviews.filter((review) => isDurableReview(review) && review.claim === claim && (review.claimRevision ?? 1) === claimRevision && review.head === target.head && review.baseHead === target.baseHead);
   const lanes = Object.fromEntries(REVIEW_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
   const reasons = [];
-  const outstandingIds = new Set(outstandingFindings(reviews, claim).map((finding) => finding.id));
-  const ledger = findingLedger(reviews);
   let acceptedCount = 0;
-  let unavailable = 0;
   for (const role of REVIEW_ROLES) {
     const review = lanes[role];
-    const backupWithoutFailure = review && acceptedMrr(review) && canonicalReviewModel(review.model) === LANE_SEATING[role].backup && LANE_SEATING[role].backup !== LANE_SEATING[role].preferred && !preferredAttemptFailed(delegations, { role, kind: "mrr", target, claim, claimRevision });
+    const backupWithoutFailure = review && acceptedMrr(review) && canonicalReviewModel(review.model) === LANE_SEATING[role].backup && LANE_SEATING[role].backup !== LANE_SEATING[role].preferred && !preferredAttemptNeedsBackup(delegations, reviews, { role, kind: "mrr", target, claim, claimRevision });
     if (review && acceptedMrr(review) && !backupWithoutFailure) acceptedCount += 1;
     else if (backupWithoutFailure) reasons.push(`${role} backup requires a terminal preferred-model failure`);
-    else if (review && review.verdict === "NO_GO") {
-      const reviewFindingIds = ledger.filter((finding) => finding.delegationId === review.delegationId).map((finding) => finding.id);
-      if (reviewFindingIds.length && reviewFindingIds.every((id) => !outstandingIds.has(id))) unavailable += 1;
-      else reasons.push(`${role} is not a finding-free GO`);
-    }
+    else if (review && review.verdict === "NO_GO") reasons.push(`${role} is not a finding-free GO`);
     else if (review && !acceptedMrr(review)) reasons.push(`${role} is not a finding-free GO`);
-    else if (preferredAttemptFailed(delegations, { role, kind: "mrr", target, claim, claimRevision })) unavailable += 1;
     else reasons.push(`missing ${role} review`);
   }
-  if (acceptedCount < 2 && unavailable > 0 && !reasons.length) reasons.push("Review requires two finding-free persona GOs");
   const reviewerIds = REVIEW_ROLES.map((role) => lanes[role]?.reviewerTaskId).filter(Boolean);
   if (new Set(reviewerIds).size !== reviewerIds.length) reasons.push("Review lanes require distinct reviewer task IDs");
   if (workstream.ownerTaskId && reviewerIds.includes(workstream.ownerTaskId)) reasons.push("Workstream owner cannot satisfy an independent review");
@@ -273,7 +286,7 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
     if (review.ownerTaskIdAtBrief && review.ownerTaskIdAtBrief === review.reviewerTaskId) reasons.push(`${review.role} reviewer was the workstream owner when its review brief was created`);
   }
   for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
-  return { ready: reasons.length === 0 && acceptedCount >= 2, kind: "mrr", target, reasons, lanes };
+  return { ready: reasons.length === 0 && acceptedCount === REVIEW_ROLES.length, kind: "mrr", target, reasons, lanes };
 }
 
 export function latestClaimReviews(reviews, workstream) {

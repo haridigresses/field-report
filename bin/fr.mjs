@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore } from "../src/store.mjs";
-import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, findingLedger, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, RECONCILIATION_ROLE, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, findingLedger, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, preferredAttemptNeedsBackup, RECONCILIATION_ROLE, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 import { fableInvokeCommand, solInvokeCommand } from "../src/machines.mjs";
@@ -315,8 +315,8 @@ async function main() {
         ? `${role} preferred ${seated.preferred} already failed on this claim and target; do not retry that provider`
         : `${role} preferred ${seated.preferred} was already attempted on this claim and target`);
     }
-    if (kind === "mrr" && !reconciliationOnly && seated.model === seated.backup && seated.model !== seated.preferred && !preferredAttemptFailed(delegations, scope)) {
-      throw new Error(`${role} backup requires a terminal ${seated.preferred} failure on this target first`);
+    if (kind === "mrr" && !reconciliationOnly && seated.model === seated.backup && seated.model !== seated.preferred && !preferredAttemptNeedsBackup(delegations, reviews, scope)) {
+      throw new Error(`${role} backup requires a terminal ${seated.preferred} failure or an independently rejected preferred-model NO_GO on this target first`);
     }
     const outstanding = kind === "mrr" && (role === "deep-code-review" || reconciliationOnly) ? outstandingFindings(reviews, stream.claim).filter((finding) => !reconciliationOnly || (finding.head === target.head && finding.baseHead === target.baseHead)).map(({ id, category, text }) => ({ id, category, text })) : [];
     if (reconciliationOnly && !outstanding.length) throw new Error("Reconciliation requires outstanding MRR findings");
@@ -346,7 +346,7 @@ async function main() {
     if (!bound) throw new Error("Review fail requires an already-bound run");
     if (bound.taskId !== taskId) throw new Error("Failed review task ID must match its explicit delegation binding");
     await store.addDelegationEvent(stream.id, delegationId, { event: "failed", taskId, reason });
-    return process.stdout.write(`Recorded terminal ${delegation.role} review failure for ${delegationId}. Do not retry that provider.${reviewKind(delegation.kind) === "mrr" ? " Use the named backup only if you still need that persona; two finding-free GOs already pass when this lane is unavailable." : ""}\n`);
+    return process.stdout.write(`Recorded terminal ${delegation.role} review failure for ${delegationId}. Do not retry that provider.${reviewKind(delegation.kind) === "mrr" ? " Use the named backup to complete this required persona." : ""}\n`);
   }
   if (command === "review" && positional[0] === "record") {
     const stream = await store.workstream(positional[1]);
@@ -368,6 +368,8 @@ async function main() {
       const delivered = new Set((delegation.outstanding || []).map((finding) => finding.id));
       const authors = new Set(findingLedger(await store.reviews(stream.id)).filter((finding) => delivered.has(finding.id)).map((finding) => finding.reviewerTaskId).filter(Boolean));
       if (authors.has(validated.reviewerTaskId)) throw new Error("A reviewer cannot adjudicate its own MRR finding");
+      const personaReviewers = new Set((await store.reviews(stream.id)).filter((review) => REVIEW_ROLES.includes(review.role) && review.head === delegation.head && review.baseHead === delegation.baseHead && review.claim === delegation.claim && (review.claimRevision ?? 1) === (delegation.claimRevision ?? 1)).map((review) => review.reviewerTaskId).filter(Boolean));
+      if (personaReviewers.has(validated.reviewerTaskId)) throw new Error("A participating persona reviewer cannot perform the fresh adjudication");
     }
     const currentTarget = await targetFor(stream, delegation.kind);
     const stale = (delegation.claimRevision ?? 1) !== (stream.claimRevision ?? 1) || delegation.head !== currentTarget.head || delegation.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && delegation.tree !== currentTarget.tree);
