@@ -110,12 +110,17 @@ test("mrr briefs seat Sol, Grok, and Fable and isolate reviewers from AF", async
   assert.equal(deep.execution.mcp, "none");
   assert.match(deep.execution.launch, /codex exec -m gpt-5.6-sol/);
   assert.match(deep.execution.launch, /--ignore-user-config/);
+  assert.match(deep.execution.launch, /--color never/);
+  assert.doesNotMatch(deep.execution.launch, /--ask-for-approval/);
   assert.match(structural.execution.launch, /fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json/);
   assert.doesNotMatch(structural.execution.launch, /--force|--yolo|--mode ask|--approve-mcps/);
   assert.match(fable.execution.launch, /--model claude-fable-5/);
   assert.doesNotMatch(fable.execution.launch, /anthropic\.claude-fable-5/);
-  assert.match(fable.execution.launch, /Bash\(git diff \*\)/);
+  assert.match(fable.execution.launch, /git rev-parse HEAD/);
+  assert.match(fable.execution.launch, /git status --porcelain/);
   assert.match(fable.execution.launch, /--strict-mcp-config/);
+  assert.match(fable.execution.launch, new RegExp(`Bash\\(git diff --no-ext-diff --no-textconv ${fable.delegation.baseHead} ${fable.delegation.head} --\\)`));
+  assert.doesNotMatch(fable.execution.launch, /Bash\(git diff \*\)/);
   assert.doesNotMatch(fable.execution.launch, /claude-aws/);
   assert.doesNotMatch(fable.execution.launch, /Bash\(git \*\)/);
   assert.match(deep.prompt, /kind=mrr/);
@@ -130,6 +135,9 @@ test("mrr native route isolates a fresh subagent", async () => {
   assert.equal(native.execution.route, "native");
   assert.match(native.execution.launch, /fresh native gpt-5.6-sol subagent/);
   assert.match(native.execution.launch, /no MCP servers, including agent-fixes/);
+  const nativeFable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge", "--route", "native"], repo, state));
+  assert.equal(nativeFable.execution.route, "native");
+  assert.match(nativeFable.execution.launch, /fresh native claude-fable-5 subagent/);
 });
 
 test("deep mrr briefs carry outstanding findings; crr findings do not", async () => {
@@ -193,8 +201,14 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /green checkout hook is not CRR/);
   assert.match(shared, /empty GitHub check rollup is not evidence that CI ran/);
   assert.match(shared, /fr gate bots` stays BLOCKED until checks are observed/);
+  assert.match(shared, /My Machines worker/);
+  assert.match(shared, /native same-type/);
+  assert.match(shared, /fr machines invoke/);
+  assert.doesNotMatch(shared, /accessible\.sol|fr machines status|fr machines worker/);
   const help = await run(["help"], root, path.join(root, "state"));
   assert.doesNotMatch(help, /fr question|fr catchup|fr publish|fr delegate/);
+  assert.match(help, /fr machines invoke/);
+  assert.doesNotMatch(help, /fr machines \[status\|worker\]|fr machines status|fr machines worker/);
 });
 
 const mrrModels = {

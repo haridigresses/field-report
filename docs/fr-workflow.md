@@ -11,6 +11,7 @@ Field Report binds a delivery unit and records review evidence. The owner launch
 - Reconcile MRR findings against the stated claim, code, tests, and product contracts—not by vote or by commissioning reviews until one returns GO.
 - Preserve user merge authority. Do not auto-open a pull request. After the pre-CI MRR gate is READY, the owner may open a PR or the user may. Field Report never merges.
 - Scores explain the evidence. They never override a verdict, unreconciled MRR finding, stale target, or failed deterministic gate. `fr context` and `fr review status` print the latest scores and structural risk for each seat on this claim even when the gate is blocked. Higher structural risk is worse.
+- Cursor Cloud Agents invoke Sol (`codex`) and Fable (`claude`) on the user's machine only while a My Machines worker for that checkout is running. Prefer a native same-type path when the invoking agent is that family; Cloud Agents are third-party and should use `fr machines invoke`. Field Report does not probe host accessibility or start workers. Start a worker for this checkout only with Cursor's `agent worker start --name local --worker-dir <this-repo>`. If the invoke fails, report it; do not substitute Cursor-hosted models. Use ordinary `claude`, never `claude-aws`.
 
 ### CRR
 

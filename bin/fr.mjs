@@ -9,23 +9,23 @@ import { createStore } from "../src/store.mjs";
 import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
+import { fableInvokeCommand, solInvokeCommand } from "../src/machines.mjs";
 
 const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const store = createStore();
 const REVIEW_EXECUTION = Object.freeze({ conversationInheritance: "none", mcp: "none" });
-const LAUNCH = Object.freeze({
-  "gpt-5.6-sol": "codex exec -m gpt-5.6-sol -s read-only --ignore-user-config --json -o <output> -C <repo> - < <prompt>",
-  "grok-4.6": "fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust -- \"$(< <prompt>)\"",
-  "claude-fable-5": "claude --print --permission-mode dontAsk --allowedTools \"Read,Grep,Glob,Bash(git diff *)\" --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --output-format json --no-session-persistence --model claude-fable-5 \"$(< <prompt>)\""
-});
+const GROK_LAUNCH = "fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust -- \"$(< <prompt>)\"";
 
-function launchFor(seated) {
+function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = {}) {
   if (seated.role === CRR_ROLE && seated.route === "native") {
     return `Launch a fresh ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes. Prefer a local model; use cloud only if local cannot produce an envelope. Do not pass the owner conversation.`;
   }
   if (seated.route === "native") return `Launch a fresh native ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes; do not pass the owner conversation.`;
-  return LAUNCH[seated.model] || `Launch ${seated.model} without MCP servers or AF. Prefer local; cloud only if needed.`;
+  if (seated.model === "gpt-5.6-sol") return solInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review" });
+  if (seated.model === "claude-fable-5") return fableInvokeCommand({ promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA" });
+  if (seated.model === "grok-4.6") return GROK_LAUNCH;
+  return `Launch ${seated.model} without MCP servers or AF. Prefer local; cloud only if needed.`;
 }
 
 function usage() {
@@ -52,9 +52,10 @@ fr gate crr [id]
 fr gate open [id]
 fr gate bots <id>
 fr hook install|status|uninstall <project-id>
+fr machines invoke sol|fable --prompt-file <path> [--cwd <path>] [--kind review|work] [--base <sha>] [--head <sha>]
 fr workflow [shared|coordinator|workstream|reviewer]
 
-Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge.`;
+Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge. Cursor Cloud Agents reach Sol and Fable on this host through My Machines when a worker for that checkout is online.`;
 }
 
 function parse(values) {
@@ -307,8 +308,9 @@ async function main() {
     }
     const outstanding = kind === "mrr" && (role === "deep-code-review" || flags.reconcile) ? outstandingFindings(await store.reviews(stream.id), stream.claim).map(({ id, category, text }) => ({ id, category, text })) : [];
     const inventory = await diffInventory(target);
+    const project = await store.project(stream.project);
     const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ...(outstanding.length ? { outstanding } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
-    const execution = { ...REVIEW_EXECUTION, preferred: seated.preferred, backup: seated.backup, model: seated.model, route: seated.route, launch: launchFor(seated) };
+    const execution = { ...REVIEW_EXECUTION, preferred: seated.preferred, backup: seated.backup, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: project.repoPath, baseSha: target.baseHead, headSha: target.head }) };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "bind") {
@@ -448,6 +450,22 @@ async function main() {
       return process.stdout.write(`${project.id}: removed checkout hook.\n`);
     }
     throw new Error("Use fr hook install|status|uninstall <project-id>");
+  }
+
+  if (command === "machines") {
+    const action = positional[0];
+    const cwd = flags.cwd ? path.resolve(flags.cwd) : process.cwd();
+    if (action === "status" || action === "worker") {
+      throw new Error("Field Report does not probe host accessibility or start My Machines workers. Start a worker for this checkout with Cursor's agent CLI. Print a Sol or Fable command with fr machines invoke.");
+    }
+    if (action === "invoke") {
+      const provider = requireValue(positional[1], "Specify sol or fable");
+      const promptFile = path.resolve(requireValue(flags["prompt-file"], "Specify --prompt-file"));
+      if (provider === "sol") return process.stdout.write(`${solInvokeCommand({ promptFile, cwd, kind: flags.kind || "review" })}\n`);
+      if (provider === "fable") return process.stdout.write(`${fableInvokeCommand({ promptFile, cwd, baseSha: requireValue(flags.base, "Specify --base <sha>"), headSha: requireValue(flags.head, "Specify --head <sha>") })}\n`);
+      throw new Error("Invoke provider must be sol or fable");
+    }
+    throw new Error("Use fr machines invoke sol|fable --prompt-file <path>");
   }
 
   if (command === "workflow") {
