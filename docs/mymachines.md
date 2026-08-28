@@ -24,13 +24,13 @@ fr machines status
 
 `accessible` is true only when both `codex` and `claude` resolve. Do not restore `claude-aws`.
 
-3. Start one long-lived worker per checkout. Field Report prints the commands:
+3. Start one long-lived worker. Field Report prints a single command with a `--worker-dir` for each checkout:
 
 ```bash
 fr machines worker
 ```
 
-The default machine name is `local`. Override with `--name`. Keep each process running while Cloud Agents should be able to invoke the CLIs. A worker is bound to the git remote of `--worker-dir`; start a separate worker in each Field Report project checkout.
+The default machine name is `local`. Override with `--name`. Keep that process running while Cloud Agents should be able to invoke the CLIs. The Cursor agent CLI allows only one worker daemon per user data dir; extra `agent worker start` processes fail on `worker.lock`. `--worker-dir` is repeatable, so one `local` process can expose every Field Report checkout.
 
 4. Route work to this host while it is online:
 

@@ -21,11 +21,13 @@ const cli = path.resolve("bin/fr.mjs");
 const sha = "a".repeat(40);
 const head = "b".repeat(40);
 
-test("worker start commands are one checkout each and quote paths", () => {
+test("worker start commands dedupe checkouts and quote paths", () => {
   const dirs = workerDirs([{ id: "aon", repoPath: "/tmp/aon" }, { id: "dup", repoPath: "/tmp/aon" }], "/tmp/field-report");
   assert.deepEqual(dirs.map((entry) => entry.dir), ["/tmp/aon", "/tmp/field-report"]);
   assert.match(workerStartCommand({ workerDir: "/tmp/My Repo" }), /--name local/);
   assert.match(workerStartCommand({ workerDir: "/tmp/My Repo" }), /--worker-dir '\/tmp\/My Repo'/);
+  const combined = workerStartCommand({ name: "desk", workerDirs: ["/tmp/aon", "/tmp/My Repo"] });
+  assert.equal(combined, "agent worker start --name desk --worker-dir /tmp/aon --worker-dir '/tmp/My Repo'");
 });
 
 test("Sol and Fable invoke commands use the login shell and exact CLIs", () => {
@@ -57,12 +59,14 @@ test("machines status probes the login shell and withholds accessible until both
   assert.equal(missingAgent.clis.codex.path, "/opt/codex");
   assert.equal(missingAgent.workerName, DEFAULT_WORKER_NAME);
   assert.equal(missingAgent.workers.length, 1);
+  assert.equal(missingAgent.workerCommand, workerStartCommand({ workerDir: "/tmp/aon" }));
   found.agent = "/opt/agent";
   delete found.claude;
   const missingFable = await machinesStatus({ run, cwd: "/tmp/aon", promptFile: "/tmp/prompt.txt" });
   assert.equal(missingFable.accessible, false);
   assert.match(printMachinesStatus(missingFable), /UNAVAILABLE/);
   assert.match(printMachinesStatus(missingFable), /ordinary `claude`/);
+  assert.match(printMachinesStatus(missingFable), /repeatable --worker-dir/);
 });
 
 test("CLI prints worker start commands and exact invoke lines", async () => {
@@ -73,6 +77,7 @@ test("CLI prints worker start commands and exact invoke lines", async () => {
   await exec(process.execPath, [cli, "project", "add", "sample", "--label", "Sample", "--repo", repo], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } });
   const worker = (await exec(process.execPath, [cli, "machines", "worker", "--name", "desk"], { cwd: repo, env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout.trim();
   assert.equal(worker, workerStartCommand({ name: "desk", workerDir: repo }));
+  assert.doesNotMatch(worker, /\n/);
   const status = JSON.parse((await exec(process.execPath, [cli, "machines", "status", "--json"], { cwd: repo, env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout);
   assert.equal(status.workerName, "local");
   assert.equal(typeof status.accessible, "boolean");

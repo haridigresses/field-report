@@ -459,8 +459,8 @@ async function main() {
     const cwd = flags.cwd ? path.resolve(flags.cwd) : process.cwd();
     if (action === "status" || action === "worker") {
       const status = await machinesStatus({ run: exec, workerName, projects: await store.projects(), cwd });
-      if (flags.json) return process.stdout.write(`${JSON.stringify(action === "worker" ? { workerName: status.workerName, workers: status.workers } : status, null, 2)}\n`);
-      if (action === "worker") return process.stdout.write(`${status.workers.map((worker) => worker.command).join("\n")}\n`);
+      if (flags.json) return process.stdout.write(`${JSON.stringify(action === "worker" ? { workerName: status.workerName, command: status.workerCommand, workers: status.workers } : status, null, 2)}\n`);
+      if (action === "worker") return process.stdout.write(`${status.workerCommand}\n`);
       return process.stdout.write(`${printMachinesStatus(status)}\n`);
     }
     if (action === "invoke") {

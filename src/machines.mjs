@@ -27,9 +27,19 @@ function resolveWorkerDir(directory) {
   try { return realpathSync(resolved); } catch { return resolved; }
 }
 
-export function workerStartArgv({ name = DEFAULT_WORKER_NAME, workerDir }) {
-  const directory = resolveWorkerDir(workerDir);
-  return ["agent", "worker", "start", "--name", name, "--worker-dir", directory];
+export function workerStartArgv({ name = DEFAULT_WORKER_NAME, workerDir, workerDirs: dirs }) {
+  const directories = [];
+  const seen = new Set();
+  for (const directory of dirs || (workerDir == null ? [] : [workerDir])) {
+    const resolved = resolveWorkerDir(directory);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    directories.push(resolved);
+  }
+  if (!directories.length) throw new Error("worker-dir is required");
+  const argv = ["agent", "worker", "start", "--name", name];
+  for (const directory of directories) argv.push("--worker-dir", directory);
+  return argv;
 }
 
 export function workerStartCommand(options) {
@@ -122,6 +132,7 @@ export async function machinesStatus({
   for (const name of names) resolved[name] = await resolveCommand(name, { run, env, shell });
   const clis = Object.fromEntries(names.map((name) => [name, cliRecord(name, resolved[name])]));
   const dirs = workerDirs(projects, cwd);
+  const workerCommand = workerStartCommand({ name: workerName, workerDirs: dirs.map((entry) => entry.dir) });
   const workers = dirs.map((entry) => ({
     project: entry.id,
     dir: entry.dir,
@@ -136,6 +147,7 @@ export async function machinesStatus({
   return {
     accessible,
     workerName,
+    workerCommand,
     shell,
     clis,
     workers,
@@ -159,8 +171,9 @@ export function printMachinesStatus(status) {
     `Local Sol+Fable CLIs: ${status.accessible ? "ACCESSIBLE" : "UNAVAILABLE"}`,
     ...Object.values(status.clis).map((cli) => `- ${cli.name}: ${cli.available ? cli.path : "missing"}`),
     "",
-    "Start one worker per checkout and keep it running:",
-    ...status.workers.map((worker) => `- ${worker.project}: ${worker.command}`),
+    "Start one worker daemon and keep it running. Extra checkouts are repeatable --worker-dir flags:",
+    `- ${status.workerCommand}`,
+    ...status.workers.map((worker) => `  ${worker.project}: ${worker.dir}`),
     "",
     "Route Cloud Agents to this host with worker=" + status.workerName + " or machine=" + status.workerName + " while it is online.",
     "Sol reviews use gpt-5.6-sol through `codex exec` in the login shell.",
