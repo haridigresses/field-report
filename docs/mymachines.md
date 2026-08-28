@@ -27,6 +27,8 @@ fr machines invoke sol --prompt-file /tmp/sol.txt --cwd /path/to/repo --kind rev
 fr machines invoke fable --prompt-file /tmp/fable.txt --cwd /path/to/repo --base <40-char-sha> --head <40-char-sha>
 ```
 
+Sol CLI reviews use `gpt-5.6-sol` through `codex exec`. Fable CLI uses `claude-fable-5` through ordinary `claude` after confirming `HEAD` matches the brief and the worktree is clean, with Bash limited to the exact `git diff` of the brief SHAs.
+
 If that command fails, report the failure. Do not treat a missing binary, a failed login, or a disconnected worker as a reason to substitute Cursor-hosted Sol/Fable models. Use ordinary `claude`, never `claude-aws`.
 
 Bind the provider-run ID or last-message path with `fr review bind` before `fr review record`.

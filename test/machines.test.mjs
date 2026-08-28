@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { quote } from "../src/hooks.mjs";
-import { fableInvokeCommand, solInvokeCommand } from "../src/machines.mjs";
+import { fableInvokeCommand, fableInvokeInner, solInvokeCommand } from "../src/machines.mjs";
 
 const exec = promisify(execFile);
 const cli = path.resolve("bin/fr.mjs");
@@ -28,7 +28,8 @@ test("Sol and Fable invoke commands use the login shell and the shared CLI recip
   assert.doesNotMatch(fable, /claude-aws/);
   assert.match(fable, new RegExp(`test "\\$\\(git rev-parse HEAD\\)" = "${head}"`));
   assert.match(fable, new RegExp(`Bash\\(git diff --no-ext-diff --no-textconv ${sha} ${head} --\\)`));
-  assert.equal(fable, `zsh -ic ${quote(`cd "/tmp/work repo" && test "$(git rev-parse HEAD)" = "${head}" && claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff --no-ext-diff --no-textconv ${sha} ${head} --)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model claude-fable-5 "$(< "/tmp/brief's.txt")"`)}`);
+  assert.match(fable, /git status --porcelain/);
+  assert.equal(fable, `zsh -ic ${quote(`cd "/tmp/work repo" && test "$(git rev-parse HEAD)" = "${head}" && test -z "$(git status --porcelain)" && claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff --no-ext-diff --no-textconv ${sha} ${head} --)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model claude-fable-5 "$(< "/tmp/brief's.txt")"`)}`);
 });
 
 test("CLI prints exact invoke lines and refuses status or worker commands", async () => {
@@ -51,4 +52,31 @@ test("CLI prints exact invoke lines and refuses status or worker commands", asyn
   assert.equal(invoke, fableInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: head }));
   const sol = (await exec(process.execPath, [cli, "machines", "invoke", "sol", "--prompt-file", prompt, "--cwd", repo, "--kind", "review"], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout.trim();
   assert.equal(sol, solInvokeCommand({ promptFile: prompt, cwd: repo, kind: "review" }));
+});
+
+test("Fable inner command checks HEAD and a clean worktree before invoking claude", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-fable-run-"));
+  const repo = path.join(root, "repo");
+  const bin = path.join(root, "bin");
+  const prompt = path.join(root, "prompt.txt");
+  const log = path.join(root, "claude.log");
+  await mkdir(bin);
+  await writeFile(prompt, "brief");
+  await writeFile(path.join(bin, "claude"), `#!/bin/sh\nprintf '%s\\n' "$PWD" "$@" > ${JSON.stringify(log)}\n`);
+  await chmod(path.join(bin, "claude"), 0o755);
+  await exec("git", ["init", "-b", "main", repo]);
+  await exec("git", ["-C", repo, "config", "user.email", "test@example.com"]);
+  await exec("git", ["-C", repo, "config", "user.name", "test"]);
+  await writeFile(path.join(repo, "file.txt"), "ok\n");
+  await exec("git", ["-C", repo, "add", "file.txt"]);
+  await exec("git", ["-C", repo, "commit", "-m", "init"]);
+  const realHead = (await exec("git", ["-C", repo, "rev-parse", "HEAD"])).stdout.trim();
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  await exec("sh", ["-c", fableInvokeInner({ promptFile: prompt, cwd: repo, baseSha: realHead, headSha: realHead })], { env });
+  const logged = await readFile(log, "utf8");
+  assert.ok(logged.includes(repo));
+  assert.match(logged, /claude-fable-5/);
+  await assert.rejects(exec("sh", ["-c", fableInvokeInner({ promptFile: prompt, cwd: repo, baseSha: realHead, headSha: head })], { env }));
+  await writeFile(path.join(repo, "file.txt"), "dirty\n");
+  await assert.rejects(exec("sh", ["-c", fableInvokeInner({ promptFile: prompt, cwd: repo, baseSha: realHead, headSha: realHead })], { env }));
 });

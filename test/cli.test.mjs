@@ -117,6 +117,7 @@ test("mrr briefs seat Sol, Grok, and Fable and isolate reviewers from AF", async
   assert.match(fable.execution.launch, /--model claude-fable-5/);
   assert.doesNotMatch(fable.execution.launch, /anthropic\.claude-fable-5/);
   assert.match(fable.execution.launch, /git rev-parse HEAD/);
+  assert.match(fable.execution.launch, /git status --porcelain/);
   assert.match(fable.execution.launch, /--strict-mcp-config/);
   assert.match(fable.execution.launch, new RegExp(`Bash\\(git diff --no-ext-diff --no-textconv ${fable.delegation.baseHead} ${fable.delegation.head} --\\)`));
   assert.doesNotMatch(fable.execution.launch, /Bash\(git diff \*\)/);
