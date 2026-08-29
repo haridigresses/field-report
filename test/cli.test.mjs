@@ -140,7 +140,7 @@ test("mrr native route isolates a fresh subagent", async () => {
   assert.match(nativeFable.execution.launch, /fresh native claude-fable-5 subagent/);
 });
 
-test("deep mrr briefs carry outstanding findings; crr findings do not", async () => {
+test("deep mrr briefs carry older-head findings; exact-head findings go to reconciliation", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
   const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
@@ -159,7 +159,11 @@ test("deep mrr briefs carry outstanding findings; crr findings do not", async ()
   const fresh = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
   assert.equal(fresh.delegation.outstanding, undefined);
   const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
-  assert.deepEqual(deep.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
+  assert.equal(deep.delegation.outstanding, undefined);
+  const adjudication = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "reconciliation", "--reconcile", "--model", "gpt-5.6-sol"], repo, state));
+  assert.deepEqual(adjudication.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
+  assert.match(adjudication.prompt, /disposition=rejected/);
+  assert.doesNotMatch(adjudication.prompt, /disposition=resolved when fixed/);
 });
 
 test("a fresh reconciliation-only reviewer adjudicates the same-head packet without becoming a persona", async () => {
@@ -252,6 +256,9 @@ test("reconciliation-only briefs exclude findings from older heads", async () =>
   }));
   await assert.rejects(run(["review", "record", "outcome", "--file", file], repo, state), /must match the current exact head and claim/);
   await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "reconciliation", "--reconcile", "--model", "gpt-5.6-sol"], repo, state), /requires outstanding MRR findings/);
+  const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
+  assert.deepEqual(deep.delegation.outstanding, [{ id: "F1", category: "finding", text: "Old-head defect" }]);
+  assert.match(deep.prompt, /disposition=resolved when fixed/);
 });
 
 test("an mrr provider failure does not satisfy its persona", async () => {
@@ -281,9 +288,12 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /All three personas require finding-free GOs/i);
   assert.match(shared, /independent same-head adjudication/);
   assert.match(shared, /--role reconciliation --reconcile/);
+  assert.match(shared, /Exact-head disputes go exclusively/);
+  assert.match(shared, /same independent adjudicator may continue/);
+  assert.match(shared, /Do not launch concurrent adjudicators/);
   assert.match(shared, /Do not auto-open a pull request/);
   assert.match(shared, /Reviewers must not use MCP servers or AF/);
-  assert.match(shared, /isolated empty user-level MCP config/);
+  assert.match(shared, /empty user-level MCP file/);
   assert.match(shared, /does not hide repository-scoped Cursor MCP/);
   assert.match(shared, /Do not wrap `git commit`/);
   assert.match(shared, /Do not collapse MRR into a generic family panel/);

@@ -1,28 +1,37 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-// Preserve HOME so cursor-agent can use the caller's Keychain-backed login.
-// Point only CURSOR_CONFIG_DIR at a temp directory with an empty mcp.json.
-// This removes ambient user MCP servers without hiding repository-scoped MCP.
+// cursor-agent loads user MCP from $HOME/.cursor/mcp.json and ignores CURSOR_CONFIG_DIR.
+// Keep Keychain login by pointing HOME at a temp tree that symlinks ~/Library and
+// Cursor auth files, with an empty user mcp.json. Repository-scoped MCP is unchanged.
 
 const EMPTY = `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`;
-export function userMcpPath(configDir = path.join(os.homedir(), ".cursor")) {
-  return path.join(configDir, "mcp.json");
+const AUTH_FILES = ["cli-config.json", "agent-cli-state.json"];
+
+export function userMcpPath(home = os.homedir()) {
+  return path.join(home, ".cursor", "mcp.json");
 }
 
-export function isolatedCursorConfig() {
-  const config = mkdtempSync(path.join(os.tmpdir(), "fr-cursor-review-"));
-  mkdirSync(config, { recursive: true });
-  writeFileSync(userMcpPath(config), EMPTY, { mode: 0o600 });
-  return config;
+export function isolatedReviewHome(realHome = os.homedir()) {
+  const home = mkdtempSync(path.join(os.tmpdir(), "fr-cursor-review-"));
+  const cursor = path.join(home, ".cursor");
+  mkdirSync(cursor, { recursive: true });
+  writeFileSync(path.join(cursor, "mcp.json"), EMPTY, { mode: 0o600 });
+  for (const name of AUTH_FILES) {
+    const source = path.join(realHome, ".cursor", name);
+    if (existsSync(source)) symlinkSync(source, path.join(cursor, name));
+  }
+  const library = path.join(realHome, "Library");
+  if (existsSync(library)) symlinkSync(library, path.join(home, "Library"));
+  return home;
 }
 
 export async function runWithEmptyUserMcp(command, args, { home = os.homedir(), env = process.env, spawnFn = spawn } = {}) {
-  const isolated = isolatedCursorConfig();
-  const childEnv = { ...env, HOME: home, CURSOR_CONFIG_DIR: isolated };
+  const isolated = isolatedReviewHome(home);
+  const childEnv = { ...env, HOME: isolated };
   const cleanup = () => { try { rmSync(isolated, { recursive: true, force: true }); } catch {} };
   return new Promise((resolve, reject) => {
     const child = spawnFn(command, args, { stdio: "inherit", env: childEnv });

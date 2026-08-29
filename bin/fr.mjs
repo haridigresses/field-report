@@ -142,8 +142,11 @@ function reviewPrompt(stream, delegation, inventory) {
       : delegation.role === "structural-challenge"
         ? "Inspect necessity, simplicity, authority boundaries, scope, maintainability, and whether you would select the mechanism from scratch."
         : "Inspect the candidate as the independent challenge lane. Prefer Fable 5; a backup model is allowed when Fable cannot produce an envelope.";
+  const outstandingDispositions = delegation.reconciliationOnly
+    ? "use disposition=rejected when the finding does not hold, or still_present when it remains. Unchanged code cannot resolve a finding"
+    : "use disposition=resolved when fixed, rejected when inapplicable to the current claim, or still_present when it remains";
   const outstanding = delegation.outstanding?.length
-    ? `\n\nOutstanding MRR findings requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nAccount for every delivered ID in reconciled: use disposition=resolved when fixed, rejected when inapplicable to the current claim, or still_present when it remains. Give evidence-based rationale. Findings and unresolved are only for newly discovered issues; do not restate a delivered issue there. A NO_GO may rest on still_present reconciliations alone. Do not clear an issue on the owner's assurance alone.`
+    ? `\n\nOutstanding MRR findings requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nAccount for every delivered ID in reconciled: ${outstandingDispositions}. Give evidence-based rationale. Findings and unresolved are only for newly discovered issues; do not restate a delivered issue there. A NO_GO may rest on still_present reconciliations alone. Do not clear an issue on the owner's assurance alone.`
     : "";
   const files = (inventory.files || []).map((file) => `- ${file}`).join("\n") || "- none listed";
   const envelope = kind === "crr"
@@ -318,7 +321,13 @@ async function main() {
     if (kind === "mrr" && !reconciliationOnly && seated.model === seated.backup && seated.model !== seated.preferred && !preferredAttemptNeedsBackup(delegations, reviews, scope)) {
       throw new Error(`${role} backup requires a terminal ${seated.preferred} failure or an independently rejected preferred-model NO_GO on this target first`);
     }
-    const outstanding = kind === "mrr" && (role === "deep-code-review" || reconciliationOnly) ? outstandingFindings(reviews, stream.claim).filter((finding) => !reconciliationOnly || (finding.head === target.head && finding.baseHead === target.baseHead)).map(({ id, category, text }) => ({ id, category, text })) : [];
+    const outstanding = kind === "mrr" && (role === "deep-code-review" || reconciliationOnly)
+      ? outstandingFindings(reviews, stream.claim)
+        .filter((finding) => reconciliationOnly
+          ? finding.head === target.head && finding.baseHead === target.baseHead
+          : finding.head !== target.head)
+        .map(({ id, category, text }) => ({ id, category, text }))
+      : [];
     if (reconciliationOnly && !outstanding.length) throw new Error("Reconciliation requires outstanding MRR findings");
     const packetIds = outstanding.map((finding) => finding.id).sort();
     if (reconciliationOnly && reviews.some((review) => sameReconciliationPacket(review, scope, packetIds))) throw new Error("This exact-head finding packet already has a completed reconciliation; do not shop for another adjudicator");
@@ -378,7 +387,7 @@ async function main() {
     if (stale && (validated.reconciled || []).some((entry) => entry.disposition !== "still_present")) throw new Error("A stale review may mark delivered findings still_present but may not resolve or reject them");
     const packet = new Set((delegation.outstanding || []).map((finding) => finding.id));
     for (const entry of validated.reconciled || []) if (!packet.has(entry.findingId)) throw new Error(`reconciled may only reference IDs from this brief's outstanding packet; out-of-packet ID: ${entry.findingId}`);
-    for (const delivered of delegation.outstanding || []) if (!(validated.reconciled || []).some((entry) => entry.findingId === delivered.id)) throw new Error(`reconciled must account for delivered issue ${delivered.id} as resolved, rejected, or still_present`);
+    for (const delivered of delegation.outstanding || []) if (!(validated.reconciled || []).some((entry) => entry.findingId === delivered.id)) throw new Error(`reconciled must account for delivered issue ${delivered.id} as ${delegation.reconciliationOnly ? "rejected or still_present" : "resolved, rejected, or still_present"}`);
     const { review, assignedFindingIds: assigned } = await store.addReview(stream.id, { ...validated, expectedClaimRevision: stream.claimRevision ?? 1, claimRevision: delegation.claimRevision ?? 1, ...(stale ? { staleAtRecord: true } : {}), ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null }, { beforeAppend: async () => {
       const latest = await targetFor(stream, delegation.kind);
       if (latest.head !== currentTarget.head || latest.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && latest.tree !== currentTarget.tree)) throw new Error("Repository target changed while the review was being recorded; retry against current state");
