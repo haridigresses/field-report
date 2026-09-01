@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { lstatSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -39,5 +40,13 @@ test("Cursor review helper writes empty user-level MCP and does not replace the 
   assert.notEqual(isolated, home);
   assert.deepEqual(JSON.parse(await readFile(path.join(isolated, ".cursor", "mcp.json"), "utf8")).mcpServers, {});
   assert.match(JSON.parse(await readFile(mcp, "utf8")).mcpServers.keep.command, /keep/);
+  await rm(isolated, { recursive: true, force: true });
+});
+
+test("isolated Cursor home links macOS Library when present", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "fr-cursor-library-"));
+  await mkdir(path.join(home, "Library"));
+  const isolated = isolatedCursorHome(home);
+  if (process.platform === "darwin") assert.equal(lstatSync(path.join(isolated, "Library")).isSymbolicLink(), true);
   await rm(isolated, { recursive: true, force: true });
 });

@@ -25,6 +25,8 @@ export function isolatedCursorHome(realHome = os.homedir()) {
     const source = path.join(realHome, ".cursor", name);
     if (existsSync(source)) symlinkSync(source, path.join(cursor, name));
   }
+  const library = path.join(realHome, "Library");
+  if (process.platform === "darwin" && existsSync(library)) symlinkSync(library, path.join(home, "Library"));
   return home;
 }
 

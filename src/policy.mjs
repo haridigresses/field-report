@@ -9,16 +9,17 @@ const SIGNAL_VALUES = {
 };
 
 export const CRR_ROLE = "crr";
+export const COURT_ROLE = "reconciliation";
 export const REVIEW_ROLES = ["deep-code-review", "structural-challenge", "fable-challenge"];
 export const REVIEW_MODELS = Object.freeze({
   sol: "gpt-5.6-sol",
   grok: "grok-4.6",
   fable: "claude-fable-5"
 });
-export const LANE_SEATING = Object.freeze({
-  "deep-code-review": { preferred: REVIEW_MODELS.sol, backup: REVIEW_MODELS.grok, preferredRoute: "cli", backupRoute: "cli" },
-  "structural-challenge": { preferred: REVIEW_MODELS.grok, backup: REVIEW_MODELS.sol, preferredRoute: "cli", backupRoute: "cli" },
-  "fable-challenge": { preferred: REVIEW_MODELS.fable, backup: REVIEW_MODELS.grok, preferredRoute: "cli", backupRoute: "cli" }
+export const INTENDED_MODELS = Object.freeze({
+  "deep-code-review": REVIEW_MODELS.sol,
+  "structural-challenge": REVIEW_MODELS.grok,
+  "fable-challenge": REVIEW_MODELS.fable
 });
 
 function assertScore(value, key) {
@@ -47,6 +48,14 @@ export function canonicalReviewModel(model) {
   return null;
 }
 
+export function reviewModelLabel(model) {
+  const canonical = canonicalReviewModel(model);
+  if (canonical === REVIEW_MODELS.sol) return "Sol";
+  if (canonical === REVIEW_MODELS.grok) return "Grok";
+  if (canonical === REVIEW_MODELS.fable) return "Fable";
+  return String(model || "unknown");
+}
+
 function providersFor(canonical) {
   if (canonical === REVIEW_MODELS.sol) return ["openai"];
   if (canonical === REVIEW_MODELS.fable) return ["anthropic"];
@@ -63,6 +72,14 @@ export function isDurableReview(review) {
   return review?.legacy !== true && reviewKind(review?.kind) === "mrr";
 }
 
+export function isPersonaReview(review) {
+  return isDurableReview(review) && REVIEW_ROLES.includes(review.role) && review.reconciliationOnly !== true;
+}
+
+export function isCourtReview(review) {
+  return isDurableReview(review) && (review.reconciliationOnly === true || review.role === COURT_ROLE);
+}
+
 export function identityKey(projectId, role) {
   if (!["coordinator", "owner"].includes(role)) throw new Error("Identity role must be coordinator or owner");
   const project = String(projectId || "").trim().toLowerCase();
@@ -74,20 +91,23 @@ export function seatingFor(role, model = null, route = null) {
   if (role === CRR_ROLE) {
     const selected = String(model || "local").trim();
     if (!selected) throw new Error("crr requires a model id");
-    return { role: CRR_ROLE, preferred: "local", backup: null, model: selected, route: route || "native" };
+    return { role: CRR_ROLE, intended: "local", model: selected, substituted: false, route: route || "native" };
+  }
+  if (role === COURT_ROLE) {
+    const selected = canonicalReviewModel(model);
+    if (!selected) throw new Error("Court requires --model gpt-5.6-sol, grok-4.6, or claude-fable-5");
+    return { role: COURT_ROLE, intended: null, model: selected, substituted: false, route: route || "cli" };
   }
   if (!REVIEW_ROLES.includes(role)) throw new Error("Unknown review role");
-  const lane = LANE_SEATING[role];
-  const selected = model ? canonicalReviewModel(model) : lane.preferred;
+  const intended = INTENDED_MODELS[role];
+  const selected = model ? canonicalReviewModel(model) : intended;
   if (!selected) throw new Error(`Unknown review model: ${model}`);
-  if (selected !== lane.preferred && selected !== lane.backup) throw new Error(`${role} must use ${lane.preferred} or its named backup ${lane.backup}`);
-  const usingBackup = selected !== lane.preferred;
   return {
     role,
-    preferred: lane.preferred,
-    backup: lane.backup,
+    intended,
     model: selected,
-    route: route || (usingBackup ? lane.backupRoute : lane.preferredRoute)
+    substituted: selected !== intended,
+    route: route || "cli"
   };
 }
 
@@ -100,23 +120,12 @@ function sameDeliveryUnit(item, { claim, claimRevision }) {
   return item.claim === claim && (item.claimRevision ?? 1) === (claimRevision ?? 1);
 }
 
-function preferredCreated(item, { role, kind, target, claim, claimRevision }, preferred) {
-  return item.event === "created" && item.type === "review" && item.role === role && canonicalReviewModel(item.model) === preferred && sameReviewTarget(item, kind, target) && sameDeliveryUnit(item, { claim, claimRevision });
+function jobScope(item, { role, target, claim, claimRevision }) {
+  return item.role === role && sameReviewTarget(item, "mrr", target) && sameDeliveryUnit(item, { claim, claimRevision });
 }
 
-export function preferredAttemptFailed(delegations, scope) {
-  const preferred = LANE_SEATING[scope.role]?.preferred;
-  if (!preferred) return false;
-  const failed = new Set((delegations || []).filter((item) => item.event === "failed").map((item) => item.id));
-  return (delegations || []).some((item) => preferredCreated(item, scope, preferred) && failed.has(item.id));
-}
-
-export function preferredAlreadyAttempted(delegations, scope, reviews = []) {
-  const preferred = LANE_SEATING[scope.role]?.preferred;
-  if (!preferred) return false;
-  const used = new Set((delegations || []).filter((item) => item.event === "bound" || item.event === "failed" || item.event === "completed").map((item) => item.id));
-  for (const review of reviews || []) if (review.delegationId) used.add(review.delegationId);
-  return (delegations || []).some((item) => preferredCreated(item, scope, preferred) && used.has(item.id));
+export function substitutionReasonOf(item) {
+  return String(item?.substitutionReason || "").trim();
 }
 
 export function validateReview(input, delegation) {
@@ -127,7 +136,9 @@ export function validateReview(input, delegation) {
   const role = input.role;
   if (!kind) throw new Error("Review kind must be crr or mrr");
   if (kind === "crr" && role !== CRR_ROLE) throw new Error("CRR must use role crr");
-  if (kind === "mrr" && (!REVIEW_ROLES.includes(role) || role !== delegation?.role)) throw new Error("MRR must identify its exact review role");
+  if (kind === "mrr" && role === COURT_ROLE) {
+    if (delegation?.reconciliationOnly !== true || delegation?.role !== COURT_ROLE) throw new Error("Court must identify its exact reconciliation brief");
+  } else if (kind === "mrr" && (!REVIEW_ROLES.includes(role) || role !== delegation?.role)) throw new Error("MRR must identify its exact review role");
   if (kind === "crr" && role !== delegation?.role) throw new Error("Review must identify its exact review role");
   if (!UUID.test(input.delegationId || "") || input.delegationId !== delegation?.id) throw new Error("Review must reference its exact Field Report delegation ID");
   if (!String(input.claim || "").trim() || input.claim !== delegation?.claim) throw new Error("Review claim must match its exact Field Report delegation");
@@ -136,6 +147,7 @@ export function validateReview(input, delegation) {
   if (kind === "crr" && !SHA.test(input.tree || "")) throw new Error("CRR requires the exact staged tree SHA");
   if (kind === "mrr" && input.tree != null) throw new Error("MRR must not include a staged tree");
   if (reviewKind(delegation.kind) !== kind || delegation.role !== role || delegation.head !== input.head || delegation.baseHead !== input.baseHead || (kind === "crr" && delegation.tree !== input.tree)) throw new Error("Review target does not match its delegation");
+  let substitutionReason = "";
   if (kind === "crr") {
     if (!String(input.model || "").trim()) throw new Error("Review requires a model id");
     if (delegation.model && String(delegation.model) !== String(input.model)) throw new Error("Review model must match its exact delegation");
@@ -143,16 +155,25 @@ export function validateReview(input, delegation) {
   } else {
     const model = canonicalReviewModel(input.model);
     if (!model) throw new Error("Review model must be gpt-5.6-sol, grok-4.6, or claude-fable-5");
-    const lane = LANE_SEATING[role];
-    if (model !== lane.preferred && model !== lane.backup) throw new Error(`${role} must use ${lane.preferred} or its named backup ${lane.backup}`);
     if (delegation.model && canonicalReviewModel(delegation.model) !== model) throw new Error("Review model must match its exact delegation");
     if (!providersFor(model).includes(input.provider)) throw new Error(`Provider does not match review model ${model}`);
+    if (role !== COURT_ROLE) {
+      const intended = INTENDED_MODELS[role];
+      substitutionReason = substitutionReasonOf(input) || substitutionReasonOf(delegation);
+      if (model !== intended && !substitutionReason) throw new Error(`${role} substitution requires a non-empty substitutionReason; intended model is ${intended}`);
+      if (model === intended && substitutionReason) throw new Error("substitutionReason is only valid when the intended model was not used");
+      if (delegation.substitutionReason && substitutionReason !== substitutionReasonOf(delegation)) throw new Error("substitutionReason must match its exact delegation");
+    }
     input = { ...input, model };
   }
   if (!["native", "cli"].includes(input.route) || input.route !== delegation?.route) throw new Error("Review route must match its exact delegation");
   if (!Array.isArray(input.findings) || !input.findings.every((item) => typeof item === "string" && item.trim())) throw new Error("Review findings must be a nonblank string array");
   if (input.unresolved != null && (!Array.isArray(input.unresolved) || !input.unresolved.every((item) => typeof item === "string" && item.trim()))) throw new Error("Review unresolved must be a nonblank string array");
   const unresolved = Array.isArray(input.unresolved) ? input.unresolved : [];
+  if (role === COURT_ROLE) {
+    if (input.findings.length) throw new Error("Court cannot add findings");
+    if (unresolved.length) throw new Error("Court cannot add unresolved items");
+  }
   if (input.verdict === "NO_GO" && !noGoHasEvidence({ ...input, unresolved })) throw new Error("NO_GO requires at least one finding, unresolved item, or still_present reconciliation");
   if (!String(input.summary || "").trim()) throw new Error("Review requires a summary");
   for (const key of SCORE_KEYS) assertScore(input.scores?.[key], key);
@@ -166,23 +187,51 @@ export function validateReview(input, delegation) {
     if (!Array.isArray(input.reconciled)) throw new Error("reconciled must be an array of finding reconciliations");
     for (const entry of input.reconciled) {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error("Each reconciled entry must be an object");
-      if (!String(entry.findingId || "").trim() || !["resolved", "rejected", "still_present"].includes(entry.disposition) || !String(entry.rationale || "").trim()) throw new Error("Each reconciled entry requires findingId, disposition resolved|rejected|still_present, and evidence-based rationale");
+      const allowed = role === COURT_ROLE ? ["rejected", "still_present"] : ["resolved", "rejected", "still_present"];
+      if (!String(entry.findingId || "").trim() || !allowed.includes(entry.disposition) || !String(entry.rationale || "").trim()) {
+        throw new Error(role === COURT_ROLE
+          ? "Each court entry requires findingId, disposition rejected|still_present, and evidence-based rationale"
+          : "Each reconciled entry requires findingId, disposition resolved|rejected|still_present, and evidence-based rationale");
+      }
     }
     const ids = input.reconciled.map((entry) => entry.findingId);
     if (new Set(ids).size !== ids.length) throw new Error("reconciled entries must reference distinct finding IDs");
+  } else if (role === COURT_ROLE) {
+    throw new Error("Court must adjudicate the delivered packet");
   }
-  return { ...input, kind, role, unresolved, findings: [...input.findings], scores: { ...input.scores }, ...(input.reconciled ? { reconciled: input.reconciled.map((entry) => ({ ...entry })) } : {}) };
+  return {
+    ...input,
+    kind,
+    role,
+    unresolved,
+    findings: [...input.findings],
+    scores: { ...input.scores },
+    ...(substitutionReason ? { substitutionReason } : {}),
+    ...(input.reconciled ? { reconciled: input.reconciled.map((entry) => ({ ...entry })) } : {}),
+    ...(role === COURT_ROLE ? { reconciliationOnly: true, jobRole: delegation.jobRole } : {})
+  };
 }
 
 export function findingLedger(reviews) {
   const entries = [];
   let counter = 0;
   for (const review of reviews) {
-    if (!isDurableReview(review)) continue;
+    if (!isDurableReview(review) || isCourtReview(review)) continue;
     for (const [category, items] of [["finding", review.findings], ["unresolved", review.unresolved]]) {
       for (const text of items || []) {
         counter += 1;
-        entries.push({ id: `F${counter}`, category, text, role: review.role, claim: review.claim });
+        entries.push({
+          id: `F${counter}`,
+          category,
+          text,
+          role: review.role,
+          claim: review.claim,
+          head: review.head,
+          baseHead: review.baseHead,
+          delegationId: review.delegationId,
+          reviewerTaskId: review.reviewerTaskId,
+          model: review.model
+        });
       }
     }
   }
@@ -211,10 +260,99 @@ export function outstandingFindings(reviews, claim) {
   });
 }
 
-const acceptedMrr = (review) => isDurableReview(review) && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && hasMrrSignals(review) && !(review.findings || []).length && !(review.unresolved || []).length;
+export function outstandingForDeep(reviews, claim, target) {
+  return outstandingFindings(reviews, claim).filter((finding) => !finding.head || finding.head !== target.head);
+}
+
+export function occupantPacket(reviews, occupant) {
+  if (!occupant) return [];
+  return findingLedger(reviews).filter((finding) => finding.delegationId === occupant.delegationId);
+}
+
+export function outstandingOccupantPacket(reviews, occupant, claim) {
+  const outstanding = new Set(outstandingFindings(reviews, claim).map((finding) => finding.id));
+  return occupantPacket(reviews, occupant).filter((finding) => outstanding.has(finding.id));
+}
+
+const acceptedMrr = (review) => isPersonaReview(review) && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && hasMrrSignals(review) && !(review.findings || []).length && !(review.unresolved || []).length;
 const acceptedCrr = (review) => reviewKind(review?.kind) === "crr" && review?.role === CRR_ROLE && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && !(review.findings || []).length && !(review.unresolved || []).length;
 
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
+
+export function personaJobReviews(reviews, { role, target, claim, claimRevision }) {
+  return (reviews || []).filter((review) => isPersonaReview(review) && review.staleAtRecord !== true && jobScope(review, { role, target, claim, claimRevision }));
+}
+
+export function courtFullyRejected(reviews, occupant, { target, claim, claimRevision }) {
+  const ids = occupantPacket(reviews, occupant).map((finding) => finding.id);
+  if (!ids.length) return false;
+  const courts = (reviews || []).filter((review) => isCourtReview(review) && review.staleAtRecord !== true && sameReviewTarget(review, "mrr", target) && sameDeliveryUnit(review, { claim, claimRevision }));
+  const latest = new Map();
+  for (const court of courts) {
+    for (const entry of court.reconciled || []) {
+      if (ids.includes(entry.findingId)) latest.set(entry.findingId, entry.disposition);
+    }
+  }
+  return ids.every((id) => latest.get(id) === "rejected");
+}
+
+export function occupyingReview(reviews, scope) {
+  const persona = personaJobReviews(reviews, scope);
+  if (!persona.length) return null;
+  let occupant = persona[0];
+  while (occupant?.verdict === "NO_GO" && courtFullyRejected(reviews, occupant, scope)) {
+    const index = persona.indexOf(occupant);
+    const rerun = persona.slice(index + 1).find((review) => canonicalReviewModel(review.model) === canonicalReviewModel(occupant.model));
+    if (!rerun) return occupant;
+    occupant = rerun;
+  }
+  return occupant;
+}
+
+export function substitutionLine(review, role = review?.role) {
+  if (!review || !substitutionReasonOf(review)) return null;
+  const intended = INTENDED_MODELS[role] || INTENDED_MODELS[review.role];
+  return `${role}: ${review.verdict} via ${reviewModelLabel(review.model)}; intended ${reviewModelLabel(intended)} was substituted: ${substitutionReasonOf(review)}`;
+}
+
+export function assertPersonaJobAvailable(reviews, { role, target, claim, claimRevision, model, substitutionReason }) {
+  const selected = canonicalReviewModel(model);
+  if (!REVIEW_ROLES.includes(role)) throw new Error("Unknown review role");
+  if (!selected) throw new Error(`Unknown review model: ${model}`);
+  const occupant = occupyingReview(reviews, { role, target, claim, claimRevision });
+  const intended = INTENDED_MODELS[role];
+  if (!occupant) {
+    if (selected !== intended && !String(substitutionReason || "").trim()) {
+      throw new Error(`${role} substitution requires a non-empty substitutionReason; intended model is ${intended}`);
+    }
+    return;
+  }
+  if (acceptedMrr(occupant) || occupant.verdict === "GO") {
+    throw new Error(`${role} job is occupied by a completed envelope`);
+  }
+  if (courtFullyRejected(reviews, occupant, { role, target, claim, claimRevision })) {
+    if (canonicalReviewModel(occupant.model) !== selected) {
+      throw new Error(`${role} court granted one rerun of ${reviewModelLabel(occupant.model)}; do not substitute another model`);
+    }
+    return;
+  }
+  throw new Error(`${role} job is occupied by ${reviewModelLabel(occupant.model)} ${occupant.verdict}; adjudicate that packet or fix on a new head`);
+}
+
+export function assertCourtJobAvailable(reviews, { jobRole, target, claim, claimRevision, model, reviewerTaskId, ownerTaskId }) {
+  if (!REVIEW_ROLES.includes(jobRole)) throw new Error("Court requires the persona job being adjudicated");
+  const selected = canonicalReviewModel(model);
+  if (!selected) throw new Error("Court requires --model gpt-5.6-sol, grok-4.6, or claude-fable-5");
+  const occupant = occupyingReview(reviews, { role: jobRole, target, claim, claimRevision });
+  if (!occupant) throw new Error(`${jobRole} has no occupying envelope to adjudicate`);
+  if (occupant.verdict !== "NO_GO") throw new Error(`${jobRole} is a finding-free GO; court does not apply`);
+  if (!occupantPacket(reviews, occupant).length) throw new Error(`${jobRole} occupying NO_GO has no packet to adjudicate; fix on a new head`);
+  if (canonicalReviewModel(occupant.model) === selected) throw new Error("Court cannot be the model that produced the occupying NO_GO");
+  if (ownerTaskId && reviewerTaskId && ownerTaskId === reviewerTaskId) throw new Error("Workstream owner cannot adjudicate");
+  if (occupant.reviewerTaskId && reviewerTaskId && occupant.reviewerTaskId === reviewerTaskId) throw new Error("The occupying persona cannot adjudicate its own packet");
+}
+
+const acceptedMrrOccupant = (review) => Boolean(review) && acceptedMrr(review);
 
 function evaluateCrrGate({ target, workstream, reviews }) {
   const claim = workstream.claim ?? workstream.summary;
@@ -230,27 +368,25 @@ function evaluateCrrGate({ target, workstream, reviews }) {
   for (const review of accepted) {
     if (review.ownerTaskIdAtBrief && review.ownerTaskIdAtBrief === review.reviewerTaskId) reasons.push("crr reviewer was the workstream owner when its review brief was created");
   }
-  return { ready: reasons.length === 0, kind: "crr", target, reasons, lanes: { [CRR_ROLE]: latestFor(matching, acceptedCrr) || latest } };
+  return { ready: reasons.length === 0, kind: "crr", target, reasons, notes: [], lanes: { [CRR_ROLE]: latestFor(matching, acceptedCrr) || latest } };
 }
 
-function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
+function evaluateMrrGate({ target, workstream, reviews }) {
   const claim = workstream.claim ?? workstream.summary;
   const claimRevision = workstream.claimRevision ?? 1;
-  const matching = reviews.filter((review) => isDurableReview(review) && review.claim === claim && (review.claimRevision ?? 1) === claimRevision && review.head === target.head && review.baseHead === target.baseHead);
-  const lanes = Object.fromEntries(REVIEW_ROLES.map((role) => [role, latestFor(matching, (review) => review.role === role)]));
+  const scope = { target, claim, claimRevision };
+  const lanes = Object.fromEntries(REVIEW_ROLES.map((role) => [role, occupyingReview(reviews, { role, ...scope })]));
   const reasons = [];
+  const notes = [];
   let acceptedCount = 0;
-  let unavailable = 0;
   for (const role of REVIEW_ROLES) {
     const review = lanes[role];
-    const backupWithoutFailure = review && acceptedMrr(review) && canonicalReviewModel(review.model) === LANE_SEATING[role].backup && LANE_SEATING[role].backup !== LANE_SEATING[role].preferred && !preferredAttemptFailed(delegations, { role, kind: "mrr", target, claim, claimRevision });
-    if (review && acceptedMrr(review) && !backupWithoutFailure) acceptedCount += 1;
-    else if (backupWithoutFailure) reasons.push(`${role} backup requires a terminal preferred-model failure`);
-    else if (review && !acceptedMrr(review)) reasons.push(`${role} is not a finding-free GO`);
-    else if (preferredAttemptFailed(delegations, { role, kind: "mrr", target, claim, claimRevision })) unavailable += 1;
+    if (review && acceptedMrrOccupant(review)) acceptedCount += 1;
+    else if (review && !acceptedMrrOccupant(review)) reasons.push(`${role} is not a finding-free GO`);
     else reasons.push(`missing ${role} review`);
+    const substitution = substitutionLine(review, role);
+    if (substitution) notes.push(substitution);
   }
-  if (acceptedCount < 2 && unavailable > 0 && !reasons.length) reasons.push("Review requires two finding-free persona GOs");
   const reviewerIds = REVIEW_ROLES.map((role) => lanes[role]?.reviewerTaskId).filter(Boolean);
   if (new Set(reviewerIds).size !== reviewerIds.length) reasons.push("Review lanes require distinct reviewer task IDs");
   if (workstream.ownerTaskId && reviewerIds.includes(workstream.ownerTaskId)) reasons.push("Workstream owner cannot satisfy an independent review");
@@ -258,13 +394,13 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
     if (review.ownerTaskIdAtBrief && review.ownerTaskIdAtBrief === review.reviewerTaskId) reasons.push(`${review.role} reviewer was the workstream owner when its review brief was created`);
   }
   for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
-  return { ready: reasons.length === 0 && acceptedCount >= 2, kind: "mrr", target, reasons, lanes };
+  return { ready: reasons.length === 0 && acceptedCount === 3, kind: "mrr", target, reasons, notes, lanes };
 }
 
 export function latestClaimReviews(reviews, workstream) {
   const claim = workstream.claim ?? workstream.summary;
   const claimRevision = workstream.claimRevision ?? 1;
-  const matching = (reviews || []).filter((review) => review?.legacy !== true && review.claim === claim && (review.claimRevision ?? 1) === claimRevision);
+  const matching = (reviews || []).filter((review) => review?.legacy !== true && !isCourtReview(review) && review.claim === claim && (review.claimRevision ?? 1) === claimRevision);
   return Object.fromEntries([CRR_ROLE, ...REVIEW_ROLES].map((role) => [role, latestFor(matching, (review) => review.role === role)]));
 }
 

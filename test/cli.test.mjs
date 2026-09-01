@@ -159,25 +159,70 @@ test("deep mrr briefs carry outstanding findings; crr findings do not", async ()
   const fresh = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
   assert.equal(fresh.delegation.outstanding, undefined);
   const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
-  assert.deepEqual(deep.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
+  assert.equal(deep.delegation.outstanding, undefined);
+  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state));
+  assert.equal(court.delegation.role, "reconciliation");
+  assert.equal(court.delegation.jobRole, "structural-challenge");
+  assert.deepEqual(court.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
+  assert.match(court.prompt, /disposition=rejected when inapplicable/);
+  await writeFile(path.join(repo, "README.md"), "older-head\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
+  await exec("git", ["commit", "-m", "move head"], { cwd: repo });
+  const deepLater = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
+  assert.deepEqual(deepLater.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
 });
 
-test("an mrr provider failure does not satisfy its persona", async () => {
+test("a completed envelope occupies the job; fail and shopping are not escapes", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
-  const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
   const unused = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
-  assert.notEqual(unused.delegation.id, structural.delegation.id);
-  await assert.rejects(run(["review", "fail", "outcome", "--delegation", structural.delegation.id, "--task-id", "never-started", "--reason", "no envelope"], repo, state), /already-bound run/);
-  await run(["review", "bind", "outcome", "--delegation", unused.delegation.id, "--task-id", "cursor-cli"], repo, state);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state), /already attempted on this claim and target/);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state), /backup requires a terminal grok-4.6 failure/);
-  await run(["review", "fail", "outcome", "--delegation", unused.delegation.id, "--task-id", "cursor-cli", "--reason", "no envelope"], repo, state);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state), /already failed on this claim and target/);
-  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /missing deep-code-review review/);
-  const backup = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state));
-  assert.equal(backup.delegation.model, "gpt-5.6-sol");
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge", "--model", "gpt-5.6-sol"], repo, state), /named backup/);
+  const second = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
+  assert.notEqual(unused.delegation.id, second.delegation.id);
+  await assert.rejects(run(["review", "fail", "outcome", "--delegation", unused.delegation.id, "--task-id", "never-started", "--reason", "no envelope"], repo, state), /does not record provider failure/);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state), /substitution requires a non-empty substitutionReason/);
+  const substitute = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--substitution-reason", "Grok hung after bind"], repo, state));
+  assert.equal(substitute.delegation.model, "gpt-5.6-sol");
+  assert.equal(substitute.delegation.substitutionReason, "Grok hung after bind");
+  await run(["review", "bind", "outcome", "--delegation", unused.delegation.id, "--task-id", "grok-run"], repo, state);
+  const review = {
+    reviewComplete: true, independent: true, delegationId: unused.delegation.id, reviewerTaskId: "grok-run",
+    claim: unused.delegation.claim, kind: "mrr", role: "structural-challenge",
+    head: unused.delegation.head, baseHead: unused.delegation.baseHead,
+    provider: "cursor", model: "grok-4.6", route: "cli", verdict: "NO_GO", findings: ["Unsound boundary"], unresolved: [],
+    summary: "Reviewed", ...scores("NO_GO")
+  };
+  const file = path.join(repo, "review.json");
+  await writeFile(file, JSON.stringify(review));
+  await run(["review", "record", "outcome", "--file", file], repo, state);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--substitution-reason", "shop for GO"], repo, state), /occupied by Grok NO_GO/);
+  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /not a finding-free GO/);
+  const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
+  assert.match(status, /BLOCKED/);
+  assert.match(status, /structural-challenge is not a finding-free GO/);
+});
+
+test("attested substitution fills the job and prints on status", async () => {
+  const { repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  await recordMrrLane(repo, state, "deep-code-review", "sol-run");
+  await recordMrrLane(repo, state, "fable-challenge", "fable-run");
+  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--substitution-reason", "Grok hung after bind"], repo, state));
+  assert.equal(brief.execution.substituted, true);
+  await run(["review", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "sol-sub"], repo, state);
+  const review = {
+    reviewComplete: true, independent: true, delegationId: brief.delegation.id, reviewerTaskId: "sol-sub",
+    claim: brief.delegation.claim, kind: "mrr", role: "structural-challenge",
+    head: brief.delegation.head, baseHead: brief.delegation.baseHead,
+    provider: "openai", model: "gpt-5.6-sol", route: "cli", verdict: "GO", findings: [], unresolved: [],
+    substitutionReason: "Grok hung after bind", summary: "Complete adversarial review", ...scores("GO")
+  };
+  const file = path.join(path.dirname(repo), "sol-sub.json");
+  await writeFile(file, JSON.stringify(review));
+  await run(["review", "record", "outcome", "--file", file], repo, state);
+  const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
+  assert.match(status, /READY/);
+  assert.match(status, /structural-challenge: GO via Sol; intended Grok was substituted: Grok hung after bind/);
+  assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
 });
 
 test("coordinator workflow keeps user-owned collaborators and the thin loop", async () => {
@@ -186,7 +231,11 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(output, /When the user explicitly asks for an agent they will work with directly, create a user-owned task/);
   const shared = await run(["workflow"], root, path.join(root, "state"));
   assert.match(shared, /CRR against the exact staged tree/);
-  assert.match(shared, /two finding-free persona GOs/i);
+  assert.match(shared, /three finding-free persona GOs/i);
+  assert.match(shared, /occupying envelope/);
+  assert.match(shared, /fr review adjudicate/);
+  assert.match(shared, /does not record provider failure/);
+  assert.doesNotMatch(shared, /two finding-free persona GOs/i);
   assert.match(shared, /Do not auto-open a pull request/);
   assert.match(shared, /Reviewers must not use MCP servers or AF/);
   assert.match(shared, /empty user-level MCP file/);
@@ -208,6 +257,8 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   const help = await run(["help"], root, path.join(root, "state"));
   assert.doesNotMatch(help, /fr question|fr catchup|fr publish|fr delegate/);
   assert.match(help, /fr machines invoke/);
+  assert.match(help, /fr review adjudicate/);
+  assert.doesNotMatch(help, /fr review fail/);
   assert.doesNotMatch(help, /fr machines \[status\|worker\]|fr machines status|fr machines worker/);
 });
 
@@ -229,7 +280,7 @@ async function recordMrrLane(repo, state, role, taskId, stream = "outcome") {
     verdict: "GO", findings: [], unresolved: [],
     summary: "Complete adversarial review", ...scores("GO")
   };
-  const file = path.join(repo, `${taskId}.json`);
+  const file = path.join(state, `${taskId}.json`);
   await writeFile(file, JSON.stringify(review));
   await run(["review", "record", stream, "--file", file], repo, state);
   return brief;

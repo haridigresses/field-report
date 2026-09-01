@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const claim = "Ship the stated delivery unit";
@@ -16,7 +16,9 @@ const models = {
 
 const mrrDelegation = (role, id = randomUUID(), extras = {}) => ({
   id, event: "created", type: "review", role, kind: "mrr", claim, claimRevision: 1, head, baseHead,
-  model: extras.model || models[role].model, route: extras.route || "cli", ownerTaskIdAtBrief: "owner"
+  model: extras.model || models[role]?.model || extras.model, route: extras.route || "cli", ownerTaskIdAtBrief: "owner",
+  ...(extras.substitutionReason ? { substitutionReason: extras.substitutionReason } : {}),
+  ...(extras.reconciliationOnly ? { reconciliationOnly: true, jobRole: extras.jobRole } : {})
 });
 
 const crrDelegation = (id = randomUUID(), extras = {}) => ({
@@ -34,6 +36,7 @@ function mrrEnvelope(d, reviewerTaskId, extras = {}) {
     scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 88, evidenceConfidence: 92, outcomeConfidence: 91 },
     scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low risk", implementationQuality: "Strong", evidenceConfidence: "Direct evidence", outcomeConfidence: "Outcome supported" },
     necessity: "necessary", simplerPath: "No simpler reliable path was found.", scopeDrift: "none", contractIntegrity: "sound", evidenceQuality: "strong",
+    ...(extras.substitutionReason ? { substitutionReason: extras.substitutionReason } : {}),
     ...("reconciled" in extras ? { reconciled: extras.reconciled } : {})
   };
 }
@@ -76,7 +79,10 @@ test("crr seating accepts local models; mrr seating is Sol/Grok/Fable", () => {
   assert.equal(seatingFor("structural-challenge").model, "grok-4.6");
   assert.equal(seatingFor("fable-challenge").model, "claude-fable-5");
   assert.throws(() => seatingFor("fable-challenge", "anthropic.claude-fable-5"), /Unknown review model/);
-  assert.throws(() => seatingFor("fable-challenge", "gpt-5.6-sol"), /named backup/);
+  const substituted = seatingFor("fable-challenge", "gpt-5.6-sol");
+  assert.equal(substituted.model, "gpt-5.6-sol");
+  assert.equal(substituted.substituted, true);
+  assert.equal(substituted.intended, "claude-fable-5");
   assert.throws(() => seatingFor("cheap-review"), /Unknown review role/);
 });
 
@@ -106,61 +112,59 @@ test("crr findings do not enter the durable ledger", () => {
   assert.deepEqual(outstandingFindings([crr, mrr], claim).map((item) => item.id), ["F1"]);
 });
 
-test("mrr gate requires persona lanes and accepts two GOs after a terminal failure", () => {
+test("mrr gate requires three finding-free persona GOs", () => {
   const reviews = [
     mrrComplete("deep-code-review", "sol-run"),
     mrrComplete("structural-challenge", "grok-run"),
     mrrComplete("fable-challenge", "fable-run")
   ];
   assert.equal(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews }).ready, true);
-  const preferredId = randomUUID();
   const two = evaluateGate({
     kind: "mrr", target: mrrTarget, workstream,
     reviews: reviews.slice(0, 2),
     delegations: [
-      { id: preferredId, event: "created", type: "review", role: "fable-challenge", kind: "mrr", model: "claude-fable-5", claim, claimRevision: 1, head, baseHead },
-      { id: preferredId, event: "failed" }
+      { id: randomUUID(), event: "created", type: "review", role: "fable-challenge", kind: "mrr", model: "claude-fable-5", claim, claimRevision: 1, head, baseHead },
+      { id: randomUUID(), event: "failed" }
     ]
   });
-  assert.equal(two.ready, true);
+  assert.equal(two.ready, false);
+  assert.match(two.reasons.join(" "), /missing fable-challenge review/);
   const missing = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: reviews.slice(0, 2) });
   assert.equal(missing.ready, false);
   assert.match(missing.reasons.join(" "), /missing fable-challenge review/);
   assert.throws(() => evaluateGate({ kind: "coverage", target: mrrTarget, workstream, reviews }), /crr or mrr/);
 });
 
-test("a backup mrr review requires a terminal preferred-model failure", () => {
-  const preferredId = randomUUID();
+test("a substituted mrr GO fills its job and does not require a provider failure", () => {
   const reviews = [
     mrrComplete("deep-code-review", "sol-run"),
-    mrrComplete("structural-challenge", "sol-backup", { model: "gpt-5.6-sol", provider: "openai" }),
+    mrrComplete("structural-challenge", "sol-sub", { model: "gpt-5.6-sol", provider: "openai", substitutionReason: "Grok hung after bind" }),
     mrrComplete("fable-challenge", "fable-run")
   ];
-  const delegations = [
-    { id: preferredId, event: "created", type: "review", role: "structural-challenge", kind: "mrr", model: "grok-4.6", claim, claimRevision: 1, head, baseHead },
-    { id: preferredId, event: "failed" }
-  ];
-  assert.equal(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews, delegations }).ready, true);
-  const skipped = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
-  assert.equal(skipped.ready, false);
-  assert.match(skipped.reasons.join(" "), /backup requires a terminal preferred-model failure/);
+  const ready = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
+  assert.equal(ready.ready, true);
+  assert.match(ready.notes.join(" "), /structural-challenge: GO via Sol; intended Grok was substituted: Grok hung after bind/);
+  const bare = mrrDelegation("structural-challenge", undefined, { model: "gpt-5.6-sol" });
+  assert.throws(
+    () => validateReview(mrrEnvelope(bare, "sol-bare", { model: "gpt-5.6-sol", provider: "openai" }), bare),
+    /substitution requires a non-empty substitutionReason/
+  );
 });
 
-test("preferred-model failure is scoped to claim and exact target", () => {
-  const preferredId = randomUUID();
-  const scope = { role: "fable-challenge", kind: "mrr", target: mrrTarget, claim, claimRevision: 1 };
-  const unused = [{ id: preferredId, event: "created", type: "review", role: "fable-challenge", kind: "mrr", model: "claude-fable-5", claim, claimRevision: 1, head, baseHead }];
-  assert.equal(preferredAlreadyAttempted(unused, scope), false);
-  const bound = [...unused, { id: preferredId, event: "bound", taskId: "run-1" }];
-  assert.equal(preferredAlreadyAttempted(bound, scope), true);
-  const delegations = [
-    { id: preferredId, event: "created", type: "review", role: "fable-challenge", kind: "mrr", model: "claude-fable-5", claim, claimRevision: 1, head, baseHead },
-    { id: preferredId, event: "failed" }
+test("the first completed envelope occupies its persona job", () => {
+  const first = mrrComplete("structural-challenge", "grok-run");
+  const later = mrrComplete("structural-challenge", "grok-later", { verdict: "NO_GO", findings: ["Later defect"] });
+  const reviews = [
+    mrrComplete("deep-code-review", "sol-run"),
+    first,
+    mrrComplete("fable-challenge", "fable-run"),
+    later
   ];
-  assert.equal(preferredAlreadyAttempted(delegations, scope), true);
-  assert.equal(preferredAttemptFailed(delegations, scope), true);
-  assert.equal(preferredAttemptFailed(delegations, { ...scope, claim: "A different claim" }), false);
-  assert.equal(preferredAlreadyAttempted(delegations, { ...scope, claim: "A different claim" }), false);
+  const result = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
+  assert.equal(occupyingReview(reviews, { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 }).reviewerTaskId, "grok-run");
+  assert.equal(result.ready, false);
+  assert.match(result.reasons.join(" "), /unreconciled structural-challenge finding F1/);
+  assert.doesNotMatch(result.reasons.join(" "), /structural-challenge is not a finding-free GO/);
 });
 
 test("merge-ready accepts an exact-head skip after a prior finding-free MRR", () => {
@@ -281,7 +285,7 @@ test("mrr reviewer task IDs are distinct", () => {
   assert.match(duplicate.reasons.join(" "), /distinct reviewer task IDs/);
 });
 
-test("the latest matching mrr review is authoritative for its persona", () => {
+test("the occupying envelope is authoritative for its persona job", () => {
   const reviews = [
     mrrComplete("deep-code-review", "sol-run"),
     mrrComplete("structural-challenge", "grok-run"),
@@ -289,8 +293,9 @@ test("the latest matching mrr review is authoritative for its persona", () => {
     mrrComplete("structural-challenge", "grok-later", { verdict: "NO_GO", findings: ["Later defect"] })
   ];
   const result = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
+  assert.equal(result.lanes["structural-challenge"].reviewerTaskId, "grok-run");
   assert.equal(result.ready, false);
-  assert.match(result.reasons.join(" "), /structural-challenge is not a finding-free GO/);
+  assert.match(result.reasons.join(" "), /unreconciled/);
 });
 
 test("latestClaimReviews keeps the latest seat on the claim even when HEAD moved", () => {

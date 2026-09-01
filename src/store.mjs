@@ -217,7 +217,7 @@ export function createStore(root = defaultStateRoot()) {
       if ((await lines("delegations", stream.id)).some((item) => item.id === review.delegationId && item.event === "failed")) throw new Error("A failed review attempt is terminal; create a new brief to retry");
       const durable = (item) => item.legacy !== true && item.kind === "mrr";
       const priorFindingCount = prior.filter(durable).reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
-      if (beforeAppend) await beforeAppend();
+      if (beforeAppend) await beforeAppend(prior);
       await append("reviews", stream.id, review);
       if (review.delegationId) await append("delegations", stream.id, { id: review.delegationId, workstreamId: stream.id, event: "completed", at: review.recordedAt });
       const assignedFindingIds = durable(review)
