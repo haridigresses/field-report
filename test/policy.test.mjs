@@ -138,12 +138,12 @@ test("mrr gate requires three finding-free persona GOs", () => {
 test("a substituted mrr GO fills its job and does not require a provider failure", () => {
   const reviews = [
     mrrComplete("deep-code-review", "sol-run"),
-    mrrComplete("structural-challenge", "sol-sub", { model: "gpt-5.6-sol", provider: "openai", substitutionReason: "Grok hung after bind" }),
+    mrrComplete("structural-challenge", "sol-sub", { model: "gpt-5.6-sol", provider: "openai", substitutionReason: "cursor-agent not on PATH" }),
     mrrComplete("fable-challenge", "fable-run")
   ];
   const ready = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
   assert.equal(ready.ready, true);
-  assert.match(ready.notes.join(" "), /structural-challenge: GO via Sol; intended Grok was substituted: Grok hung after bind/);
+  assert.match(ready.notes.join(" "), /structural-challenge: GO via Sol; intended Grok was substituted: cursor-agent not on PATH/);
   const bare = mrrDelegation("structural-challenge", undefined, { model: "gpt-5.6-sol" });
   assert.throws(
     () => validateReview(mrrEnvelope(bare, "sol-bare", { model: "gpt-5.6-sol", provider: "openai" }), bare),

@@ -180,9 +180,9 @@ test("a completed envelope occupies the job; fail and shopping are not escapes",
   assert.notEqual(unused.delegation.id, second.delegation.id);
   await assert.rejects(run(["review", "fail", "outcome", "--delegation", unused.delegation.id, "--task-id", "never-started", "--reason", "no envelope"], repo, state), /does not record provider failure/);
   await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state), /substitution requires a non-empty substitutionReason/);
-  const substitute = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--substitution-reason", "Grok hung after bind"], repo, state));
+  const substitute = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--substitution-reason", "cursor-agent not on PATH"], repo, state));
   assert.equal(substitute.delegation.model, "gpt-5.6-sol");
-  assert.equal(substitute.delegation.substitutionReason, "Grok hung after bind");
+  assert.equal(substitute.delegation.substitutionReason, "cursor-agent not on PATH");
   await run(["review", "bind", "outcome", "--delegation", unused.delegation.id, "--task-id", "grok-run"], repo, state);
   const review = {
     reviewComplete: true, independent: true, delegationId: unused.delegation.id, reviewerTaskId: "grok-run",
@@ -206,7 +206,7 @@ test("attested substitution fills the job and prints on status", async () => {
   await featureBranch({ repo, state });
   await recordMrrLane(repo, state, "deep-code-review", "sol-run");
   await recordMrrLane(repo, state, "fable-challenge", "fable-run");
-  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--substitution-reason", "Grok hung after bind"], repo, state));
+  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--substitution-reason", "cursor-agent not on PATH"], repo, state));
   assert.equal(brief.execution.substituted, true);
   await run(["review", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "sol-sub"], repo, state);
   const review = {
@@ -214,14 +214,14 @@ test("attested substitution fills the job and prints on status", async () => {
     claim: brief.delegation.claim, kind: "mrr", role: "structural-challenge",
     head: brief.delegation.head, baseHead: brief.delegation.baseHead,
     provider: "openai", model: "gpt-5.6-sol", route: "cli", verdict: "GO", findings: [], unresolved: [],
-    substitutionReason: "Grok hung after bind", summary: "Complete adversarial review", ...scores("GO")
+    substitutionReason: "cursor-agent not on PATH", summary: "Complete adversarial review", ...scores("GO")
   };
   const file = path.join(path.dirname(repo), "sol-sub.json");
   await writeFile(file, JSON.stringify(review));
   await run(["review", "record", "outcome", "--file", file], repo, state);
   const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
   assert.match(status, /READY/);
-  assert.match(status, /structural-challenge: GO via Sol; intended Grok was substituted: Grok hung after bind/);
+  assert.match(status, /structural-challenge: GO via Sol; intended Grok was substituted: cursor-agent not on PATH/);
   assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
 });
 

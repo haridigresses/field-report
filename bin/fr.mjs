@@ -330,7 +330,7 @@ async function main() {
     return process.stdout.write(`Bound review ${event.id} to ${event.taskId}.\n`);
   }
   if (command === "review" && positional[0] === "fail") {
-    throw new Error("Field Report does not record provider failure. Repair or resume the intended run, or substitute with --substitution-reason before any envelope occupies the job.");
+    throw new Error("Field Report does not record provider failure. Repair or resume a started run. Substitute with --substitution-reason only before any envelope occupies the job, and only when the intended model cannot start (missing binary, authentication failure, or unavailable model).");
   }
   if (command === "review" && positional[0] === "adjudicate") {
     const stream = await store.workstream(positional[1]);
@@ -367,7 +367,6 @@ async function main() {
     if (!delegation) throw new Error("Review must reference its Field Report delegation. Repair the envelope from the brief; do not relaunch the reviewer for a schema mismatch.");
     const bound = delegationEvents.findLast((item) => item.id === envelope.delegationId && item.event === "bound");
     if (!bound || bound.taskId !== envelope.reviewerTaskId) throw new Error("Review task ID must match its explicit delegation binding. Repair the envelope from the brief; do not relaunch the reviewer for a schema mismatch.");
-    if (delegationEvents.some((item) => item.id === envelope.delegationId && item.event === "failed")) throw new Error("A failed review attempt is terminal; create a new brief to retry");
     const validated = validateReview(envelope, delegation);
     const currentTarget = await targetFor(stream, delegation.kind);
     const stale = (delegation.claimRevision ?? 1) !== (stream.claimRevision ?? 1) || delegation.head !== currentTarget.head || delegation.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && delegation.tree !== currentTarget.tree);

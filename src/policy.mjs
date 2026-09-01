@@ -283,12 +283,19 @@ export function personaJobReviews(reviews, { role, target, claim, claimRevision 
   return (reviews || []).filter((review) => isPersonaReview(review) && review.staleAtRecord !== true && jobScope(review, { role, target, claim, claimRevision }));
 }
 
+export function jobCourts(reviews, { jobRole, target, claim, claimRevision }) {
+  return (reviews || []).filter((review) => isCourtReview(review) && review.staleAtRecord !== true && (review.jobRole || null) === jobRole && sameReviewTarget(review, "mrr", target) && sameDeliveryUnit(review, { claim, claimRevision }));
+}
+
+export function participatingPersonaReviews(reviews, { target, claim, claimRevision }) {
+  return REVIEW_ROLES.flatMap((role) => personaJobReviews(reviews, { role, target, claim, claimRevision }));
+}
+
 export function courtFullyRejected(reviews, occupant, { target, claim, claimRevision }) {
   const ids = occupantPacket(reviews, occupant).map((finding) => finding.id);
   if (!ids.length) return false;
-  const courts = (reviews || []).filter((review) => isCourtReview(review) && review.staleAtRecord !== true && sameReviewTarget(review, "mrr", target) && sameDeliveryUnit(review, { claim, claimRevision }));
   const latest = new Map();
-  for (const court of courts) {
+  for (const court of jobCourts(reviews, { jobRole: occupant.role, target, claim, claimRevision })) {
     for (const entry of court.reconciled || []) {
       if (ids.includes(entry.findingId)) latest.set(entry.findingId, entry.disposition);
     }
@@ -299,14 +306,10 @@ export function courtFullyRejected(reviews, occupant, { target, claim, claimRevi
 export function occupyingReview(reviews, scope) {
   const persona = personaJobReviews(reviews, scope);
   if (!persona.length) return null;
-  let occupant = persona[0];
-  while (occupant?.verdict === "NO_GO" && courtFullyRejected(reviews, occupant, scope)) {
-    const index = persona.indexOf(occupant);
-    const rerun = persona.slice(index + 1).find((review) => canonicalReviewModel(review.model) === canonicalReviewModel(occupant.model));
-    if (!rerun) return occupant;
-    occupant = rerun;
-  }
-  return occupant;
+  const first = persona[0];
+  if (first.verdict !== "NO_GO" || !courtFullyRejected(reviews, first, scope)) return first;
+  const rerun = persona.slice(1).find((review) => canonicalReviewModel(review.model) === canonicalReviewModel(first.model));
+  return rerun || first;
 }
 
 export function substitutionLine(review, role = review?.role) {
@@ -330,12 +333,16 @@ export function assertPersonaJobAvailable(reviews, { role, target, claim, claimR
   if (acceptedMrr(occupant) || occupant.verdict === "GO") {
     throw new Error(`${role} job is occupied by a completed envelope`);
   }
-  if (courtFullyRejected(reviews, occupant, { role, target, claim, claimRevision })) {
-    if (canonicalReviewModel(occupant.model) !== selected) {
-      throw new Error(`${role} court granted one rerun of ${reviewModelLabel(occupant.model)}; do not substitute another model`);
+  const first = personaJobReviews(reviews, { role, target, claim, claimRevision })[0];
+  if (occupant !== first) throw new Error(`${role} authorized rerun occupied this job; fix on a new head`);
+  const courts = jobCourts(reviews, { jobRole: role, target, claim, claimRevision });
+  if (courts.length && courtFullyRejected(reviews, first, { target, claim, claimRevision })) {
+    if (canonicalReviewModel(first.model) !== selected) {
+      throw new Error(`${role} court granted one rerun of ${reviewModelLabel(first.model)}; do not substitute another model`);
     }
     return;
   }
+  if (courts.length) throw new Error(`${role} occupying packet already had its one court; fix on a new head`);
   throw new Error(`${role} job is occupied by ${reviewModelLabel(occupant.model)} ${occupant.verdict}; adjudicate that packet or fix on a new head`);
 }
 
@@ -347,9 +354,18 @@ export function assertCourtJobAvailable(reviews, { jobRole, target, claim, claim
   if (!occupant) throw new Error(`${jobRole} has no occupying envelope to adjudicate`);
   if (occupant.verdict !== "NO_GO") throw new Error(`${jobRole} is a finding-free GO; court does not apply`);
   if (!occupantPacket(reviews, occupant).length) throw new Error(`${jobRole} occupying NO_GO has no packet to adjudicate; fix on a new head`);
+  const first = personaJobReviews(reviews, { role: jobRole, target, claim, claimRevision })[0];
+  if (occupant !== first) throw new Error(`${jobRole} authorized rerun occupied this job; fix on a new head`);
+  if (jobCourts(reviews, { jobRole, target, claim, claimRevision }).length) throw new Error(`${jobRole} occupying packet already had its one court`);
   if (canonicalReviewModel(occupant.model) === selected) throw new Error("Court cannot be the model that produced the occupying NO_GO");
+  const participating = participatingPersonaReviews(reviews, { target, claim, claimRevision });
+  if (participating.some((review) => canonicalReviewModel(review.model) === selected)) {
+    throw new Error("Court cannot be a participating persona model on this target");
+  }
   if (ownerTaskId && reviewerTaskId && ownerTaskId === reviewerTaskId) throw new Error("Workstream owner cannot adjudicate");
-  if (occupant.reviewerTaskId && reviewerTaskId && occupant.reviewerTaskId === reviewerTaskId) throw new Error("The occupying persona cannot adjudicate its own packet");
+  if (reviewerTaskId && participating.some((review) => review.reviewerTaskId === reviewerTaskId)) {
+    throw new Error("A participating persona reviewer cannot adjudicate");
+  }
 }
 
 const acceptedMrrOccupant = (review) => Boolean(review) && acceptedMrr(review);

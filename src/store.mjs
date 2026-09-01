@@ -189,17 +189,10 @@ export function createStore(root = defaultStateRoot()) {
     return locked(async () => {
       const created = (await lines("delegations", stream.id)).find((item) => item.event === "created" && item.id === delegationId);
       if (!created) throw new Error(`Unknown delegation: ${delegationId}`);
+      if (value.event === "failed") throw new Error("Field Report does not record provider failure");
       if (value.event === "bound") {
         const existing = (await lines("delegations", stream.id)).findLast((item) => item.event === "bound" && item.id === delegationId);
         if (existing && existing.taskId !== value.taskId) throw new Error(`Delegation ${delegationId} is already bound to ${existing.taskId}`);
-      }
-      if (value.event === "failed") {
-        const events = await lines("delegations", stream.id);
-        const terminal = events.findLast((item) => item.id === delegationId && ["failed", "completed"].includes(item.event));
-        if (terminal) throw new Error(`Delegation ${delegationId} is already terminal`);
-        if ((await lines("reviews", stream.id)).some((review) => review.delegationId === delegationId)) throw new Error(`Delegation ${delegationId} already has a recorded review`);
-        const bound = events.findLast((item) => item.id === delegationId && item.event === "bound");
-        if (!bound || bound.taskId !== value.taskId) throw new Error("Failed delegation taskId must match its binding");
       }
       return append("delegations", stream.id, event);
     });
@@ -214,7 +207,6 @@ export function createStore(root = defaultStateRoot()) {
       if (expectedClaimRevision != null && current.claimRevision !== expectedClaimRevision) throw new Error("Workstream claim changed while the review was being recorded; retry against current state");
       const prior = await lines("reviews", stream.id);
       if (prior.some((item) => item.delegationId === review.delegationId)) throw new Error("A review delegation may be recorded only once");
-      if ((await lines("delegations", stream.id)).some((item) => item.id === review.delegationId && item.event === "failed")) throw new Error("A failed review attempt is terminal; create a new brief to retry");
       const durable = (item) => item.legacy !== true && item.kind === "mrr";
       const priorFindingCount = prior.filter(durable).reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
       if (beforeAppend) await beforeAppend(prior);

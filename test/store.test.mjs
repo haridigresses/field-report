@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { appendFile, mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createStore } from "../src/store.mjs";
@@ -68,24 +68,18 @@ test("store atomically records a review delegation once", async () => {
   assert.equal((await store.reviews("sample-outcome")).length, 1);
 });
 
-test("review failure and completion are one atomic terminal decision", async () => {
+test("store rejects provider-failure events and ignores historical failed records", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "fr-review-terminal-"));
   const store = createStore(root);
   await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
   await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
   const delegation = await store.addDelegation("sample-outcome", { type: "review" });
   await store.addDelegationEvent("sample-outcome", delegation.id, { event: "bound", taskId: "reviewer-1" });
-  const results = await Promise.allSettled([
-    store.addReview("sample-outcome", { delegationId: delegation.id, findings: [], unresolved: [] }),
-    store.addDelegationEvent("sample-outcome", delegation.id, { event: "failed", taskId: "reviewer-1", reason: "provider failed" })
-  ]);
-  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
-  assert.equal(results.filter((result) => result.status === "rejected").length, 1);
-  const recorded = (await store.reviews("sample-outcome")).some((review) => review.delegationId === delegation.id);
-  const failed = (await store.delegations("sample-outcome")).some((event) => event.id === delegation.id && event.event === "failed");
-  const completed = (await store.delegations("sample-outcome")).some((event) => event.id === delegation.id && event.event === "completed");
-  assert.notEqual(recorded, failed);
-  assert.equal(recorded, completed);
+  await assert.rejects(store.addDelegationEvent("sample-outcome", delegation.id, { event: "failed", taskId: "reviewer-1", reason: "provider failed" }), /does not record provider failure/);
+  await appendFile(path.join(root, "delegations", "sample-outcome.jsonl"), `${JSON.stringify({ id: delegation.id, workstreamId: "sample-outcome", event: "failed", taskId: "reviewer-1" })}\n`);
+  const recorded = await store.addReview("sample-outcome", { delegationId: delegation.id, findings: [], unresolved: [] });
+  assert.equal(recorded.review.delegationId, delegation.id);
+  assert.equal((await store.reviews("sample-outcome")).length, 1);
 });
 
 test("store rejects review recording against a concurrently changed claim", async () => {
