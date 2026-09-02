@@ -358,12 +358,8 @@ export function assertCourtJobAvailable(reviews, { jobRole, target, claim, claim
   if (occupant !== first) throw new Error(`${jobRole} authorized rerun occupied this job; fix on a new head`);
   if (jobCourts(reviews, { jobRole, target, claim, claimRevision }).length) throw new Error(`${jobRole} occupying packet already had its one court`);
   if (canonicalReviewModel(occupant.model) === selected) throw new Error("Court cannot be the model that produced the occupying NO_GO");
-  const participating = participatingPersonaReviews(reviews, { target, claim, claimRevision });
-  if (participating.some((review) => canonicalReviewModel(review.model) === selected)) {
-    throw new Error("Court cannot be a participating persona model on this target");
-  }
   if (ownerTaskId && reviewerTaskId && ownerTaskId === reviewerTaskId) throw new Error("Workstream owner cannot adjudicate");
-  if (reviewerTaskId && participating.some((review) => review.reviewerTaskId === reviewerTaskId)) {
+  if (reviewerTaskId && participatingPersonaReviews(reviews, { target, claim, claimRevision }).some((review) => review.reviewerTaskId === reviewerTaskId)) {
     throw new Error("A participating persona reviewer cannot adjudicate");
   }
 }

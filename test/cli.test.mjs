@@ -70,6 +70,7 @@ test("a next action is a sticky note on context and show", async () => {
   await assert.rejects(run(["update", "outcome", "--next"], repo, state), /Specify --next/);
   assert.match(await run(["update", "outcome", "--next", "Record CRR then commit"], repo, state), /Updated outcome/);
   assert.match(await run(["context", "outcome"], repo, state), /Next: Record CRR then commit/);
+  assert.match(await run(["context", "outcome"], repo, state), /Reviews never require permission/);
   assert.match(await run(["show", "outcome"], repo, state), /Next: Record CRR then commit/);
 });
 
@@ -232,6 +233,7 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   const shared = await run(["workflow"], root, path.join(root, "state"));
   assert.match(shared, /CRR against the exact staged tree/);
   assert.match(shared, /three finding-free persona GOs/i);
+  assert.match(shared, /Reviews never require permission/);
   assert.match(shared, /occupying envelope/);
   assert.match(shared, /fr review adjudicate/);
   assert.match(shared, /does not record provider failure/);

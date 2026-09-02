@@ -131,14 +131,19 @@ test("court cannot fill a persona job or use the occupying model", () => {
   assert.match(gate.reasons.join(" "), /structural-challenge is not a finding-free GO/);
 });
 
-test("court is one-shot and cannot be a participating persona", () => {
+test("court is one-shot and cannot reuse a participating reviewer", () => {
   const occupant = persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] });
   const deep = persona("deep-code-review", "sol-run");
+  const fable = persona("fable-challenge", "fable-run");
+  const panel = [occupant, deep, fable];
   const scope = { jobRole: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
-  assert.throws(() => assertCourtJobAvailable([occupant, deep], { ...scope, model: "gpt-5.6-sol" }), /participating persona model/);
-  assert.throws(() => assertCourtJobAvailable([occupant], { ...scope, model: "claude-fable-5", reviewerTaskId: "grok-run" }), /participating persona reviewer/);
-  assert.doesNotThrow(() => assertCourtJobAvailable([occupant], { ...scope, model: "claude-fable-5", reviewerTaskId: "fable-court" }));
-  const rejected = court("structural-challenge", "fable-court", { model: "claude-fable-5", provider: "anthropic", reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable." }] });
+  assert.doesNotThrow(() => assertCourtJobAvailable(panel, { ...scope, model: "gpt-5.6-sol" }));
+  assert.doesNotThrow(() => assertCourtJobAvailable(panel, { ...scope, model: "gpt-5.6-sol", reviewerTaskId: "sol-court" }));
+  assert.doesNotThrow(() => assertCourtJobAvailable(panel, { ...scope, model: "claude-fable-5", reviewerTaskId: "fable-court" }));
+  assert.throws(() => assertCourtJobAvailable(panel, { ...scope, model: "grok-4.6", reviewerTaskId: "grok-court" }), /cannot be the model that produced/);
+  assert.throws(() => assertCourtJobAvailable(panel, { ...scope, model: "gpt-5.6-sol", reviewerTaskId: "sol-run" }), /participating persona reviewer/);
+  assert.throws(() => assertCourtJobAvailable(panel, { ...scope, model: "claude-fable-5", reviewerTaskId: "grok-run" }), /participating persona reviewer/);
+  const rejected = court("structural-challenge", "sol-court", { reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable." }] });
   assert.throws(() => assertCourtJobAvailable([occupant, rejected], { ...scope, model: "gpt-5.6-sol" }), /already had its one court/);
   const rerunNoGo = persona("structural-challenge", "grok-rerun", { verdict: "NO_GO", findings: ["Still unsound"] });
   const afterRerun = [occupant, rejected, rerunNoGo];
