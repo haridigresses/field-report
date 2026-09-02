@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { normalizeReview } from "../src/envelope.mjs";
 import {
   assertCourtJobAvailable, assertPersonaJobAvailable, COURT_ROLE, evaluateGate, occupyingReview,
   outstandingForDeep, outstandingOccupantPacket, outstandingFindings, seatingFor, validateReview
@@ -155,6 +156,23 @@ test("court cannot add findings or resolve them", () => {
   const d = courtDelegation("structural-challenge");
   assert.throws(() => validateReview(courtEnvelope(d, "sol-court", { findings: ["New defect"], reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "n" }] }), d), /Court cannot add findings/);
   assert.throws(() => validateReview(courtEnvelope(d, "sol-court", { reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed." }] }), d), /rejected\|still_present/);
+});
+
+test("occupancy ignores envelope-supplied court and ledger flags", () => {
+  const d = mrrDelegation("structural-challenge");
+  const raw = envelope(d, "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] });
+  raw.reconciliationOnly = true;
+  raw.legacy = true;
+  raw.staleAtRecord = true;
+  raw.jobRole = "deep-code-review";
+  const poisoned = validateReview(normalizeReview(raw, d), d);
+  assert.equal(poisoned.reconciliationOnly, undefined);
+  assert.equal(poisoned.legacy, undefined);
+  assert.equal(poisoned.staleAtRecord, undefined);
+  assert.equal(poisoned.jobRole, undefined);
+  const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
+  assert.equal(occupyingReview([poisoned], scope).reviewerTaskId, "grok-run");
+  assert.throws(() => assertPersonaJobAvailable([poisoned], { ...scope, model: "gpt-5.6-sol", substitutionReason: "shop" }), /occupied by Grok NO_GO/);
 });
 
 test("exact-head findings stay off deep; older-head findings still travel with deep", () => {

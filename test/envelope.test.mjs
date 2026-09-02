@@ -100,6 +100,25 @@ test("normalizeReview pins identity from the brief", () => {
   assert.equal(normalized.reconciled[0].findingId, "F9");
 });
 
+test("normalizeReview takes occupancy flags from the brief, not the envelope", () => {
+  const persona = normalizeReview({
+    reconciliationOnly: true, jobRole: "deep-code-review", legacy: true, staleAtRecord: true, findings: [], unresolved: []
+  }, {
+    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
+    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "grok-4.6", route: "cli"
+  });
+  assert.equal("reconciliationOnly" in persona, false);
+  assert.equal("jobRole" in persona, false);
+  assert.equal("legacy" in persona, false);
+  assert.equal("staleAtRecord" in persona, false);
+  const court = normalizeReview({ findings: [], unresolved: [] }, {
+    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "reconciliation", reconciliationOnly: true, jobRole: "structural-challenge",
+    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-5.6-sol", route: "cli"
+  });
+  assert.equal(court.reconciliationOnly, true);
+  assert.equal(court.jobRole, "structural-challenge");
+});
+
 test("normalizeReview strips staged tree from an mrr envelope", () => {
   const normalized = normalizeReview({ tree: "c".repeat(40), findings: [], unresolved: [] }, {
     id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",

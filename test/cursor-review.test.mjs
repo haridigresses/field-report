@@ -43,10 +43,13 @@ test("Cursor review helper writes empty user-level MCP and does not replace the 
   await rm(isolated, { recursive: true, force: true });
 });
 
-test("isolated Cursor home links macOS Library when present", async () => {
+test("isolated Cursor home links macOS Keychains when present", async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), "fr-cursor-library-"));
-  await mkdir(path.join(home, "Library"));
+  await mkdir(path.join(home, "Library", "Keychains"), { recursive: true });
   const isolated = isolatedCursorHome(home);
-  if (process.platform === "darwin") assert.equal(lstatSync(path.join(isolated, "Library")).isSymbolicLink(), true);
+  if (process.platform === "darwin") {
+    assert.equal(lstatSync(path.join(isolated, "Library")).isSymbolicLink(), false);
+    assert.equal(lstatSync(path.join(isolated, "Library", "Keychains")).isSymbolicLink(), true);
+  }
   await rm(isolated, { recursive: true, force: true });
 });

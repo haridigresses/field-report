@@ -199,8 +199,9 @@ export function validateReview(input, delegation) {
   } else if (role === COURT_ROLE) {
     throw new Error("Court must adjudicate the delivered packet");
   }
+  const { reconciliationOnly: _reconciliationOnly, jobRole: _jobRole, legacy: _legacy, staleAtRecord: _staleAtRecord, ...rest } = input;
   return {
-    ...input,
+    ...rest,
     kind,
     role,
     unresolved,
