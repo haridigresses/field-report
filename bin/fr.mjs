@@ -310,7 +310,7 @@ async function main() {
       assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, substitutionReason });
     }
     const outstanding = kind === "mrr" && role === "deep-code-review"
-      ? outstandingForDeep(reviews, stream.claim, target).map(({ id, category, text }) => ({ id, category, text }))
+      ? outstandingForDeep(reviews, stream.claim, target, stream.claimRevision).map(({ id, category, text }) => ({ id, category, text }))
       : [];
     const inventory = await diffInventory(target);
     const project = await store.project(stream.project);

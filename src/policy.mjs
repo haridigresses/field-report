@@ -229,6 +229,7 @@ export function findingLedger(reviews) {
           text,
           role: review.role,
           claim: review.claim,
+          claimRevision: review.claimRevision ?? 1,
           head: review.head,
           baseHead: review.baseHead,
           delegationId: review.delegationId,
@@ -263,8 +264,12 @@ export function outstandingFindings(reviews, claim) {
   });
 }
 
-export function outstandingForDeep(reviews, claim, target) {
-  return outstandingFindings(reviews, claim).filter((finding) => !finding.head || !sameReviewTarget({ kind: "mrr", head: finding.head, baseHead: finding.baseHead }, "mrr", target));
+export function outstandingForDeep(reviews, claim, target, claimRevision = 1) {
+  return outstandingFindings(reviews, claim).filter((finding) => {
+    const sameTarget = Boolean(finding.head) && sameReviewTarget({ kind: "mrr", head: finding.head, baseHead: finding.baseHead }, "mrr", target);
+    const sameUnit = (finding.claimRevision ?? 1) === claimRevision;
+    return !sameTarget || !sameUnit;
+  });
 }
 
 export function occupantPacket(reviews, occupant) {
@@ -288,11 +293,13 @@ export function outstandingOccupantPacket(reviews, occupant, claim) {
   return occupantPacket(reviews, occupant).filter((finding) => outstanding.has(finding.id));
 }
 
-const acceptedMrr = (review) => {
+const acceptedMrr = (review, delegations = []) => {
   if (!(isPersonaReview(review) && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && hasMrrSignals(review) && !(review.findings || []).length && !(review.unresolved || []).length)) return false;
   const intended = INTENDED_MODELS[review.role];
   const model = canonicalReviewModel(review.model);
-  return model === intended || Boolean(substitutionReasonOf(review));
+  if (model === intended) return true;
+  const delegation = (delegations || []).find((item) => item.id === review.delegationId);
+  return Boolean(substitutionReasonOf(delegation || (delegations.length ? null : review)));
 };
 const acceptedCrr = (review) => reviewKind(review?.kind) === "crr" && review?.role === CRR_ROLE && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && !(review.findings || []).length && !(review.unresolved || []).length;
 
@@ -391,7 +398,7 @@ export function assertCourtJobAvailable(reviews, { jobRole, target, claim, claim
   }
 }
 
-const acceptedMrrOccupant = (review) => Boolean(review) && acceptedMrr(review);
+const acceptedMrrOccupant = (review, delegations = []) => Boolean(review) && acceptedMrr(review, delegations);
 
 function evaluateCrrGate({ target, workstream, reviews }) {
   const claim = workstream.claim ?? workstream.summary;
@@ -410,7 +417,7 @@ function evaluateCrrGate({ target, workstream, reviews }) {
   return { ready: reasons.length === 0, kind: "crr", target, reasons, notes: [], lanes: { [CRR_ROLE]: latestFor(matching, acceptedCrr) || latest } };
 }
 
-function evaluateMrrGate({ target, workstream, reviews }) {
+function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
   const claim = workstream.claim ?? workstream.summary;
   const claimRevision = workstream.claimRevision ?? 1;
   const scope = { target, claim, claimRevision };
@@ -420,8 +427,8 @@ function evaluateMrrGate({ target, workstream, reviews }) {
   let acceptedCount = 0;
   for (const role of REVIEW_ROLES) {
     const review = lanes[role];
-    if (review && acceptedMrrOccupant(review)) acceptedCount += 1;
-    else if (review && !acceptedMrrOccupant(review)) reasons.push(`${role} is not a finding-free GO`);
+    if (review && acceptedMrrOccupant(review, delegations)) acceptedCount += 1;
+    else if (review && !acceptedMrrOccupant(review, delegations)) reasons.push(`${role} is not a finding-free GO`);
     else reasons.push(`missing ${role} review`);
     const substitution = substitutionLine(review, role);
     if (substitution) notes.push(substitution);
@@ -455,7 +462,7 @@ export function latestClaimReviews(reviews, workstream) {
 export function lastReadyMrr(reviews, workstream, delegations = []) {
   const seen = new Set();
   for (const review of [...(reviews || [])].reverse()) {
-    if (!acceptedMrr(review)) continue;
+    if (!acceptedMrr(review, delegations)) continue;
     const key = `${review.head}:${review.baseHead}`;
     if (seen.has(key)) continue;
     seen.add(key);

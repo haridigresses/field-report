@@ -158,6 +158,17 @@ test("a substituted mrr GO fills its job and does not require a provider failure
     () => validateReview(mrrEnvelope(bare, "sol-bare", { model: "gpt-5.6-sol", provider: "openai" }), bare),
     /substitution requires a non-empty substitutionReason/
   );
+  const forged = mrrComplete("structural-challenge", "sol-forged", { model: "gpt-5.6-sol", provider: "openai", substitutionReason: "cursor-agent not on PATH" });
+  const silent = { id: forged.delegationId, event: "created", type: "review", role: "structural-challenge", kind: "mrr", model: "gpt-5.6-sol" };
+  const invented = evaluateGate({
+    kind: "mrr",
+    target: mrrTarget,
+    workstream,
+    reviews: [mrrComplete("deep-code-review", "sol-run"), forged, mrrComplete("fable-challenge", "fable-run")],
+    delegations: [silent]
+  });
+  assert.equal(invented.ready, false);
+  assert.match(invented.reasons.join(" "), /structural-challenge is not a finding-free GO/);
 });
 
 test("the first completed envelope occupies its persona job", () => {

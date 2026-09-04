@@ -201,6 +201,8 @@ test("exact-head findings stay off deep; older-head findings still travel with d
   assert.deepEqual(outstandingFindings([current], claim).map((item) => item.id), ["F1"]);
   const sameHeadNewBase = { ...persona("structural-challenge", "grok-base", { verdict: "NO_GO", findings: ["Base moved"] }), baseHead: "e".repeat(40) };
   assert.deepEqual(outstandingForDeep([sameHeadNewBase], claim, mrrTarget).map((item) => item.id), ["F1"]);
+  const claimBump = { ...persona("structural-challenge", "grok-claim", { verdict: "NO_GO", findings: ["Claim moved"] }), claimRevision: 1 };
+  assert.deepEqual(outstandingForDeep([claimBump], claim, mrrTarget, 2).map((item) => item.id), ["F1"]);
 });
 
 test("court can adjudicate a still_present-only occupant packet", () => {
