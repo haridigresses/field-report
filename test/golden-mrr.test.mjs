@@ -117,6 +117,9 @@ test("court is evidence-only: full reject grants one rerun of the NO_GO model", 
   const gate = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
   assert.equal(gate.ready, true);
   assert.equal(gate.lanes["structural-challenge"].reviewerTaskId, "grok-rerun");
+  const rebound = evaluateGate({ kind: "mrr", target: mrrTarget, workstream: { ...workstream, ownerTaskId: "sol-court" }, reviews });
+  assert.equal(rebound.ready, false);
+  assert.match(rebound.reasons.join(" "), /Workstream owner cannot satisfy an independent review/);
 });
 
 test("court cannot fill a persona job or use the occupying model", () => {

@@ -411,7 +411,9 @@ function evaluateMrrGate({ target, workstream, reviews }) {
   if (new Set(reviewerIds).size !== reviewerIds.length) reasons.push("Review lanes require distinct reviewer task IDs");
   const courtIds = new Set(courtReviewsOnTarget(reviews, scope).map((review) => review.reviewerTaskId).filter(Boolean));
   if (reviewerIds.some((id) => courtIds.has(id))) reasons.push("Persona reviewers cannot reuse a court reviewer task ID");
-  if (workstream.ownerTaskId && reviewerIds.includes(workstream.ownerTaskId)) reasons.push("Workstream owner cannot satisfy an independent review");
+  if (workstream.ownerTaskId && (reviewerIds.includes(workstream.ownerTaskId) || courtIds.has(workstream.ownerTaskId))) {
+    reasons.push("Workstream owner cannot satisfy an independent review");
+  }
   for (const review of Object.values(lanes).filter(Boolean)) {
     if (review.ownerTaskIdAtBrief && review.ownerTaskIdAtBrief === review.reviewerTaskId) reasons.push(`${review.role} reviewer was the workstream owner when its review brief was created`);
   }
