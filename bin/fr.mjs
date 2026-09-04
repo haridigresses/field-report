@@ -305,9 +305,10 @@ async function main() {
     const seated = seatingFor(role, flags.model, flags.route);
     const target = await targetFor(stream, kind);
     const reviews = kind === "mrr" ? await store.reviews(stream.id) : [];
+    const delegations = kind === "mrr" ? await store.delegations(stream.id) : [];
     const substitutionReason = String(flags["substitution-reason"] || "").trim();
     if (kind === "mrr") {
-      assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, substitutionReason });
+      assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, substitutionReason, delegations });
     }
     const outstanding = kind === "mrr" && role === "deep-code-review"
       ? outstandingForDeep(reviews, stream.claim, target, stream.claimRevision).map(({ id, category, text }) => ({ id, category, text }))
@@ -383,7 +384,7 @@ async function main() {
       if (validated.role === COURT_ROLE) {
         assertCourtJobAvailable(prior, { jobRole: delegation.jobRole, ...scope, model: validated.model, reviewerTaskId: validated.reviewerTaskId, ownerTaskId: stream.ownerTaskId });
       } else if (reviewKind(delegation.kind) === "mrr") {
-        assertPersonaJobAvailable(prior, { role: validated.role, ...scope, model: validated.model, substitutionReason: validated.substitutionReason, reviewerTaskId: validated.reviewerTaskId });
+        assertPersonaJobAvailable(prior, { role: validated.role, ...scope, model: validated.model, substitutionReason: validated.substitutionReason, reviewerTaskId: validated.reviewerTaskId, delegations: delegationEvents, currentDelegation: delegation });
       }
     } });
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);

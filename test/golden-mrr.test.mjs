@@ -248,3 +248,20 @@ test("an authorized rerun must be recorded after the court", () => {
   const reviews = [occupant, premature, rejected];
   assert.equal(occupyingReview(reviews, scope).reviewerTaskId, "grok-run");
 });
+
+test("a court rerun must come from a brief created after the court", () => {
+  const occupant = persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] });
+  const rejected = { ...court("structural-challenge", "sol-court", { reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable." }] }), recordedAt: "2026-01-01T02:00:00.000Z" };
+  const withheld = { ...persona("structural-challenge", "grok-withheld"), recordedAt: "2026-01-01T03:00:00.000Z" };
+  const fresh = { ...persona("structural-challenge", "grok-rerun"), recordedAt: "2026-01-01T04:00:00.000Z" };
+  const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
+  const withheldDelegation = { id: withheld.delegationId, event: "created", createdAt: "2026-01-01T01:00:00.000Z" };
+  const freshDelegation = { id: fresh.delegationId, event: "created", createdAt: "2026-01-01T03:30:00.000Z" };
+  assert.equal(occupyingReview([occupant, rejected, withheld], scope, [withheldDelegation]).reviewerTaskId, "grok-run");
+  assert.throws(
+    () => assertPersonaJobAvailable([occupant, rejected], { ...scope, model: "grok-4.6", currentDelegation: withheldDelegation, delegations: [withheldDelegation] }),
+    /brief created after the court/
+  );
+  assert.equal(occupyingReview([occupant, rejected, withheld, fresh], scope, [withheldDelegation, freshDelegation]).reviewerTaskId, "grok-rerun");
+  assert.doesNotThrow(() => assertPersonaJobAvailable([occupant, rejected], { ...scope, model: "grok-4.6" }));
+});

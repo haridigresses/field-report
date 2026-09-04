@@ -345,13 +345,27 @@ export function courtFullyRejected(reviews, occupant, { target, claim, claimRevi
   return ids.every((id) => latest.get(id) === "rejected");
 }
 
-export function occupyingReview(reviews, scope) {
+function createdDelegation(delegations, delegationId) {
+  return (delegations || []).find((item) => item.id === delegationId && item.event === "created") || null;
+}
+
+function isPostCourtRerun(review, first, { reviews, courtIndex, courts, delegations }) {
+  if (canonicalReviewModel(review.model) !== canonicalReviewModel(first.model)) return false;
+  if ((reviews || []).indexOf(review) <= courtIndex) return false;
+  const created = createdDelegation(delegations, review.delegationId);
+  const court = courts[courts.length - 1];
+  if (!created?.createdAt || !court?.recordedAt) return true;
+  return Date.parse(created.createdAt) > Date.parse(court.recordedAt);
+}
+
+export function occupyingReview(reviews, scope, delegations = []) {
   const persona = personaJobReviews(reviews, scope);
   if (!persona.length) return null;
   const first = persona[0];
   if (first.verdict !== "NO_GO" || !courtFullyRejected(reviews, first, scope)) return first;
-  const courtIndex = Math.max(-1, ...(jobCourts(reviews, { jobRole: scope.role, target: scope.target, claim: scope.claim, claimRevision: scope.claimRevision }).map((review) => (reviews || []).indexOf(review))));
-  const rerun = persona.slice(1).find((review) => canonicalReviewModel(review.model) === canonicalReviewModel(first.model) && (reviews || []).indexOf(review) > courtIndex);
+  const courts = jobCourts(reviews, { jobRole: scope.role, target: scope.target, claim: scope.claim, claimRevision: scope.claimRevision });
+  const courtIndex = Math.max(-1, ...courts.map((review) => (reviews || []).indexOf(review)));
+  const rerun = persona.slice(1).find((review) => isPostCourtRerun(review, first, { reviews, courtIndex, courts, delegations }));
   return rerun || first;
 }
 
@@ -361,11 +375,12 @@ export function substitutionLine(review, role = review?.role) {
   return `${role}: ${review.verdict} via ${reviewModelLabel(review.model)}; intended ${reviewModelLabel(intended)} was substituted: ${substitutionReasonOf(review)}`;
 }
 
-export function assertPersonaJobAvailable(reviews, { role, target, claim, claimRevision, model, substitutionReason, reviewerTaskId }) {
+export function assertPersonaJobAvailable(reviews, { role, target, claim, claimRevision, model, substitutionReason, reviewerTaskId, delegations = [], currentDelegation = null }) {
   const selected = canonicalReviewModel(model);
   if (!REVIEW_ROLES.includes(role)) throw new Error("Unknown review role");
   if (!selected) throw new Error(`Unknown review model: ${model}`);
-  const occupant = occupyingReview(reviews, { role, target, claim, claimRevision });
+  const scope = { role, target, claim, claimRevision };
+  const occupant = occupyingReview(reviews, scope, delegations);
   const intended = INTENDED_MODELS[role];
   if (reviewerTaskId && courtReviewsOnTarget(reviews, { target, claim, claimRevision }).some((review) => review.reviewerTaskId === reviewerTaskId)) {
     throw new Error("A court reviewer cannot fill a persona job");
@@ -379,12 +394,16 @@ export function assertPersonaJobAvailable(reviews, { role, target, claim, claimR
   if (acceptedMrr(occupant) || occupant.verdict === "GO") {
     throw new Error(`${role} job is occupied by a completed envelope`);
   }
-  const first = personaJobReviews(reviews, { role, target, claim, claimRevision })[0];
+  const first = personaJobReviews(reviews, scope)[0];
   if (occupant !== first) throw new Error(`${role} authorized rerun occupied this job; fix on a new head`);
   const courts = jobCourts(reviews, { jobRole: role, target, claim, claimRevision });
-  if (courts.length && courtFullyRejected(reviews, first, { target, claim, claimRevision })) {
+  if (courts.length && courtFullyRejected(reviews, first, scope)) {
     if (canonicalReviewModel(first.model) !== selected) {
       throw new Error(`${role} court granted one rerun of ${reviewModelLabel(first.model)}; do not substitute another model`);
+    }
+    const court = courts[courts.length - 1];
+    if (currentDelegation?.createdAt && court?.recordedAt && Date.parse(currentDelegation.createdAt) <= Date.parse(court.recordedAt)) {
+      throw new Error(`${role} authorized rerun requires a brief created after the court`);
     }
     return;
   }
@@ -433,7 +452,7 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
   const claim = workstream.claim ?? workstream.summary;
   const claimRevision = workstream.claimRevision ?? 1;
   const scope = { target, claim, claimRevision };
-  const lanes = Object.fromEntries(REVIEW_ROLES.map((role) => [role, occupyingReview(reviews, { role, ...scope })]));
+  const lanes = Object.fromEntries(REVIEW_ROLES.map((role) => [role, occupyingReview(reviews, { role, ...scope }, delegations)]));
   const reasons = [];
   const notes = [];
   let acceptedCount = 0;
