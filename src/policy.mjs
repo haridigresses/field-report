@@ -242,30 +242,42 @@ export function findingLedger(reviews) {
   return entries;
 }
 
-export function outstandingFindings(reviews, claim) {
+function deliveryScopeKey(claim, claimRevision, head, baseHead) {
+  return JSON.stringify([claim, claimRevision ?? 1, head || "", baseHead || ""]);
+}
+
+export function outstandingFindings(reviews, claim, target, claimRevision = 1) {
   const state = new Map();
   for (const review of reviews) {
     if (!isDurableReview(review)) continue;
     if (review.staleAtRecord === true) continue;
     for (const entry of review.reconciled || []) {
-      const current = state.get(entry.findingId) || { resolved: false, rejectedClaims: new Set() };
+      const current = state.get(entry.findingId) || { resolved: false, rejectedScopes: new Set() };
+      const key = deliveryScopeKey(review.claim, review.claimRevision, review.head, review.baseHead);
       if (entry.disposition === "resolved") current.resolved = true;
-      else if (entry.disposition === "rejected") current.rejectedClaims.add(review.claim);
+      else if (entry.disposition === "rejected") current.rejectedScopes.add(key);
       else {
         current.resolved = false;
-        current.rejectedClaims.delete(review.claim);
+        current.rejectedScopes.delete(key);
       }
       state.set(entry.findingId, current);
     }
   }
+  const queryKey = target ? deliveryScopeKey(claim, claimRevision, target.head, target.baseHead) : null;
   return findingLedger(reviews).filter((finding) => {
     const current = state.get(finding.id);
-    return !current?.resolved && !current?.rejectedClaims.has(claim);
+    if (current?.resolved) return false;
+    if (!current?.rejectedScopes.size) return true;
+    if (queryKey) return !current.rejectedScopes.has(queryKey);
+    for (const key of current.rejectedScopes) {
+      if (JSON.parse(key)[0] === claim) return false;
+    }
+    return true;
   });
 }
 
 export function outstandingForDeep(reviews, claim, target, claimRevision = 1) {
-  return outstandingFindings(reviews, claim).filter((finding) => {
+  return outstandingFindings(reviews, claim, target, claimRevision).filter((finding) => {
     const sameTarget = Boolean(finding.head) && sameReviewTarget({ kind: "mrr", head: finding.head, baseHead: finding.baseHead }, "mrr", target);
     const sameUnit = (finding.claimRevision ?? 1) === claimRevision;
     return !sameTarget || !sameUnit;
@@ -289,7 +301,7 @@ export function occupantPacket(reviews, occupant) {
 }
 
 export function outstandingOccupantPacket(reviews, occupant, claim) {
-  const outstanding = new Set(outstandingFindings(reviews, claim).map((finding) => finding.id));
+  const outstanding = new Set(outstandingFindings(reviews, claim, occupant, occupant.claimRevision ?? 1).map((finding) => finding.id));
   return occupantPacket(reviews, occupant).filter((finding) => outstanding.has(finding.id));
 }
 
@@ -448,7 +460,7 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
       reasons.push("Court reviewer was the workstream owner when its review brief was created");
     }
   }
-  for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
+  for (const finding of outstandingFindings(reviews, claim, target, claimRevision)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
   return { ready: reasons.length === 0 && acceptedCount === 3, kind: "mrr", target, reasons, notes, lanes };
 }
 
@@ -487,7 +499,7 @@ export function evaluateMergeReady({ target, workstream, reviews, delegations = 
   const exact = evaluateMrrGate({ target, workstream, reviews, delegations });
   if (exact.ready) return { ...exact, phase: "ready", via: "mrr" };
   const claim = workstream.claim ?? workstream.summary;
-  const outstanding = outstandingFindings(reviews, claim);
+  const outstanding = outstandingFindings(reviews, claim, target, workstream.claimRevision ?? 1);
   const last = lastReadyMrr(reviews, workstream, delegations);
   const waiver = matchingWaiver(waivers, { target, workstream });
   if (waiver) {

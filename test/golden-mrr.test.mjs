@@ -205,6 +205,16 @@ test("exact-head findings stay off deep; older-head findings still travel with d
   assert.deepEqual(outstandingForDeep([claimBump], claim, mrrTarget, 2).map((item) => item.id), ["F1"]);
 });
 
+test("court rejection is scoped to the exact head, base, claim, and claim revision", () => {
+  const occupant = persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] });
+  const rejected = court("structural-challenge", "sol-court", { reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable to this claim and target." }] });
+  assert.deepEqual(outstandingFindings([occupant, rejected], claim, mrrTarget, 1), []);
+  assert.deepEqual(outstandingFindings([occupant, rejected], claim, { head: "d".repeat(40), baseHead }, 1).map((item) => item.id), ["F1"]);
+  assert.deepEqual(outstandingFindings([occupant, rejected], claim, { head, baseHead: "e".repeat(40) }, 1).map((item) => item.id), ["F1"]);
+  assert.deepEqual(outstandingFindings([occupant, rejected], claim, mrrTarget, 2).map((item) => item.id), ["F1"]);
+  assert.deepEqual(outstandingForDeep([occupant, rejected], claim, { head: "d".repeat(40), baseHead }, 1).map((item) => item.id), ["F1"]);
+});
+
 test("court can adjudicate a still_present-only occupant packet", () => {
   const older = { ...persona("structural-challenge", "grok-old", { verdict: "NO_GO", findings: ["Old defect"] }), head: "d".repeat(40) };
   const deep = persona("deep-code-review", "sol-run", { verdict: "NO_GO", findings: [], reconciled: [{ findingId: "F1", disposition: "still_present", rationale: "The defect remains on this target." }] });

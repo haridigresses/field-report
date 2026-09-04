@@ -240,8 +240,8 @@ test("claim edits do not launder mrr evidence", () => {
   const revised = mrrDelegation("deep-code-review");
   revised.claim = "Revised claim";
   const rejection = validateReview({ ...mrrEnvelope(revised, "sol-run"), claim: "Revised claim", reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable to the revised claim." }] }, revised);
-  assert.deepEqual(outstandingFindings([adverse, rejection], "Revised claim"), []);
-  assert.deepEqual(outstandingFindings([adverse, rejection], claim).map((item) => item.id), ["F1"]);
+  assert.deepEqual(outstandingFindings([adverse, rejection], "Revised claim", mrrTarget, 1), []);
+  assert.deepEqual(outstandingFindings([adverse, rejection], claim, mrrTarget, 1).map((item) => item.id), ["F1"]);
 });
 
 test("bots gate rejects branch, base, and unsuccessful checks without draft ceremony", () => {

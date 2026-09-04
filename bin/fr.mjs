@@ -397,7 +397,7 @@ async function main() {
     if (exact.gate.ready) throw new Error("Exact-head MRR is already READY; no skip is needed");
     const last = lastReadyMrr(reviews, stream, await store.delegations(stream.id));
     if (!last) throw new Error("A skip requires a prior finding-free MRR on this claim");
-    const outstanding = outstandingFindings(reviews, stream.claim);
+    const outstanding = outstandingFindings(reviews, stream.claim, target, stream.claimRevision ?? 1);
     if (outstanding.length) throw new Error(`Reconcile outstanding MRR findings before skipping the panel: ${outstanding.map((item) => item.id).join(", ")}`);
     if (matchingWaiver(waivers, { target, workstream: stream })) throw new Error("A skip is already recorded for this exact head");
     const actor = String(flags.actor || process.env.CODEX_THREAD_ID || stream.ownerTaskId || "").trim();
