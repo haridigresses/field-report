@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { normalizeReview } from "../src/envelope.mjs";
 import {
-  assertCourtJobAvailable, assertPersonaJobAvailable, COURT_ROLE, evaluateGate, occupyingReview,
-  outstandingForDeep, outstandingOccupantPacket, outstandingFindings, seatingFor, validateReview
+  assertCourtJobAvailable, assertPersonaJobAvailable, COURT_ROLE, evaluateGate, isCourtReview, occupyingReview,
+  occupantPacket, outstandingForDeep, outstandingOccupantPacket, outstandingFindings, seatingFor, validateReview
 } from "../src/policy.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40);
@@ -199,4 +199,40 @@ test("exact-head findings stay off deep; older-head findings still travel with d
   const current = persona("structural-challenge", "grok-now", { verdict: "NO_GO", findings: ["Current defect"] });
   assert.deepEqual(outstandingForDeep([current], claim, mrrTarget), []);
   assert.deepEqual(outstandingFindings([current], claim).map((item) => item.id), ["F1"]);
+  const sameHeadNewBase = { ...persona("structural-challenge", "grok-base", { verdict: "NO_GO", findings: ["Base moved"] }), baseHead: "e".repeat(40) };
+  assert.deepEqual(outstandingForDeep([sameHeadNewBase], claim, mrrTarget).map((item) => item.id), ["F1"]);
+});
+
+test("court can adjudicate a still_present-only occupant packet", () => {
+  const older = { ...persona("structural-challenge", "grok-old", { verdict: "NO_GO", findings: ["Old defect"] }), head: "d".repeat(40) };
+  const deep = persona("deep-code-review", "sol-run", { verdict: "NO_GO", findings: [], reconciled: [{ findingId: "F1", disposition: "still_present", rationale: "The defect remains on this target." }] });
+  const reviews = [older, deep];
+  assert.deepEqual(occupantPacket(reviews, deep).map((item) => item.id), ["F1"]);
+  assert.doesNotThrow(() => assertCourtJobAvailable(reviews, { jobRole: "deep-code-review", target: mrrTarget, claim, claimRevision: 1, model: "grok-4.6" }));
+});
+
+test("historical reconciliationOnly on a persona does not hide occupancy or the ledger", () => {
+  const occupant = { ...persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] }), reconciliationOnly: true };
+  const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
+  assert.equal(isCourtReview(occupant), false);
+  assert.equal(occupyingReview([occupant], scope).reviewerTaskId, "grok-run");
+  assert.deepEqual(outstandingFindings([occupant], claim).map((item) => item.id), ["F1"]);
+});
+
+test("READY refuses a court whose brief-time owner is the court reviewer", () => {
+  const occupant = persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] });
+  const rejected = { ...court("structural-challenge", "sol-court", { reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable." }] }), ownerTaskIdAtBrief: "sol-court" };
+  const reviews = [persona("deep-code-review", "sol-run"), occupant, rejected, persona("structural-challenge", "grok-rerun"), persona("fable-challenge", "fable-run")];
+  const gate = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
+  assert.equal(gate.ready, false);
+  assert.match(gate.reasons.join(" "), /Court reviewer was the workstream owner when its review brief was created/);
+});
+
+test("an authorized rerun must be recorded after the court", () => {
+  const occupant = persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] });
+  const premature = persona("structural-challenge", "grok-early");
+  const rejected = court("structural-challenge", "sol-court", { reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable." }] });
+  const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
+  const reviews = [occupant, premature, rejected];
+  assert.equal(occupyingReview(reviews, scope).reviewerTaskId, "grok-run");
 });

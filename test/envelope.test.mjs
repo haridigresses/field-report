@@ -119,6 +119,22 @@ test("normalizeReview takes occupancy flags from the brief, not the envelope", (
   assert.equal(court.jobRole, "structural-challenge");
 });
 
+test("normalizeReview takes substitutionReason from the brief, not the envelope", () => {
+  const invented = normalizeReview({
+    substitutionReason: "invented", findings: [], unresolved: []
+  }, {
+    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
+    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-5.6-sol", route: "cli"
+  });
+  assert.equal("substitutionReason" in invented, false);
+  const attested = normalizeReview({ findings: [], unresolved: [] }, {
+    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
+    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-5.6-sol", route: "cli",
+    substitutionReason: "cursor-agent not on PATH"
+  });
+  assert.equal(attested.substitutionReason, "cursor-agent not on PATH");
+});
+
 test("normalizeReview strips staged tree from an mrr envelope", () => {
   const normalized = normalizeReview({ tree: "c".repeat(40), findings: [], unresolved: [] }, {
     id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",

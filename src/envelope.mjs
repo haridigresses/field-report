@@ -77,6 +77,7 @@ export function normalizeReview(input, delegation) {
   next.baseHead = delegation.baseHead;
   next.model = delegation.model;
   next.route = delegation.route;
+  delete next.substitutionReason;
   if (delegation.substitutionReason) next.substitutionReason = delegation.substitutionReason;
   delete next.reconciliationOnly;
   delete next.jobRole;

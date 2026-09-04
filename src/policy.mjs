@@ -73,11 +73,11 @@ export function isDurableReview(review) {
 }
 
 export function isPersonaReview(review) {
-  return isDurableReview(review) && REVIEW_ROLES.includes(review.role) && review.reconciliationOnly !== true;
+  return isDurableReview(review) && REVIEW_ROLES.includes(review.role);
 }
 
 export function isCourtReview(review) {
-  return isDurableReview(review) && (review.reconciliationOnly === true || review.role === COURT_ROLE);
+  return isDurableReview(review) && review.role === COURT_ROLE;
 }
 
 export function identityKey(projectId, role) {
@@ -159,10 +159,12 @@ export function validateReview(input, delegation) {
     if (!providersFor(model).includes(input.provider)) throw new Error(`Provider does not match review model ${model}`);
     if (role !== COURT_ROLE) {
       const intended = INTENDED_MODELS[role];
-      substitutionReason = substitutionReasonOf(input) || substitutionReasonOf(delegation);
+      substitutionReason = substitutionReasonOf(delegation);
+      if (substitutionReasonOf(input) && substitutionReasonOf(input) !== substitutionReason) {
+        throw new Error("substitutionReason must match its exact delegation");
+      }
       if (model !== intended && !substitutionReason) throw new Error(`${role} substitution requires a non-empty substitutionReason; intended model is ${intended}`);
       if (model === intended && substitutionReason) throw new Error("substitutionReason is only valid when the intended model was not used");
-      if (delegation.substitutionReason && substitutionReason !== substitutionReasonOf(delegation)) throw new Error("substitutionReason must match its exact delegation");
     }
     input = { ...input, model };
   }
@@ -262,12 +264,23 @@ export function outstandingFindings(reviews, claim) {
 }
 
 export function outstandingForDeep(reviews, claim, target) {
-  return outstandingFindings(reviews, claim).filter((finding) => !finding.head || finding.head !== target.head);
+  return outstandingFindings(reviews, claim).filter((finding) => !finding.head || !sameReviewTarget({ kind: "mrr", head: finding.head, baseHead: finding.baseHead }, "mrr", target));
 }
 
 export function occupantPacket(reviews, occupant) {
   if (!occupant) return [];
-  return findingLedger(reviews).filter((finding) => finding.delegationId === occupant.delegationId);
+  const ledger = findingLedger(reviews);
+  const minted = ledger.filter((finding) => finding.delegationId === occupant.delegationId);
+  const ids = new Set(minted.map((finding) => finding.id));
+  for (const entry of occupant.reconciled || []) {
+    if (entry.disposition !== "still_present") continue;
+    const finding = ledger.find((item) => item.id === entry.findingId);
+    if (finding && !ids.has(finding.id)) {
+      minted.push(finding);
+      ids.add(finding.id);
+    }
+  }
+  return minted;
 }
 
 export function outstandingOccupantPacket(reviews, occupant, claim) {
@@ -275,7 +288,12 @@ export function outstandingOccupantPacket(reviews, occupant, claim) {
   return occupantPacket(reviews, occupant).filter((finding) => outstanding.has(finding.id));
 }
 
-const acceptedMrr = (review) => isPersonaReview(review) && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && hasMrrSignals(review) && !(review.findings || []).length && !(review.unresolved || []).length;
+const acceptedMrr = (review) => {
+  if (!(isPersonaReview(review) && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && hasMrrSignals(review) && !(review.findings || []).length && !(review.unresolved || []).length)) return false;
+  const intended = INTENDED_MODELS[review.role];
+  const model = canonicalReviewModel(review.model);
+  return model === intended || Boolean(substitutionReasonOf(review));
+};
 const acceptedCrr = (review) => reviewKind(review?.kind) === "crr" && review?.role === CRR_ROLE && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && !(review.findings || []).length && !(review.unresolved || []).length;
 
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
@@ -313,7 +331,8 @@ export function occupyingReview(reviews, scope) {
   if (!persona.length) return null;
   const first = persona[0];
   if (first.verdict !== "NO_GO" || !courtFullyRejected(reviews, first, scope)) return first;
-  const rerun = persona.slice(1).find((review) => canonicalReviewModel(review.model) === canonicalReviewModel(first.model));
+  const courtIndex = Math.max(-1, ...(jobCourts(reviews, { jobRole: scope.role, target: scope.target, claim: scope.claim, claimRevision: scope.claimRevision }).map((review) => (reviews || []).indexOf(review))));
+  const rerun = persona.slice(1).find((review) => canonicalReviewModel(review.model) === canonicalReviewModel(first.model) && (reviews || []).indexOf(review) > courtIndex);
   return rerun || first;
 }
 
@@ -416,6 +435,11 @@ function evaluateMrrGate({ target, workstream, reviews }) {
   }
   for (const review of Object.values(lanes).filter(Boolean)) {
     if (review.ownerTaskIdAtBrief && review.ownerTaskIdAtBrief === review.reviewerTaskId) reasons.push(`${review.role} reviewer was the workstream owner when its review brief was created`);
+  }
+  for (const review of courtReviewsOnTarget(reviews, scope)) {
+    if (review.ownerTaskIdAtBrief && review.ownerTaskIdAtBrief === review.reviewerTaskId) {
+      reasons.push("Court reviewer was the workstream owner when its review brief was created");
+    }
   }
   for (const finding of outstandingFindings(reviews, claim)) reasons.push(`unreconciled ${finding.role} ${finding.category} ${finding.id}: ${finding.text}`);
   return { ready: reasons.length === 0 && acceptedCount === 3, kind: "mrr", target, reasons, notes, lanes };

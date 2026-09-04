@@ -144,6 +144,15 @@ test("a substituted mrr GO fills its job and does not require a provider failure
   const ready = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
   assert.equal(ready.ready, true);
   assert.match(ready.notes.join(" "), /structural-challenge: GO via Sol; intended Grok was substituted: cursor-agent not on PATH/);
+  const unattested = { ...mrrComplete("structural-challenge", "grok-run"), model: "gpt-5.6-sol", provider: "openai" };
+  const blocked = evaluateGate({
+    kind: "mrr",
+    target: mrrTarget,
+    workstream,
+    reviews: [mrrComplete("deep-code-review", "sol-run"), unattested, mrrComplete("fable-challenge", "fable-run")]
+  });
+  assert.equal(blocked.ready, false);
+  assert.match(blocked.reasons.join(" "), /structural-challenge is not a finding-free GO/);
   const bare = mrrDelegation("structural-challenge", undefined, { model: "gpt-5.6-sol" });
   assert.throws(
     () => validateReview(mrrEnvelope(bare, "sol-bare", { model: "gpt-5.6-sol", provider: "openai" }), bare),
