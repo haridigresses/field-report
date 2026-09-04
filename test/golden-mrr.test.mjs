@@ -264,4 +264,19 @@ test("a court rerun must come from a brief created after the court", () => {
   );
   assert.equal(occupyingReview([occupant, rejected, withheld, fresh], scope, [withheldDelegation, freshDelegation]).reviewerTaskId, "grok-rerun");
   assert.doesNotThrow(() => assertPersonaJobAvailable([occupant, rejected], { ...scope, model: "grok-4.6" }));
+  const rebound = { ...persona("structural-challenge", "grok-run"), recordedAt: "2026-01-01T04:00:00.000Z" };
+  const reboundDelegation = { id: rebound.delegationId, event: "created", createdAt: "2026-01-01T03:30:00.000Z" };
+  assert.equal(occupyingReview([occupant, rejected, rebound], scope, [reboundDelegation]).reviewerTaskId, "grok-run");
+  assert.throws(
+    () => assertPersonaJobAvailable([occupant, rejected], { ...scope, model: "grok-4.6", reviewerTaskId: "grok-run", currentDelegation: reboundDelegation, delegations: [reboundDelegation] }),
+    /pre-court reviewer task ID/
+  );
+});
+
+test("a stale adverse envelope occupies again when the exact target returns", () => {
+  const occupant = { ...persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] }), staleAtRecord: true };
+  const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
+  assert.equal(occupyingReview([occupant], scope).reviewerTaskId, "grok-run");
+  assert.doesNotThrow(() => assertCourtJobAvailable([occupant], { jobRole: "structural-challenge", target: mrrTarget, claim, claimRevision: 1, model: "gpt-5.6-sol" }));
+  assert.equal(occupyingReview([occupant], { ...scope, target: { head: "d".repeat(40), baseHead } }), null);
 });

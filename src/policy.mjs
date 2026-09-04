@@ -318,7 +318,7 @@ const acceptedCrr = (review) => reviewKind(review?.kind) === "crr" && review?.ro
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
 
 export function personaJobReviews(reviews, { role, target, claim, claimRevision }) {
-  return (reviews || []).filter((review) => isPersonaReview(review) && review.staleAtRecord !== true && jobScope(review, { role, target, claim, claimRevision }));
+  return (reviews || []).filter((review) => isPersonaReview(review) && jobScope(review, { role, target, claim, claimRevision }));
 }
 
 export function jobCourts(reviews, { jobRole, target, claim, claimRevision }) {
@@ -349,9 +349,14 @@ function createdDelegation(delegations, delegationId) {
   return (delegations || []).find((item) => item.id === delegationId && item.event === "created") || null;
 }
 
+function preCourtPersonaTaskIds(reviews, role, courtIndex) {
+  return new Set((reviews || []).filter((item, index) => index < courtIndex && isPersonaReview(item) && item.role === role && item.reviewerTaskId).map((item) => item.reviewerTaskId));
+}
+
 function isPostCourtRerun(review, first, { reviews, courtIndex, courts, delegations }) {
   if (canonicalReviewModel(review.model) !== canonicalReviewModel(first.model)) return false;
   if ((reviews || []).indexOf(review) <= courtIndex) return false;
+  if (review.reviewerTaskId && preCourtPersonaTaskIds(reviews, first.role, courtIndex).has(review.reviewerTaskId)) return false;
   const created = createdDelegation(delegations, review.delegationId);
   const court = courts[courts.length - 1];
   if (!created?.createdAt || !court?.recordedAt) return true;
@@ -404,6 +409,10 @@ export function assertPersonaJobAvailable(reviews, { role, target, claim, claimR
     const court = courts[courts.length - 1];
     if (currentDelegation?.createdAt && court?.recordedAt && Date.parse(currentDelegation.createdAt) <= Date.parse(court.recordedAt)) {
       throw new Error(`${role} authorized rerun requires a brief created after the court`);
+    }
+    const courtIndex = Math.max(-1, ...courts.map((item) => (reviews || []).indexOf(item)));
+    if (reviewerTaskId && preCourtPersonaTaskIds(reviews, role, courtIndex).has(reviewerTaskId)) {
+      throw new Error(`${role} authorized rerun cannot reuse a pre-court reviewer task ID`);
     }
     return;
   }
