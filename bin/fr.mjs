@@ -383,7 +383,7 @@ async function main() {
       if (validated.role === COURT_ROLE) {
         assertCourtJobAvailable(prior, { jobRole: delegation.jobRole, ...scope, model: validated.model, reviewerTaskId: validated.reviewerTaskId, ownerTaskId: stream.ownerTaskId });
       } else if (reviewKind(delegation.kind) === "mrr") {
-        assertPersonaJobAvailable(prior, { role: validated.role, ...scope, model: validated.model, substitutionReason: validated.substitutionReason });
+        assertPersonaJobAvailable(prior, { role: validated.role, ...scope, model: validated.model, substitutionReason: validated.substitutionReason, reviewerTaskId: validated.reviewerTaskId });
       }
     } });
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);

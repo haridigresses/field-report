@@ -150,6 +150,21 @@ test("court is one-shot and cannot reuse a participating reviewer", () => {
   const afterRerun = [occupant, rejected, rerunNoGo];
   assert.throws(() => assertCourtJobAvailable(afterRerun, { ...scope, model: "gpt-5.6-sol" }), /fix on a new head/);
   assert.throws(() => assertPersonaJobAvailable(afterRerun, { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1, model: "grok-4.6" }), /authorized rerun occupied this job/);
+  const courtThenPersona = [occupant, rejected];
+  assert.throws(
+    () => assertPersonaJobAvailable(courtThenPersona, { role: "deep-code-review", target: mrrTarget, claim, claimRevision: 1, model: "gpt-5.6-sol", reviewerTaskId: "sol-court" }),
+    /court reviewer cannot fill a persona job/
+  );
+  const overlap = [
+    occupant,
+    rejected,
+    persona("structural-challenge", "grok-rerun"),
+    persona("deep-code-review", "sol-court"),
+    persona("fable-challenge", "fable-run")
+  ];
+  const overlapGate = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: overlap });
+  assert.equal(overlapGate.ready, false);
+  assert.match(overlapGate.reasons.join(" "), /Persona reviewers cannot reuse a court reviewer task ID/);
 });
 
 test("court cannot add findings or resolve them", () => {

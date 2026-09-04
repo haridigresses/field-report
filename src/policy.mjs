@@ -292,6 +292,10 @@ export function participatingPersonaReviews(reviews, { target, claim, claimRevis
   return REVIEW_ROLES.flatMap((role) => personaJobReviews(reviews, { role, target, claim, claimRevision }));
 }
 
+export function courtReviewsOnTarget(reviews, { target, claim, claimRevision }) {
+  return REVIEW_ROLES.flatMap((jobRole) => jobCourts(reviews, { jobRole, target, claim, claimRevision }));
+}
+
 export function courtFullyRejected(reviews, occupant, { target, claim, claimRevision }) {
   const ids = occupantPacket(reviews, occupant).map((finding) => finding.id);
   if (!ids.length) return false;
@@ -319,12 +323,15 @@ export function substitutionLine(review, role = review?.role) {
   return `${role}: ${review.verdict} via ${reviewModelLabel(review.model)}; intended ${reviewModelLabel(intended)} was substituted: ${substitutionReasonOf(review)}`;
 }
 
-export function assertPersonaJobAvailable(reviews, { role, target, claim, claimRevision, model, substitutionReason }) {
+export function assertPersonaJobAvailable(reviews, { role, target, claim, claimRevision, model, substitutionReason, reviewerTaskId }) {
   const selected = canonicalReviewModel(model);
   if (!REVIEW_ROLES.includes(role)) throw new Error("Unknown review role");
   if (!selected) throw new Error(`Unknown review model: ${model}`);
   const occupant = occupyingReview(reviews, { role, target, claim, claimRevision });
   const intended = INTENDED_MODELS[role];
+  if (reviewerTaskId && courtReviewsOnTarget(reviews, { target, claim, claimRevision }).some((review) => review.reviewerTaskId === reviewerTaskId)) {
+    throw new Error("A court reviewer cannot fill a persona job");
+  }
   if (!occupant) {
     if (selected !== intended && !String(substitutionReason || "").trim()) {
       throw new Error(`${role} substitution requires a non-empty substitutionReason; intended model is ${intended}`);
@@ -402,6 +409,8 @@ function evaluateMrrGate({ target, workstream, reviews }) {
   }
   const reviewerIds = REVIEW_ROLES.map((role) => lanes[role]?.reviewerTaskId).filter(Boolean);
   if (new Set(reviewerIds).size !== reviewerIds.length) reasons.push("Review lanes require distinct reviewer task IDs");
+  const courtIds = new Set(courtReviewsOnTarget(reviews, scope).map((review) => review.reviewerTaskId).filter(Boolean));
+  if (reviewerIds.some((id) => courtIds.has(id))) reasons.push("Persona reviewers cannot reuse a court reviewer task ID");
   if (workstream.ownerTaskId && reviewerIds.includes(workstream.ownerTaskId)) reasons.push("Workstream owner cannot satisfy an independent review");
   for (const review of Object.values(lanes).filter(Boolean)) {
     if (review.ownerTaskIdAtBrief && review.ownerTaskIdAtBrief === review.reviewerTaskId) reasons.push(`${review.role} reviewer was the workstream owner when its review brief was created`);

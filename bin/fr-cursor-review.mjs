@@ -25,6 +25,9 @@ export function isolatedCursorHome(realHome = os.homedir()) {
     const source = path.join(realHome, ".cursor", name);
     if (existsSync(source)) symlinkSync(source, path.join(cursor, name));
   }
+  // Security.framework looks up credentials through the keychain search list
+  // (this directory), not a single file the wrapper can preselect. Do not link
+  // the rest of ~/Library; that was the original isolation defect.
   const library = path.join(home, "Library");
   mkdirSync(library, { recursive: true });
   const keychains = path.join(realHome, "Library", "Keychains");
