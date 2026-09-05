@@ -9,7 +9,7 @@ const workstream = { claim, claimRevision: 1, ownerTaskId: "owner" };
 const crrTarget = { head, baseHead, tree };
 const mrrTarget = { head, baseHead };
 const models = {
-  "deep-code-review": { model: "gpt-5.6-sol", provider: "openai" },
+  "deep-code-review": { model: "gpt-6-astra", provider: "openai" },
   "structural-challenge": { model: "grok-4.6", provider: "cursor" },
   "fable-challenge": { model: "claude-fable-5", provider: "anthropic" }
 };
@@ -65,6 +65,7 @@ const crrComplete = (id, extras = {}) => {
 test("canonical models accept Cursor Grok aliases and reject unknown ids", () => {
   assert.equal(canonicalReviewModel("cursor-grok-4.6-high"), "grok-4.6");
   assert.equal(canonicalReviewModel("grok-4.6"), "grok-4.6");
+  assert.equal(canonicalReviewModel("gpt-6-astra"), "gpt-6-astra");
   assert.equal(canonicalReviewModel("gpt-5.6-sol"), "gpt-5.6-sol");
   assert.equal(canonicalReviewModel("claude-fable-5"), "claude-fable-5");
   assert.equal(canonicalReviewModel("anthropic.claude-fable-5"), null);
@@ -72,17 +73,21 @@ test("canonical models accept Cursor Grok aliases and reject unknown ids", () =>
   assert.equal(canonicalReviewModel("grok-4.65"), null);
 });
 
-test("crr seating accepts local models; mrr seating is Sol/Grok/Fable", () => {
+test("crr seating accepts local models; mrr seating is Astra/Grok/Fable", () => {
   assert.equal(seatingFor(CRR_ROLE).model, "local");
   assert.equal(seatingFor(CRR_ROLE, "composer-2").model, "composer-2");
-  assert.equal(seatingFor("deep-code-review").model, "gpt-5.6-sol");
+  assert.equal(seatingFor("deep-code-review").model, "gpt-6-astra");
   assert.equal(seatingFor("structural-challenge").model, "grok-4.6");
   assert.equal(seatingFor("fable-challenge").model, "claude-fable-5");
   assert.throws(() => seatingFor("fable-challenge", "anthropic.claude-fable-5"), /Unknown review model/);
-  const substituted = seatingFor("fable-challenge", "gpt-5.6-sol");
-  assert.equal(substituted.model, "gpt-5.6-sol");
+  const substituted = seatingFor("fable-challenge", "gpt-6-astra");
+  assert.equal(substituted.model, "gpt-6-astra");
   assert.equal(substituted.substituted, true);
   assert.equal(substituted.intended, "claude-fable-5");
+  const historical = seatingFor("deep-code-review", "gpt-5.6-sol");
+  assert.equal(historical.model, "gpt-5.6-sol");
+  assert.equal(historical.substituted, true);
+  assert.equal(historical.intended, "gpt-6-astra");
   assert.throws(() => seatingFor("cheap-review"), /Unknown review role/);
 });
 
@@ -138,13 +143,13 @@ test("mrr gate requires three finding-free persona GOs", () => {
 test("a substituted mrr GO fills its job and does not require a provider failure", () => {
   const reviews = [
     mrrComplete("deep-code-review", "sol-run"),
-    mrrComplete("structural-challenge", "sol-sub", { model: "gpt-5.6-sol", provider: "openai", substitutionReason: "cursor-agent not on PATH" }),
+    mrrComplete("structural-challenge", "sol-sub", { model: "gpt-6-astra", provider: "openai", substitutionReason: "cursor-agent not on PATH" }),
     mrrComplete("fable-challenge", "fable-run")
   ];
   const ready = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
   assert.equal(ready.ready, true);
-  assert.match(ready.notes.join(" "), /structural-challenge: GO via Sol; intended Grok was substituted: cursor-agent not on PATH/);
-  const unattested = { ...mrrComplete("structural-challenge", "grok-run"), model: "gpt-5.6-sol", provider: "openai" };
+  assert.match(ready.notes.join(" "), /structural-challenge: GO via Astra; intended Grok was substituted: cursor-agent not on PATH/);
+  const unattested = { ...mrrComplete("structural-challenge", "grok-run"), model: "gpt-6-astra", provider: "openai" };
   const blocked = evaluateGate({
     kind: "mrr",
     target: mrrTarget,
@@ -153,13 +158,13 @@ test("a substituted mrr GO fills its job and does not require a provider failure
   });
   assert.equal(blocked.ready, false);
   assert.match(blocked.reasons.join(" "), /structural-challenge is not a finding-free GO/);
-  const bare = mrrDelegation("structural-challenge", undefined, { model: "gpt-5.6-sol" });
+  const bare = mrrDelegation("structural-challenge", undefined, { model: "gpt-6-astra" });
   assert.throws(
-    () => validateReview(mrrEnvelope(bare, "sol-bare", { model: "gpt-5.6-sol", provider: "openai" }), bare),
+    () => validateReview(mrrEnvelope(bare, "sol-bare", { model: "gpt-6-astra", provider: "openai" }), bare),
     /substitution requires a non-empty substitutionReason/
   );
-  const forged = mrrComplete("structural-challenge", "sol-forged", { model: "gpt-5.6-sol", provider: "openai", substitutionReason: "cursor-agent not on PATH" });
-  const silent = { id: forged.delegationId, event: "created", type: "review", role: "structural-challenge", kind: "mrr", model: "gpt-5.6-sol" };
+  const forged = mrrComplete("structural-challenge", "sol-forged", { model: "gpt-6-astra", provider: "openai", substitutionReason: "cursor-agent not on PATH" });
+  const silent = { id: forged.delegationId, event: "created", type: "review", role: "structural-challenge", kind: "mrr", model: "gpt-6-astra" };
   const invented = evaluateGate({
     kind: "mrr",
     target: mrrTarget,

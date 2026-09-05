@@ -113,7 +113,7 @@ test("normalizeReview takes occupancy flags from the brief, not the envelope", (
   assert.equal("staleAtRecord" in persona, false);
   const court = normalizeReview({ findings: [], unresolved: [] }, {
     id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "reconciliation", reconciliationOnly: true, jobRole: "structural-challenge",
-    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-5.6-sol", route: "cli"
+    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-6-astra", route: "cli"
   });
   assert.equal(court.reconciliationOnly, true);
   assert.equal(court.jobRole, "structural-challenge");
@@ -124,12 +124,12 @@ test("normalizeReview takes substitutionReason from the brief, not the envelope"
     substitutionReason: "invented", findings: [], unresolved: []
   }, {
     id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
-    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-5.6-sol", route: "cli"
+    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-6-astra", route: "cli"
   });
   assert.equal("substitutionReason" in invented, false);
   const attested = normalizeReview({ findings: [], unresolved: [] }, {
     id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
-    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-5.6-sol", route: "cli",
+    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-6-astra", route: "cli",
     substitutionReason: "cursor-agent not on PATH"
   });
   assert.equal(attested.substitutionReason, "cursor-agent not on PATH");

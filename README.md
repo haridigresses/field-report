@@ -2,17 +2,17 @@
 
 Field Report is a thin control loop around a delivery unit. It binds repo, branch, claim, and owner session; records CRR and mixed-provider MRR; and gates readiness for CI bots. It does not launch reviewers, open pull requests, or merge.
 
-Agent Fixes owns sessions, names, and todos. Each target repository's `merge-ready-review.md` owns merge quality. Cursor Cloud Agents reach Sol and Fable on this host through My Machines when a worker for that checkout is online.
+Agent Fixes owns sessions, names, and todos. Each target repository's `merge-ready-review.md` owns merge quality. Cursor Cloud Agents reach Astra and Fable on this host through My Machines when a worker for that checkout is online.
 
 ## Core loop
 
 - Coordinators and owners name themselves (`fr identity`, then AF save). The user does not name agents. Reviewers stay unnamed and off AF.
 - Before you run `git commit` on a commit you intend to keep, stop and run CRR (1–2 subagents, local models first, scores required). A green checkout hook is not CRR. WIP or amend is owner judgment. Findings are for the owner on that staged tree, not a durable ledger. CRR records still persist; they do not enter the SHA-by-SHA finding ledger. `fr context` always prints the latest scores and structural risk (higher = more risk), even when the gate is blocked.
 - Keep a one-line next action with `fr update <id> --next`. It is a sticky note, not a todo ledger.
-- MRR (Sol / Grok / Fable personas) before a PR is opened. READY is exact head + exact base + three finding-free GOs. A completed envelope occupies the job; substitute only before that, with `--substitution-reason`. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR.
+- MRR (Astra / Grok / Fable personas) before a PR is opened. READY is exact head + exact base + three finding-free GOs. A completed envelope occupies the job; substitute only before that, with `--substitution-reason`. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR.
 - Do not auto-open a PR. After `fr gate open`, the owner or the user may open one.
 - After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission. An empty GitHub check rollup keeps that gate blocked.
-- Borderline CI flake vs real: consult Sol or Grok once. Not a hard gate.
+- Borderline CI flake vs real: consult Astra or Grok once. Not a hard gate.
 - Field Report never merges.
 
 ## State
@@ -58,11 +58,11 @@ Do not wrap `git commit`, add `fr catchup` / heartbeat, collapse MRR into a fami
 
 ## My Machines
 
-Cursor Cloud Agents can invoke Sol (`codex`) and Fable (`claude`) on this host when a My Machines worker is running for the target checkout. Field Report prints the CLI recipe; Cursor owns the worker.
+Cursor Cloud Agents can invoke Astra (`codex`) and Fable (`claude`) on this host when a My Machines worker is running for the target checkout. Field Report prints the CLI recipe; Cursor owns the worker.
 
 ```bash
 agent worker start --name local --worker-dir /path/to/this/repo
-fr machines invoke sol --prompt-file /tmp/sol.txt --cwd /path/to/this/repo --kind review
+fr machines invoke astra --prompt-file /tmp/astra.txt --cwd /path/to/this/repo --kind review
 ```
 
 Start that worker for this checkout only. Route a Cloud Agent from the environment picker, or with `worker=local` / `machine=local`. See `docs/mymachines.md`. Prefer native same-type launch; Cloud Agents use the CLI. Use ordinary `claude`, never `claude-aws`.

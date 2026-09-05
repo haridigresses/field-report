@@ -12,15 +12,17 @@ export const CRR_ROLE = "crr";
 export const COURT_ROLE = "reconciliation";
 export const REVIEW_ROLES = ["deep-code-review", "structural-challenge", "fable-challenge"];
 export const REVIEW_MODELS = Object.freeze({
+  astra: "gpt-6-astra",
   sol: "gpt-5.6-sol",
   grok: "grok-4.6",
   fable: "claude-fable-5"
 });
 export const INTENDED_MODELS = Object.freeze({
-  "deep-code-review": REVIEW_MODELS.sol,
+  "deep-code-review": REVIEW_MODELS.astra,
   "structural-challenge": REVIEW_MODELS.grok,
   "fable-challenge": REVIEW_MODELS.fable
 });
+const REVIEW_MODEL_HELP = "gpt-6-astra, grok-4.6, or claude-fable-5";
 
 function assertScore(value, key) {
   if (!Number.isInteger(value) || value < 0 || value > 100) throw new Error(`${key} must be an integer from 0 to 100`);
@@ -42,6 +44,7 @@ const GROK_MODEL = /^(?:cursor-)?grok-4\.6(?:-(?:high|low|medium|xhigh))?(?:-fas
 export function canonicalReviewModel(model) {
   const text = String(model || "").trim();
   const lower = text.toLowerCase();
+  if (lower === "gpt-6-astra") return REVIEW_MODELS.astra;
   if (lower === "gpt-5.6-sol") return REVIEW_MODELS.sol;
   if (lower === "claude-fable-5") return REVIEW_MODELS.fable;
   if (GROK_MODEL.test(lower)) return REVIEW_MODELS.grok;
@@ -50,6 +53,7 @@ export function canonicalReviewModel(model) {
 
 export function reviewModelLabel(model) {
   const canonical = canonicalReviewModel(model);
+  if (canonical === REVIEW_MODELS.astra) return "Astra";
   if (canonical === REVIEW_MODELS.sol) return "Sol";
   if (canonical === REVIEW_MODELS.grok) return "Grok";
   if (canonical === REVIEW_MODELS.fable) return "Fable";
@@ -57,7 +61,7 @@ export function reviewModelLabel(model) {
 }
 
 function providersFor(canonical) {
-  if (canonical === REVIEW_MODELS.sol) return ["openai"];
+  if (canonical === REVIEW_MODELS.astra || canonical === REVIEW_MODELS.sol) return ["openai"];
   if (canonical === REVIEW_MODELS.fable) return ["anthropic"];
   if (canonical === REVIEW_MODELS.grok) return ["cursor", "xai"];
   return [];
@@ -95,7 +99,7 @@ export function seatingFor(role, model = null, route = null) {
   }
   if (role === COURT_ROLE) {
     const selected = canonicalReviewModel(model);
-    if (!selected) throw new Error("Court requires --model gpt-5.6-sol, grok-4.6, or claude-fable-5");
+    if (!selected) throw new Error(`Court requires --model ${REVIEW_MODEL_HELP}`);
     return { role: COURT_ROLE, intended: null, model: selected, substituted: false, route: route || "cli" };
   }
   if (!REVIEW_ROLES.includes(role)) throw new Error("Unknown review role");
@@ -154,7 +158,7 @@ export function validateReview(input, delegation) {
     if (!String(input.provider || "").trim()) throw new Error("Review requires a provider");
   } else {
     const model = canonicalReviewModel(input.model);
-    if (!model) throw new Error("Review model must be gpt-5.6-sol, grok-4.6, or claude-fable-5");
+    if (!model) throw new Error(`Review model must be ${REVIEW_MODEL_HELP}`);
     if (delegation.model && canonicalReviewModel(delegation.model) !== model) throw new Error("Review model must match its exact delegation");
     if (!providersFor(model).includes(input.provider)) throw new Error(`Provider does not match review model ${model}`);
     if (role !== COURT_ROLE) {
@@ -431,7 +435,7 @@ export function assertPersonaJobAvailable(reviews, { role, target, claim, claimR
 export function assertCourtJobAvailable(reviews, { jobRole, target, claim, claimRevision, model, reviewerTaskId, ownerTaskId }) {
   if (!REVIEW_ROLES.includes(jobRole)) throw new Error("Court requires the persona job being adjudicated");
   const selected = canonicalReviewModel(model);
-  if (!selected) throw new Error("Court requires --model gpt-5.6-sol, grok-4.6, or claude-fable-5");
+  if (!selected) throw new Error(`Court requires --model ${REVIEW_MODEL_HELP}`);
   const occupant = occupyingReview(reviews, { role: jobRole, target, claim, claimRevision });
   if (!occupant) throw new Error(`${jobRole} has no occupying envelope to adjudicate`);
   if (occupant.verdict !== "NO_GO") throw new Error(`${jobRole} is a finding-free GO; court does not apply`);

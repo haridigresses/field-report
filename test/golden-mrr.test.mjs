@@ -13,7 +13,7 @@ const SUBSTITUTION_REASON = "cursor-agent not on PATH";
 const workstream = { claim, claimRevision: 1, ownerTaskId: "owner" };
 const mrrTarget = { head, baseHead };
 const models = {
-  "deep-code-review": { model: "gpt-5.6-sol", provider: "openai" },
+  "deep-code-review": { model: "gpt-6-astra", provider: "openai" },
   "structural-challenge": { model: "grok-4.6", provider: "cursor" },
   "fable-challenge": { model: "claude-fable-5", provider: "anthropic" }
 };
@@ -49,7 +49,7 @@ const persona = (role, id, extras = {}) => {
 function courtDelegation(jobRole, extras = {}) {
   return {
     id: extras.id || randomUUID(), event: "created", type: "review", role: COURT_ROLE, kind: "mrr", reconciliationOnly: true, jobRole,
-    claim, claimRevision: 1, head, baseHead, model: extras.model || "gpt-5.6-sol", route: "cli", ownerTaskIdAtBrief: "owner"
+    claim, claimRevision: 1, head, baseHead, model: extras.model || "gpt-6-astra", route: "cli", ownerTaskIdAtBrief: "owner"
   };
 }
 
@@ -86,16 +86,16 @@ test("a completed envelope occupies the job; substitution cannot escape a NO_GO"
   const occupant = persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] });
   const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
   assert.equal(occupyingReview([occupant], scope).reviewerTaskId, "grok-run");
-  assert.throws(() => assertPersonaJobAvailable([occupant], { ...scope, model: "gpt-5.6-sol", substitutionReason: "shop for GO" }), /occupied by Grok NO_GO/);
+  assert.throws(() => assertPersonaJobAvailable([occupant], { ...scope, model: "gpt-6-astra", substitutionReason: "shop for GO" }), /occupied by Grok NO_GO/);
   assert.throws(() => assertPersonaJobAvailable([occupant], { ...scope, model: "grok-4.6" }), /adjudicate that packet/);
   assert.throws(() => seatingFor("structural-challenge", "composer-2"), /Unknown review model/);
 });
 
 test("substitution is allowed only while the job has zero envelopes and must be attested", () => {
   const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
-  assert.throws(() => assertPersonaJobAvailable([], { ...scope, model: "gpt-5.6-sol" }), /substitution requires a non-empty substitutionReason/);
-  assert.doesNotThrow(() => assertPersonaJobAvailable([], { ...scope, model: "gpt-5.6-sol", substitutionReason: SUBSTITUTION_REASON }));
-  const go = persona("structural-challenge", "sol-sub", { model: "gpt-5.6-sol", provider: "openai", substitutionReason: SUBSTITUTION_REASON });
+  assert.throws(() => assertPersonaJobAvailable([], { ...scope, model: "gpt-6-astra" }), /substitution requires a non-empty substitutionReason/);
+  assert.doesNotThrow(() => assertPersonaJobAvailable([], { ...scope, model: "gpt-6-astra", substitutionReason: SUBSTITUTION_REASON }));
+  const go = persona("structural-challenge", "sol-sub", { model: "gpt-6-astra", provider: "openai", substitutionReason: SUBSTITUTION_REASON });
   assert.throws(() => assertPersonaJobAvailable([go], { ...scope, model: "grok-4.6" }), /occupied by a completed envelope/);
 });
 
@@ -107,10 +107,10 @@ test("court is evidence-only: full reject grants one rerun of the NO_GO model", 
   assert.deepEqual(outstandingForDeep([occupant], claim, mrrTarget), []);
   const still = court("structural-challenge", "sol-court", { verdict: "NO_GO", reconciled: [{ findingId: "F1", disposition: "still_present", rationale: "The defect remains on this target." }] });
   assert.throws(() => assertPersonaJobAvailable([occupant, still], { ...scope, model: "grok-4.6" }), /already had its one court/);
-  assert.throws(() => assertCourtJobAvailable([occupant, still], { jobRole: "structural-challenge", target: mrrTarget, claim, claimRevision: 1, model: "gpt-5.6-sol" }), /already had its one court/);
+  assert.throws(() => assertCourtJobAvailable([occupant, still], { jobRole: "structural-challenge", target: mrrTarget, claim, claimRevision: 1, model: "gpt-6-astra" }), /already had its one court/);
   const rejected = court("structural-challenge", "sol-court", { reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable to this claim." }] });
   assert.doesNotThrow(() => assertPersonaJobAvailable([occupant, rejected], { ...scope, model: "grok-4.6" }));
-  assert.throws(() => assertPersonaJobAvailable([occupant, rejected], { ...scope, model: "gpt-5.6-sol", substitutionReason: "shop" }), /one rerun of Grok/);
+  assert.throws(() => assertPersonaJobAvailable([occupant, rejected], { ...scope, model: "gpt-6-astra", substitutionReason: "shop" }), /one rerun of Grok/);
   const rerun = persona("structural-challenge", "grok-rerun");
   const reviews = [persona("deep-code-review", "sol-run"), occupant, rejected, rerun, persona("fable-challenge", "fable-run")];
   assert.equal(occupyingReview(reviews, scope).reviewerTaskId, "grok-rerun");
@@ -127,7 +127,7 @@ test("court cannot fill a persona job or use the occupying model", () => {
   const scope = { jobRole: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
   assert.throws(() => assertCourtJobAvailable([occupant], { ...scope, model: "grok-4.6" }), /cannot be the model that produced/);
   const go = persona("structural-challenge", "grok-go");
-  assert.throws(() => assertCourtJobAvailable([go], { ...scope, model: "gpt-5.6-sol" }), /finding-free GO/);
+  assert.throws(() => assertCourtJobAvailable([go], { ...scope, model: "gpt-6-astra" }), /finding-free GO/);
   const courtGo = court("structural-challenge", "sol-court", { reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable." }] });
   const gate = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [occupant, courtGo] });
   assert.equal(gate.ready, false);
@@ -141,21 +141,21 @@ test("court is one-shot and cannot reuse a participating reviewer", () => {
   const fable = persona("fable-challenge", "fable-run");
   const panel = [occupant, deep, fable];
   const scope = { jobRole: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
-  assert.doesNotThrow(() => assertCourtJobAvailable(panel, { ...scope, model: "gpt-5.6-sol" }));
-  assert.doesNotThrow(() => assertCourtJobAvailable(panel, { ...scope, model: "gpt-5.6-sol", reviewerTaskId: "sol-court" }));
+  assert.doesNotThrow(() => assertCourtJobAvailable(panel, { ...scope, model: "gpt-6-astra" }));
+  assert.doesNotThrow(() => assertCourtJobAvailable(panel, { ...scope, model: "gpt-6-astra", reviewerTaskId: "sol-court" }));
   assert.doesNotThrow(() => assertCourtJobAvailable(panel, { ...scope, model: "claude-fable-5", reviewerTaskId: "fable-court" }));
   assert.throws(() => assertCourtJobAvailable(panel, { ...scope, model: "grok-4.6", reviewerTaskId: "grok-court" }), /cannot be the model that produced/);
-  assert.throws(() => assertCourtJobAvailable(panel, { ...scope, model: "gpt-5.6-sol", reviewerTaskId: "sol-run" }), /participating persona reviewer/);
+  assert.throws(() => assertCourtJobAvailable(panel, { ...scope, model: "gpt-6-astra", reviewerTaskId: "sol-run" }), /participating persona reviewer/);
   assert.throws(() => assertCourtJobAvailable(panel, { ...scope, model: "claude-fable-5", reviewerTaskId: "grok-run" }), /participating persona reviewer/);
   const rejected = court("structural-challenge", "sol-court", { reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Inapplicable." }] });
-  assert.throws(() => assertCourtJobAvailable([occupant, rejected], { ...scope, model: "gpt-5.6-sol" }), /already had its one court/);
+  assert.throws(() => assertCourtJobAvailable([occupant, rejected], { ...scope, model: "gpt-6-astra" }), /already had its one court/);
   const rerunNoGo = persona("structural-challenge", "grok-rerun", { verdict: "NO_GO", findings: ["Still unsound"] });
   const afterRerun = [occupant, rejected, rerunNoGo];
-  assert.throws(() => assertCourtJobAvailable(afterRerun, { ...scope, model: "gpt-5.6-sol" }), /fix on a new head/);
+  assert.throws(() => assertCourtJobAvailable(afterRerun, { ...scope, model: "gpt-6-astra" }), /fix on a new head/);
   assert.throws(() => assertPersonaJobAvailable(afterRerun, { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1, model: "grok-4.6" }), /authorized rerun occupied this job/);
   const courtThenPersona = [occupant, rejected];
   assert.throws(
-    () => assertPersonaJobAvailable(courtThenPersona, { role: "deep-code-review", target: mrrTarget, claim, claimRevision: 1, model: "gpt-5.6-sol", reviewerTaskId: "sol-court" }),
+    () => assertPersonaJobAvailable(courtThenPersona, { role: "deep-code-review", target: mrrTarget, claim, claimRevision: 1, model: "gpt-6-astra", reviewerTaskId: "sol-court" }),
     /court reviewer cannot fill a persona job/
   );
   const overlap = [
@@ -190,7 +190,7 @@ test("occupancy ignores envelope-supplied court and ledger flags", () => {
   assert.equal(poisoned.jobRole, undefined);
   const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
   assert.equal(occupyingReview([poisoned], scope).reviewerTaskId, "grok-run");
-  assert.throws(() => assertPersonaJobAvailable([poisoned], { ...scope, model: "gpt-5.6-sol", substitutionReason: "shop" }), /occupied by Grok NO_GO/);
+  assert.throws(() => assertPersonaJobAvailable([poisoned], { ...scope, model: "gpt-6-astra", substitutionReason: "shop" }), /occupied by Grok NO_GO/);
 });
 
 test("exact-head findings stay off deep; older-head findings still travel with deep", () => {
@@ -311,6 +311,6 @@ test("a stale adverse envelope occupies again when the exact target returns", ()
   const occupant = { ...persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] }), staleAtRecord: true };
   const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
   assert.equal(occupyingReview([occupant], scope).reviewerTaskId, "grok-run");
-  assert.doesNotThrow(() => assertCourtJobAvailable([occupant], { jobRole: "structural-challenge", target: mrrTarget, claim, claimRevision: 1, model: "gpt-5.6-sol" }));
+  assert.doesNotThrow(() => assertCourtJobAvailable([occupant], { jobRole: "structural-challenge", target: mrrTarget, claim, claimRevision: 1, model: "gpt-6-astra" }));
   assert.equal(occupyingReview([occupant], { ...scope, target: { head: "d".repeat(40), baseHead } }), null);
 });

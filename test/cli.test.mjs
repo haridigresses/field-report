@@ -99,17 +99,17 @@ test("crr briefs prefer a local native subagent", async () => {
   assert.doesNotMatch(crr.prompt, /necessity=/);
 });
 
-test("mrr briefs seat Sol, Grok, and Fable and isolate reviewers from AF", async () => {
+test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
   const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
   const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
   const fable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
-  assert.equal(deep.delegation.model, "gpt-5.6-sol");
+  assert.equal(deep.delegation.model, "gpt-6-astra");
   assert.equal(structural.delegation.model, "grok-4.6");
   assert.equal(fable.delegation.model, "claude-fable-5");
   assert.equal(deep.execution.mcp, "none");
-  assert.match(deep.execution.launch, /codex exec -m gpt-5.6-sol/);
+  assert.match(deep.execution.launch, /codex exec -m gpt-6-astra/);
   assert.match(deep.execution.launch, /--ignore-user-config/);
   assert.match(deep.execution.launch, /--color never/);
   assert.doesNotMatch(deep.execution.launch, /--ask-for-approval/);
@@ -134,7 +134,7 @@ test("mrr native route isolates a fresh subagent", async () => {
   await featureBranch({ repo, state });
   const native = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--route", "native"], repo, state));
   assert.equal(native.execution.route, "native");
-  assert.match(native.execution.launch, /fresh native gpt-5.6-sol subagent/);
+  assert.match(native.execution.launch, /fresh native gpt-6-astra subagent/);
   assert.match(native.execution.launch, /no MCP servers, including agent-fixes/);
   const nativeFable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge", "--route", "native"], repo, state));
   assert.equal(nativeFable.execution.route, "native");
@@ -161,7 +161,7 @@ test("deep mrr briefs carry outstanding findings; crr findings do not", async ()
   assert.equal(fresh.delegation.outstanding, undefined);
   const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
   assert.equal(deep.delegation.outstanding, undefined);
-  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state));
+  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "structural-challenge", "--model", "gpt-6-astra"], repo, state));
   assert.equal(court.delegation.role, "reconciliation");
   assert.equal(court.delegation.jobRole, "structural-challenge");
   assert.deepEqual(court.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
@@ -180,9 +180,9 @@ test("a completed envelope occupies the job; fail and shopping are not escapes",
   const second = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
   assert.notEqual(unused.delegation.id, second.delegation.id);
   await assert.rejects(run(["review", "fail", "outcome", "--delegation", unused.delegation.id, "--task-id", "never-started", "--reason", "no envelope"], repo, state), /does not record provider failure/);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state), /substitution requires a non-empty substitutionReason/);
-  const substitute = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--substitution-reason", "cursor-agent not on PATH"], repo, state));
-  assert.equal(substitute.delegation.model, "gpt-5.6-sol");
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra"], repo, state), /substitution requires a non-empty substitutionReason/);
+  const substitute = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "cursor-agent not on PATH"], repo, state));
+  assert.equal(substitute.delegation.model, "gpt-6-astra");
   assert.equal(substitute.delegation.substitutionReason, "cursor-agent not on PATH");
   await run(["review", "bind", "outcome", "--delegation", unused.delegation.id, "--task-id", "grok-run"], repo, state);
   const review = {
@@ -195,7 +195,7 @@ test("a completed envelope occupies the job; fail and shopping are not escapes",
   const file = path.join(repo, "review.json");
   await writeFile(file, JSON.stringify(review));
   await run(["review", "record", "outcome", "--file", file], repo, state);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--substitution-reason", "shop for GO"], repo, state), /occupied by Grok NO_GO/);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "shop for GO"], repo, state), /occupied by Grok NO_GO/);
   await assert.rejects(run(["gate", "open", "outcome"], repo, state), /not a finding-free GO/);
   const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
   assert.match(status, /BLOCKED/);
@@ -207,14 +207,14 @@ test("attested substitution fills the job and prints on status", async () => {
   await featureBranch({ repo, state });
   await recordMrrLane(repo, state, "deep-code-review", "sol-run");
   await recordMrrLane(repo, state, "fable-challenge", "fable-run");
-  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol", "--substitution-reason", "cursor-agent not on PATH"], repo, state));
+  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "cursor-agent not on PATH"], repo, state));
   assert.equal(brief.execution.substituted, true);
   await run(["review", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "sol-sub"], repo, state);
   const review = {
     reviewComplete: true, independent: true, delegationId: brief.delegation.id, reviewerTaskId: "sol-sub",
     claim: brief.delegation.claim, kind: "mrr", role: "structural-challenge",
     head: brief.delegation.head, baseHead: brief.delegation.baseHead,
-    provider: "openai", model: "gpt-5.6-sol", route: "cli", verdict: "GO", findings: [], unresolved: [],
+    provider: "openai", model: "gpt-6-astra", route: "cli", verdict: "GO", findings: [], unresolved: [],
     substitutionReason: "cursor-agent not on PATH", summary: "Complete adversarial review", ...scores("GO")
   };
   const file = path.join(path.dirname(repo), "sol-sub.json");
@@ -222,7 +222,7 @@ test("attested substitution fills the job and prints on status", async () => {
   await run(["review", "record", "outcome", "--file", file], repo, state);
   const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
   assert.match(status, /READY/);
-  assert.match(status, /structural-challenge: GO via Sol; intended Grok was substituted: cursor-agent not on PATH/);
+  assert.match(status, /structural-challenge: GO via Astra; intended Grok was substituted: cursor-agent not on PATH/);
   assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
 });
 
@@ -265,7 +265,7 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
 });
 
 const mrrModels = {
-  "deep-code-review": { model: "gpt-5.6-sol", provider: "openai" },
+  "deep-code-review": { model: "gpt-6-astra", provider: "openai" },
   "structural-challenge": { model: "grok-4.6", provider: "cursor" },
   "fable-challenge": { model: "claude-fable-5", provider: "anthropic" }
 };
