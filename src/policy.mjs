@@ -347,6 +347,7 @@ export function courtFullyRejected(reviews, occupant, { target, claim, claimRevi
       if (original.some((finding) => finding.id === entry.findingId)) latest.set(entry.findingId, entry.disposition);
     }
   }
+  if ([...latest.values()].includes("still_present")) return false;
   const outstandingIds = outstandingOccupantPacket(reviews, occupant, claim).map((finding) => finding.id);
   if (outstandingIds.length) return outstandingIds.every((id) => latest.get(id) === "rejected");
   return original.every((finding) => latest.get(finding.id) === "rejected" || !outstandingFindings(reviews, claim, occupant, occupant.claimRevision ?? 1).some((item) => item.id === finding.id));

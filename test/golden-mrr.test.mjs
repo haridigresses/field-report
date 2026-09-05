@@ -296,6 +296,17 @@ test("court authorizes a rerun against the outstanding occupant packet it briefe
   assert.equal(occupyingReview([...reviews, rerun], scope).reviewerTaskId, "grok-rerun");
 });
 
+test("a still_present court cannot reopen a rerun after a later resolve", () => {
+  const occupant = persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] });
+  const still = court("structural-challenge", "sol-court", { verdict: "NO_GO", reconciled: [{ findingId: "F1", disposition: "still_present", rationale: "The defect remains." }] });
+  const later = { ...persona("deep-code-review", "sol-later", { reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed on a later head." }] }), head: "d".repeat(40) };
+  const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
+  assert.throws(
+    () => assertPersonaJobAvailable([occupant, still, later], { ...scope, model: "grok-4.6" }),
+    /already had its one court/
+  );
+});
+
 test("a stale adverse envelope occupies again when the exact target returns", () => {
   const occupant = { ...persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] }), staleAtRecord: true };
   const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
