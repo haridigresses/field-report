@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore } from "../src/store.mjs";
-import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, seatingFor, substitutionLine, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, intendedModelFor, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, seatingFor, substitutionLine, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 import { astraInvokeCommand, fableInvokeCommand } from "../src/machines.mjs";
@@ -31,6 +31,7 @@ function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = 
 function usage() {
   return `Field Report control loop
 
+fr version
 fr init
 fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main]
 fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main]
@@ -236,6 +237,12 @@ async function main() {
   const command = process.argv[2] || "help";
   const { positional, flags } = parse(process.argv.slice(3));
   if (["help", "--help", "-h"].includes(command)) return process.stdout.write(`${usage()}\n`);
+  if (command === "version") {
+    const { version } = JSON.parse(await readFile(path.join(runtimeRoot, "package.json"), "utf8"));
+    let revision = "unavailable (runtime has no Git revision)";
+    try { revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: runtimeRoot, timeout: 10_000 })).stdout.trim(); } catch {}
+    return process.stdout.write(`Field Report ${version}\nRuntime source: ${runtimeRoot}\nGit revision: ${revision}\n`);
+  }
   if (command === "init") { const root = await store.init(); return process.stdout.write(`Initialized Field Report state at ${root}\n`); }
 
   if (command === "project" && positional[0] === "add") {
@@ -306,9 +313,16 @@ async function main() {
     const target = await targetFor(stream, kind);
     const reviews = kind === "mrr" ? await store.reviews(stream.id) : [];
     const delegations = kind === "mrr" ? await store.delegations(stream.id) : [];
-    const substitutionReason = String(flags["substitution-reason"] || "").trim();
+    let substitutionReason = String(flags["substitution-reason"] || "").trim();
     if (kind === "mrr") {
       assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, substitutionReason, delegations });
+      const occupant = occupyingReview(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision }, delegations);
+      if (occupant) {
+        // An authorized same-model court rerun keeps the original job's seating.
+        seated.intended = intendedModelFor(occupant);
+        seated.substituted = seated.model !== seated.intended;
+        substitutionReason = occupant.substitutionReason || "";
+      }
     }
     const outstanding = kind === "mrr" && role === "deep-code-review"
       ? outstandingForDeep(reviews, stream.claim, target, stream.claimRevision).map(({ id, category, text }) => ({ id, category, text }))
@@ -317,12 +331,13 @@ async function main() {
     const project = await store.project(stream.project);
     const delegation = await store.addDelegation(stream.id, {
       type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision,
+      ...(kind === "mrr" ? { intendedModel: seated.intended } : {}),
       head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}),
       ...(outstanding.length ? { outstanding } : {}),
       ...(substitutionReason && seated.substituted ? { substitutionReason } : {}),
       ownerTaskIdAtBrief: stream.ownerTaskId || null
     });
-    const execution = { ...REVIEW_EXECUTION, intended: seated.intended, substituted: seated.substituted, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: project.repoPath, baseSha: target.baseHead, headSha: target.head }) };
+    const execution = { ...REVIEW_EXECUTION, intended: seated.intended, substituted: seated.substituted, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "bind") {
@@ -352,7 +367,7 @@ async function main() {
       claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, outstanding,
       ownerTaskIdAtBrief: stream.ownerTaskId || null
     });
-    const execution = { ...REVIEW_EXECUTION, intended: null, substituted: false, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: project.repoPath, baseSha: target.baseHead, headSha: target.head }) };
+    const execution = { ...REVIEW_EXECUTION, intended: null, substituted: false, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "record") {

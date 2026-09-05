@@ -41,6 +41,7 @@ Field Report binds a delivery unit and records review evidence. The owner launch
 ### Review envelope
 
 - Every review records its exact delegation, claim, reviewer task or provider run, target, independence, verdict, findings, summary, and explanatory scores. MRR reviews also record unresolved items, structural signals, and simpler-path reasoning. MRR models are `gpt-6-astra`, `grok-4.6`, or `claude-fable-5`; launch route is provenance.
+- Persona briefs pin their intended model, and recorded evidence retains that seating. A new intended model governs new briefs only. Historical Sol deep reviews and the initial unpinned Astra briefs retain their original meaning; do not fabricate substitution reasons for them.
 - The delivery claim is a dedicated workstream field (`fr update <id> --claim`). Changing the claim makes prior MRR evidence stale; ordinary summary updates do not.
 - Field Report assigns durable IDs only to MRR findings and unresolved items. Those stay outstanding until a later MRR review explicitly reconciles the ID. A newer GO, a changed SHA, or an edited claim never silently clears them. CRR findings never enter that ledger.
 - The `deep-code-review` MRR brief carries outstanding issues from an older head. Exact-head occupying packets go through `fr review adjudicate`. A review may reconcile only IDs delivered in its own brief.

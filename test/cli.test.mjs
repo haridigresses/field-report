@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
+import { createStore } from "../src/store.mjs";
 
 const exec = promisify(execFile);
 const cli = path.resolve("bin/fr.mjs");
@@ -106,6 +107,7 @@ test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", asy
   const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
   const fable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
   assert.equal(deep.delegation.model, "gpt-6-astra");
+  assert.equal(deep.delegation.intendedModel, "gpt-6-astra");
   assert.equal(structural.delegation.model, "grok-4.6");
   assert.equal(fable.delegation.model, "claude-fable-5");
   assert.equal(deep.execution.mcp, "none");
@@ -127,6 +129,46 @@ test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", asy
   assert.match(deep.prompt, /kind=mrr/);
   assert.match(deep.prompt, /Do not run fr, owner skills, MCP servers, or AF/);
   assert.equal(deep.inspection.command, `git diff --no-ext-diff --no-textconv ${deep.delegation.baseHead} ${deep.delegation.head} --`);
+});
+
+test("worktree persona and court launches use the reviewed checkout instead of the configured project root", async () => {
+  const { root, repo, state } = await fixture();
+  const worktree = path.join(root, "review worktree");
+  await exec("git", ["worktree", "add", "-b", "feature", worktree], { cwd: repo });
+  const worktreeRoot = (await exec("git", ["rev-parse", "--show-toplevel"], { cwd: worktree })).stdout.trim();
+  await writeFile(path.join(worktree, "README.md"), "worktree change\n");
+  await exec("git", ["add", "README.md"], { cwd: worktree });
+  await exec("git", ["commit", "-m", "worktree feature"], { cwd: worktree });
+  await run(["update", "outcome", "--branch", "feature"], worktree, state);
+  const mainHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: repo })).stdout.trim();
+  const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], worktree, state));
+  const fable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], worktree, state));
+  assert.notEqual(deep.delegation.head, mainHead);
+  for (const brief of [deep, fable]) {
+    assert.ok(brief.execution.launch.includes(`cd "${worktreeRoot}"`), brief.execution.launch);
+    assert.ok(!brief.execution.launch.includes(`cd "${repo}"`), brief.execution.launch);
+  }
+  await run(["review", "bind", "outcome", "--delegation", deep.delegation.id, "--task-id", "worktree-astra"], worktree, state);
+  const file = path.join(root, "review.json");
+  await writeFile(file, JSON.stringify({
+    reviewComplete: true, independent: true, delegationId: deep.delegation.id, reviewerTaskId: "worktree-astra",
+    claim: deep.delegation.claim, kind: "mrr", role: "deep-code-review",
+    head: deep.delegation.head, baseHead: deep.delegation.baseHead,
+    provider: "openai", model: "gpt-6-astra", route: "cli", verdict: "NO_GO", findings: ["Review worktree finding"], unresolved: [],
+    summary: "Reviewed", ...scores("NO_GO")
+  }));
+  await run(["review", "record", "outcome", "--file", file], worktree, state);
+  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "deep-code-review", "--model", "claude-fable-5"], worktree, state));
+  assert.ok(court.execution.launch.includes(`cd "${worktreeRoot}"`), court.execution.launch);
+  assert.ok(!court.execution.launch.includes(`cd "${repo}"`), court.execution.launch);
+});
+
+test("version identifies runtime source and revision independently of the current checkout", async () => {
+  const { repo, state } = await fixture();
+  const runtimeRoot = path.dirname(path.dirname(cli));
+  const revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: runtimeRoot })).stdout.trim();
+  const { version } = JSON.parse(await readFile(path.join(runtimeRoot, "package.json"), "utf8"));
+  assert.equal(await run(["version"], repo, state), `Field Report ${version}\nRuntime source: ${runtimeRoot}\nGit revision: ${revision}\n`);
 });
 
 test("mrr native route isolates a fresh subagent", async () => {
@@ -287,6 +329,37 @@ async function recordMrrLane(repo, state, role, taskId, stream = "outcome") {
   await run(["review", "record", stream, "--file", file], repo, state);
   return brief;
 }
+
+test("a historical Sol NO_GO can be recorded, courted, and rerun without inventing a substitution", async () => {
+  const { repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  const target = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state)).delegation;
+  const { id, event, createdAt, intendedModel, ...fields } = target;
+  const old = await createStore(state).addDelegation("outcome", { ...fields, model: "gpt-5.6-sol" });
+  const record = async (d, task, extra) => {
+    await run(["review", "bind", "outcome", "--delegation", d.id, "--task-id", task], repo, state);
+    const file = path.join(state, `${task}.json`);
+    await writeFile(file, JSON.stringify({
+      ...d, delegationId: d.id, reviewerTaskId: task, reviewComplete: true, independent: true,
+      provider: d.model === "grok-4.6" ? "cursor" : "openai", findings: [], unresolved: [],
+      summary: "Independent evidence", ...scores(), ...extra
+    }));
+    await run(["review", "record", "outcome", "--file", file], repo, state);
+  };
+  await record(old, "old-sol", { verdict: "NO_GO", findings: ["Incorrect finding"] });
+  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "deep-code-review", "--model", "grok-4.6"], repo, state));
+  await record(court.delegation, "grok-court", {
+    verdict: "GO", reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Independent evidence disproves the finding." }]
+  });
+  const rerun = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--model", "gpt-5.6-sol", "--route", "native"], repo, state));
+  assert.equal(rerun.delegation.intendedModel, "gpt-5.6-sol");
+  assert.equal(rerun.delegation.substitutionReason, undefined);
+  assert.equal(rerun.execution.substituted, false);
+  await record(rerun.delegation, "sol-rerun", { verdict: "GO" });
+  await recordMrrLane(repo, state, "structural-challenge", "grok-persona");
+  await recordMrrLane(repo, state, "fable-challenge", "fable-persona");
+  assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
+});
 
 test("a skip without prior MRR is rejected", async () => {
   const { repo, state } = await fixture();

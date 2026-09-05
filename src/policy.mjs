@@ -132,6 +132,15 @@ export function substitutionReasonOf(item) {
   return String(item?.substitutionReason || "").trim();
 }
 
+// New briefs pin seating. Before that field existed, Sol was the intended
+// deep reviewer; the first Astra briefs also shipped without the field.
+// Preserve those original reviews without inventing substitution attestations.
+export function intendedModelFor(item) {
+  if (item?.intendedModel != null) return canonicalReviewModel(item.intendedModel);
+  if (item?.role === "deep-code-review" && canonicalReviewModel(item.model) === REVIEW_MODELS.sol && !substitutionReasonOf(item)) return REVIEW_MODELS.sol;
+  return INTENDED_MODELS[item?.role];
+}
+
 export function validateReview(input, delegation) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Review envelope must be an object");
   if (input.reviewComplete !== true || input.independent !== true) throw new Error("Review requires reviewComplete=true and independent=true");
@@ -162,7 +171,8 @@ export function validateReview(input, delegation) {
     if (delegation.model && canonicalReviewModel(delegation.model) !== model) throw new Error("Review model must match its exact delegation");
     if (!providersFor(model).includes(input.provider)) throw new Error(`Provider does not match review model ${model}`);
     if (role !== COURT_ROLE) {
-      const intended = INTENDED_MODELS[role];
+      const intended = intendedModelFor(delegation);
+      if (!intended) throw new Error("Review brief has an invalid intendedModel");
       substitutionReason = substitutionReasonOf(delegation);
       if (substitutionReasonOf(input) && substitutionReasonOf(input) !== substitutionReason) {
         throw new Error("substitutionReason must match its exact delegation");
@@ -208,7 +218,7 @@ export function validateReview(input, delegation) {
   } else if (role === COURT_ROLE) {
     throw new Error("Court must adjudicate the delivered packet");
   }
-  const { reconciliationOnly: _reconciliationOnly, jobRole: _jobRole, legacy: _legacy, staleAtRecord: _staleAtRecord, ...rest } = input;
+  const { reconciliationOnly: _reconciliationOnly, jobRole: _jobRole, legacy: _legacy, staleAtRecord: _staleAtRecord, intendedModel: _intendedModel, ...rest } = input;
   return {
     ...rest,
     kind,
@@ -217,6 +227,7 @@ export function validateReview(input, delegation) {
     findings: [...input.findings],
     scores: { ...input.scores },
     ...(substitutionReason ? { substitutionReason } : {}),
+    ...(kind === "mrr" && role !== COURT_ROLE ? { intendedModel: intendedModelFor(delegation) } : {}),
     ...(input.reconciled ? { reconciled: input.reconciled.map((entry) => ({ ...entry })) } : {}),
     ...(role === COURT_ROLE ? { reconciliationOnly: true, jobRole: delegation.jobRole } : {})
   };
@@ -314,11 +325,11 @@ export function outstandingOccupantPacket(reviews, occupant, claim) {
 
 const acceptedMrr = (review, delegations = []) => {
   if (!(isPersonaReview(review) && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && hasMrrSignals(review) && !(review.findings || []).length && !(review.unresolved || []).length)) return false;
-  const intended = INTENDED_MODELS[review.role];
+  const delegation = (delegations || []).find((item) => item.id === review.delegationId && item.event === "created");
+  const intended = intendedModelFor(delegation || review);
   const model = canonicalReviewModel(review.model);
-  if (model === intended) return true;
-  const delegation = (delegations || []).find((item) => item.id === review.delegationId);
-  return Boolean(substitutionReasonOf(delegation || (delegations.length ? null : review)));
+  if (intended && model === intended) return true;
+  return Boolean(intended && substitutionReasonOf(delegation || (delegations.length ? null : review)));
 };
 const acceptedCrr = (review) => reviewKind(review?.kind) === "crr" && review?.role === CRR_ROLE && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && !(review.findings || []).length && !(review.unresolved || []).length;
 
@@ -388,7 +399,7 @@ export function occupyingReview(reviews, scope, delegations = []) {
 
 export function substitutionLine(review, role = review?.role) {
   if (!review || !substitutionReasonOf(review)) return null;
-  const intended = INTENDED_MODELS[role] || INTENDED_MODELS[review.role];
+  const intended = intendedModelFor({ ...review, role });
   return `${role}: ${review.verdict} via ${reviewModelLabel(review.model)}; intended ${reviewModelLabel(intended)} was substituted: ${substitutionReasonOf(review)}`;
 }
 
@@ -398,7 +409,7 @@ export function assertPersonaJobAvailable(reviews, { role, target, claim, claimR
   if (!selected) throw new Error(`Unknown review model: ${model}`);
   const scope = { role, target, claim, claimRevision };
   const occupant = occupyingReview(reviews, scope, delegations);
-  const intended = INTENDED_MODELS[role];
+  const intended = currentDelegation ? intendedModelFor(currentDelegation) : INTENDED_MODELS[role];
   if (reviewerTaskId && courtReviewsOnTarget(reviews, { target, claim, claimRevision }).some((review) => review.reviewerTaskId === reviewerTaskId)) {
     throw new Error("A court reviewer cannot fill a persona job");
   }

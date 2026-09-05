@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { normalizeReview } from "../src/envelope.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const claim = "Ship the stated delivery unit";
@@ -174,6 +175,42 @@ test("a substituted mrr GO fills its job and does not require a provider failure
   });
   assert.equal(invented.ready, false);
   assert.match(invented.reasons.join(" "), /structural-challenge is not a finding-free GO/);
+});
+
+test("historical Sol and initial Astra panels retain readiness, churn, and skip eligibility", () => {
+  for (const model of ["gpt-5.6-sol", "gpt-6-astra"]) {
+    const deep = mrrDelegation("deep-code-review", undefined, { model });
+    const delegations = [deep, mrrDelegation("structural-challenge"), mrrDelegation("fable-challenge")];
+    // These are the original persisted envelopes, not normalized by new code.
+    const reviews = delegations.map((d, i) => mrrEnvelope(d, `historical-${i}`));
+    const snapshot = JSON.stringify({ reviews, delegations });
+    const args = { target: mrrTarget, workstream, reviews, delegations };
+    assert.equal(evaluateGate({ ...args, kind: "mrr" }).ready, true, model);
+    assert.deepEqual(lastReadyMrr(reviews, workstream, delegations), { head, baseHead });
+    const target = { ...mrrTarget, head: "d".repeat(40) };
+    assert.equal(evaluateMergeReady({ ...args, target }).phase, "churn");
+    const waivers = [{ ...target, claim, claimRevision: 1, actor: "user", reason: "Explicitly approved skip", priorHead: head }];
+    assert.equal(evaluateMergeReady({ ...args, target, waivers }).phase, "waived");
+    assert.equal(validateReview(reviews[0], deep).intendedModel, model);
+    assert.equal(JSON.stringify({ reviews, delegations }), snapshot, "reading evidence must not rewrite history");
+  }
+});
+
+test("pinned seating survives model changes but new Sol substitutions still require attestation", () => {
+  const original = { ...mrrDelegation("deep-code-review", undefined, { model: "gpt-5.6-sol" }), intendedModel: "gpt-5.6-sol" };
+  const historical = validateReview(mrrEnvelope(original, "original-sol"), original);
+  assert.equal(historical.intendedModel, "gpt-5.6-sol");
+  const newBrief = { ...original, id: randomUUID(), intendedModel: "gpt-6-astra" };
+  const forged = normalizeReview({ ...mrrEnvelope(newBrief, "new-sol"), intendedModel: "gpt-5.6-sol" }, newBrief);
+  assert.equal(forged.intendedModel, "gpt-6-astra");
+  assert.throws(() => validateReview(forged, newBrief), /substitution requires/);
+  const attested = { ...newBrief, substitutionReason: "Astra unavailable before launch" };
+  const substituted = validateReview(normalizeReview(forged, attested), attested);
+  const others = [mrrComplete("structural-challenge", "grok"), mrrComplete("fable-challenge", "fable")];
+  assert.equal(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [substituted, ...others], delegations: [attested] }).ready, true);
+  assert.match(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [substituted, ...others], delegations: [attested] }).notes.join(" "), /intended Astra was substituted/);
+  const invalid = { ...newBrief, intendedModel: "unknown" };
+  assert.throws(() => validateReview(forged, invalid), /invalid intendedModel/);
 });
 
 test("the first completed envelope occupies its persona job", () => {
