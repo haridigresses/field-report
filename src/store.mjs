@@ -187,12 +187,19 @@ export function createStore(root = defaultStateRoot()) {
     const stream = await workstream(workstreamId);
     const event = { ...value, id: delegationId, workstreamId: stream.id, at: new Date().toISOString() };
     return locked(async () => {
-      const created = (await lines("delegations", stream.id)).find((item) => item.event === "created" && item.id === delegationId);
+      const events = await lines("delegations", stream.id);
+      const created = events.find((item) => item.event === "created" && item.id === delegationId);
       if (!created) throw new Error(`Unknown delegation: ${delegationId}`);
       if (value.event === "failed") throw new Error("Field Report does not record provider failure");
       if (value.event === "bound") {
-        const existing = (await lines("delegations", stream.id)).findLast((item) => item.event === "bound" && item.id === delegationId);
+        const existing = events.findLast((item) => item.event === "bound" && item.id === delegationId);
         if (existing && existing.taskId !== value.taskId) throw new Error(`Delegation ${delegationId} is already bound to ${existing.taskId}`);
+        if (created.type === "review") {
+          const reviewIds = new Set(events.filter((item) => item.event === "created" && item.type === "review").map((item) => item.id));
+          const other = events.find((item) => item.event === "bound" && item.taskId === value.taskId && item.id !== delegationId && reviewIds.has(item.id));
+          if (other) throw new Error(`Review task ${value.taskId} is already bound to delegation ${other.id}`);
+        }
+        if (existing) return existing;
       }
       return append("delegations", stream.id, event);
     });

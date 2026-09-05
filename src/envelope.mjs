@@ -48,14 +48,16 @@ function cursorStreamResult(text) {
   return last;
 }
 
-function stringList(value) {
-  if (value == null) return [];
-  const items = Array.isArray(value) ? value : [value];
-  return items.map((item) => {
-    if (typeof item === "string") return item.trim();
-    if (isObject(item)) return String(item.text || item.finding || item.summary || "").trim();
-    return "";
-  }).filter(Boolean);
+function stringList(value, field) {
+  if (!Array.isArray(value)) throw new Error(`Review ${field} must be an array`);
+  return value.map((item) => {
+    if (typeof item === "string" && item.trim()) return item;
+    if (isObject(item)) {
+      const keys = Object.keys(item);
+      if (keys.length === 1 && ["text", "finding", "summary"].includes(keys[0]) && typeof item[keys[0]] === "string" && item[keys[0]].trim()) return item[keys[0]];
+    }
+    throw new Error(`Review ${field} items must be nonblank strings or single-field text objects`);
+  });
 }
 
 export function parseEnvelope(text) {
@@ -64,19 +66,25 @@ export function parseEnvelope(text) {
   return successfulClaudeResult(value) || successfulCursorResult(value) || value;
 }
 
-export function normalizeReview(input, delegation) {
+export function normalizeReview(input, delegation, binding) {
   if (!isObject(input) || !delegation) return input;
   const next = { ...input };
-  next.reviewComplete = next.reviewComplete === true;
-  next.independent = next.independent === true;
-  next.delegationId = delegation.id;
-  next.kind = delegation.kind;
-  next.role = delegation.role;
-  next.claim = delegation.claim;
-  next.head = delegation.head;
-  next.baseHead = delegation.baseHead;
-  next.model = delegation.model;
-  next.route = delegation.route;
+  const identity = {
+    delegationId: delegation.id,
+    kind: delegation.kind,
+    role: delegation.role,
+    claim: delegation.claim,
+    head: delegation.head,
+    baseHead: delegation.baseHead,
+    model: delegation.model,
+    route: delegation.route,
+    ...(delegation.kind === "crr" ? { tree: delegation.tree } : {}),
+    ...(binding?.taskId ? { reviewerTaskId: binding.taskId } : {})
+  };
+  for (const [key, value] of Object.entries(identity)) {
+    if (Object.hasOwn(next, key) && next[key] !== value) throw new Error(`Review ${key} conflicts with its delegation binding`);
+    next[key] = value;
+  }
   delete next.intendedModel;
   if (delegation.intendedModel != null) next.intendedModel = delegation.intendedModel;
   delete next.substitutionReason;
@@ -87,15 +95,14 @@ export function normalizeReview(input, delegation) {
   delete next.staleAtRecord;
   if (delegation.reconciliationOnly === true) next.reconciliationOnly = true;
   if (delegation.jobRole) next.jobRole = delegation.jobRole;
-  if (next.kind === "crr") next.tree = delegation.tree;
-  else delete next.tree;
-  next.findings = stringList(next.findings);
-  next.unresolved = stringList(next.unresolved);
-  if (next.reconciled != null) {
-    next.reconciled = (Array.isArray(next.reconciled) ? next.reconciled : []).map((entry) => {
-      if (!isObject(entry)) return entry;
-      const findingId = String(entry.findingId || entry.id || "").trim();
-      return { ...entry, findingId };
+  if (Object.hasOwn(next, "findings")) next.findings = stringList(next.findings, "findings");
+  if (Object.hasOwn(next, "unresolved")) next.unresolved = stringList(next.unresolved, "unresolved");
+  if (Object.hasOwn(next, "reconciled")) {
+    if (!Array.isArray(next.reconciled)) throw new Error("reconciled must be an array of finding reconciliations");
+    next.reconciled = next.reconciled.map((entry) => {
+      if (!isObject(entry) || !Object.hasOwn(entry, "id")) return entry;
+      if (Object.hasOwn(entry, "findingId") && entry.findingId !== entry.id) throw new Error("Reconciliation id conflicts with findingId");
+      return { ...entry, findingId: entry.id };
     });
   }
   return next;

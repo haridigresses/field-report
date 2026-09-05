@@ -122,3 +122,17 @@ test("store aborts a review when pre-append target validation fails", async () =
   await assert.rejects(store.addReview("sample-outcome", { delegationId: "delegation-1", findings: [], unresolved: [] }, { beforeAppend: async () => { throw new Error("target moved"); } }), /target moved/);
   assert.equal((await store.reviews("sample-outcome")).length, 0);
 });
+
+test("one reviewer run cannot bind to two review delegations even concurrently", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-run-binding-"));
+  const store = createStore(root);
+  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
+  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it" });
+  const first = await store.addDelegation("sample-outcome", { type: "review" });
+  const second = await store.addDelegation("sample-outcome", { type: "review" });
+  const results = await Promise.allSettled([first, second].map((d) => store.addDelegationEvent("sample-outcome", d.id, { event: "bound", taskId: "same-run" })));
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  assert.match(results.find((r) => r.status === "rejected").reason.message, /already bound/);
+  const bound = (await store.delegations("sample-outcome")).find((r) => r.event === "bound");
+  await store.addDelegationEvent("sample-outcome", bound.id, { event: "bound", taskId: "same-run" });
+});

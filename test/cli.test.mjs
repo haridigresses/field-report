@@ -96,7 +96,7 @@ test("crr briefs prefer a local native subagent", async () => {
   assert.equal(crr.execution.mcp, "none");
   assert.equal(crr.execution.route, "native");
   assert.match(crr.execution.launch, /Prefer a local model/);
-  assert.match(crr.prompt, /kind=crr, role=crr/);
+  assert.match(crr.prompt, /delegationId=/);
   assert.doesNotMatch(crr.prompt, /necessity=/);
 });
 
@@ -126,7 +126,7 @@ test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", asy
   assert.doesNotMatch(fable.execution.launch, /Bash\(git diff \*\)/);
   assert.doesNotMatch(fable.execution.launch, /claude-aws/);
   assert.doesNotMatch(fable.execution.launch, /Bash\(git \*\)/);
-  assert.match(deep.prompt, /kind=mrr/);
+  assert.match(deep.prompt, /delegationId=/);
   assert.match(deep.prompt, /Do not run fr, owner skills, MCP servers, or AF/);
   assert.equal(deep.inspection.command, `git diff --no-ext-diff --no-textconv ${deep.delegation.baseHead} ${deep.delegation.head} --`);
 });
@@ -413,4 +413,53 @@ test("later commits are churn until the user skips or asks for final MRR", async
   await assert.rejects(run(["review", "waive", "outcome", "--reason", "duplicate"], repo, state), /already recorded for this exact head/);
   assert.match(await run(["context", "outcome"], repo, state), /merge-ready via skip/);
   await assert.rejects(run(["gate", "bots", "outcome"], repo, state), /GitHub lookup failed:/);
+});
+
+test("raw review recording preserves source and limitations without owner identity repair", async () => {
+  const { root, repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
+  const d = brief.delegation;
+  await run(["review", "bind", "outcome", "--delegation", d.id, "--task-id", "original-fable-run"], repo, state);
+  const replacement = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
+  await assert.rejects(run(["review", "bind", "outcome", "--delegation", replacement.delegation.id, "--task-id", "original-fable-run"], repo, state), /already bound/);
+  const file = path.join(root, "original.json");
+  const raw = { reviewComplete: true, independent: true, provider: "anthropic", verdict: "NO_GO",
+    findings: [], unresolved: ["Cannot mechanically inspect base-to-head diff"], summary: "Review is limited", ...scores("NO_GO") };
+  const source = JSON.stringify({ subtype: "success", is_error: false, result: `\`\`\`json\n${JSON.stringify(raw)}\n\`\`\`` });
+  await writeFile(file, source);
+  await run(["review", "record", "outcome", "--delegation", d.id, "--file", file], repo, state);
+  const [recorded] = await createStore(state).reviews("outcome");
+  assert.equal(recorded.sourceText, source);
+  assert.equal(recorded.delegationId, d.id);
+  assert.equal(recorded.reviewerTaskId, "original-fable-run");
+  assert.equal(recorded.verdict, "NO_GO");
+  assert.deepEqual(recorded.unresolved, raw.unresolved);
+  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /not a finding-free GO/);
+});
+
+test("record refuses conflicting provenance, pass, and lossy evidence instead of manufacturing GO", async () => {
+  const { root, repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  const { delegation: d } = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
+  await run(["review", "bind", "outcome", "--delegation", d.id, "--task-id", "original-astra"], repo, state);
+  const file = path.join(root, "output.json");
+  const raw = { reviewComplete: true, independent: true, provider: "openai", verdict: "GO", findings: [], unresolved: [], summary: "Reviewed", ...scores() };
+  for (const extra of [
+    { delegationId: "unknown", reviewerTaskId: "original-astra" },
+    { head: "f".repeat(40) }, { reviewerTaskId: "replacement-task" },
+    { verdict: "pass", summary: "Could not inspect diff" },
+    { unresolved: [{ limitation: "Could not inspect diff" }] },
+    { findings: [{ text: "Looks fine", caveat: "Could not inspect diff" }] }
+  ]) {
+    await writeFile(file, JSON.stringify({ ...raw, ...extra }));
+    await assert.rejects(run(["review", "record", "outcome", "--delegation", d.id, "--file", file], repo, state));
+  }
+  await writeFile(file, JSON.stringify({ ...raw, delegationId: "unknown", reviewerTaskId: "original-astra" }));
+  await assert.rejects(run(["review", "record", "outcome", "--file", file], repo, state));
+  assert.deepEqual(await createStore(state).reviews("outcome"), []);
+  // The unedited substantive result needs no duplicated routing identity.
+  await writeFile(file, JSON.stringify(raw));
+  await run(["review", "record", "outcome", "--delegation", d.id, "--file", file], repo, state);
+  assert.equal((await createStore(state).reviews("outcome"))[0].verdict, "GO");
 });

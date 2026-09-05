@@ -65,39 +65,44 @@ test("parseEnvelope extracts a JSON object after wrapper preamble", () => {
   assert.deepEqual(parseEnvelope(JSON.stringify(wrapper)), review);
 });
 
-test("normalizeReview pins identity from the brief", () => {
-  const delegation = {
-    id: "11111111-1111-1111-1111-111111111111",
-    kind: "crr",
-    role: "crr",
-    claim: "Seat the three personas.",
-    head: "a".repeat(40),
-    baseHead: "b".repeat(40),
-    tree: "c".repeat(40),
-    model: "composer-2",
-    route: "native"
-  };
-  const normalized = normalizeReview({
-    reviewComplete: true,
-    independent: true,
-    delegationId: "22222222-2222-2222-2222-222222222222",
-    claim: "Seat the three personas. Extra sentence.",
-    kind: "mrr",
-    role: "fable-challenge",
-    head: "d".repeat(40),
-    baseHead: "e".repeat(40),
-    findings: [{ text: " " }, "Real defect"],
-    unresolved: [],
-    reconciled: [{ id: "F9", disposition: "resolved", rationale: "Fixed." }]
-  }, delegation);
+const delegation = {
+  id: "11111111-1111-1111-1111-111111111111", kind: "crr", role: "crr",
+  claim: "Seat the three personas.", head: "a".repeat(40), baseHead: "b".repeat(40),
+  tree: "c".repeat(40), model: "composer-2", route: "native"
+};
+
+test("normalizeReview fills omitted identity without changing substantive evidence", () => {
+  const input = { reviewComplete: true, independent: true, verdict: "NO_GO",
+    findings: [{ text: "Real defect" }], unresolved: ["Could not inspect diff"],
+    summary: "Limited evidence", reconciled: [{ id: "F9", disposition: "still_present", rationale: "Not fixed." }] };
+  const normalized = normalizeReview(input, delegation);
   assert.equal(normalized.delegationId, delegation.id);
-  assert.equal(normalized.kind, "crr");
-  assert.equal(normalized.role, "crr");
-  assert.equal(normalized.claim, delegation.claim);
   assert.equal(normalized.head, delegation.head);
   assert.equal(normalized.tree, delegation.tree);
   assert.deepEqual(normalized.findings, ["Real defect"]);
+  assert.deepEqual(normalized.unresolved, input.unresolved);
+  assert.equal(normalized.verdict, "NO_GO");
+  assert.equal(normalized.summary, input.summary);
   assert.equal(normalized.reconciled[0].findingId, "F9");
+});
+
+test("normalizeReview rejects conflicting supplied identity instead of retargeting evidence", () => {
+  for (const key of ["delegationId", "kind", "role", "claim", "head", "baseHead", "tree", "model", "route"]) {
+    assert.throws(() => normalizeReview({ [key]: "wrong", findings: [], unresolved: [] }, delegation), new RegExp(key));
+  }
+});
+
+test("normalization cannot erase malformed findings or promote pass into GO", () => {
+  for (const key of ["findings", "unresolved"]) {
+    for (const value of [[{ detail: "Cannot inspect diff" }], [{ text: "Looks fine", limitation: "Cannot inspect diff" }], [null], [42], [" "]]) {
+      assert.throws(() => normalizeReview({ findings: [], unresolved: [], [key]: value }, delegation));
+    }
+  }
+  const normalized = normalizeReview({ verdict: "pass", summary: "Cannot inspect diff" }, delegation);
+  assert.equal(normalized.verdict, "pass");
+  assert.equal(normalized.summary, "Cannot inspect diff");
+  assert.equal(normalized.findings, undefined);
+  assert.notEqual(normalized.reviewComplete, true);
 });
 
 test("normalizeReview takes occupancy flags from the brief, not the envelope", () => {
@@ -135,11 +140,11 @@ test("normalizeReview takes substitutionReason from the brief, not the envelope"
   assert.equal(attested.substitutionReason, "cursor-agent not on PATH");
 });
 
-test("normalizeReview strips staged tree from an mrr envelope", () => {
+test("normalizeReview preserves a supplied MRR tree for validation to reject", () => {
   const normalized = normalizeReview({ tree: "c".repeat(40), findings: [], unresolved: [] }, {
     id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
     claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "grok-4.6", route: "cli"
   });
   assert.equal(normalized.kind, "mrr");
-  assert.equal("tree" in normalized, false);
+  assert.equal(normalized.tree, "c".repeat(40));
 });

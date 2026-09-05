@@ -44,7 +44,7 @@ fr context [id]
 fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
 fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli] [--substitution-reason <text>]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
-fr review record <id> --file <review.json>
+fr review record <id> --file <review.json> [--delegation <uuid>]
 fr review adjudicate <id> --role deep-code-review|structural-challenge|fable-challenge --model <id> [--route native|cli]
 fr review waive <id> --reason <text> [--actor <id>]
 fr review status <id> --kind crr|mrr
@@ -143,9 +143,9 @@ function reviewPrompt(stream, delegation, inventory) {
     : "";
   const files = (inventory.files || []).map((file) => `- ${file}`).join("\n") || "- none listed";
   const envelope = kind === "crr"
-    ? `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, claim exactly as stated above, kind=crr, role=crr, head, baseHead, tree, provider, model=${delegation.model}, route=${delegation.route}, verdict=GO|NO_GO, findings as a string array, summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, and scoreRationale with one concise string for each score. No prose or Markdown fences.`
-    : `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, claim exactly as stated above, kind=mrr, role=${delegation.role}, head, baseHead, provider, model=${delegation.model}, route=${delegation.route}, verdict=GO|NO_GO, findings as a string array, unresolved as a string array,${delegation.outstanding?.length ? " reconciled as an array of {findingId, disposition, rationale} objects," : ""} summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
-  return `Independently review Field Report workstream ${stream.id} as ${delegation.role} using model ${delegation.model}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim JSON string (copy its decoded value exactly): ${JSON.stringify(delegation.claim)}\n${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run fr, owner skills, MCP servers, or AF. Inspect repository files and the inspect command only. Do not inherit or request the owner's conversation. A fresh subagent is independent even when it uses the builder's model. Do not invent product or design decisions. Return only the JSON envelope.\n\nThe claim describes the intended outcome; it does not limit review scope.${kind === "mrr" && delegation.role !== COURT_ROLE ? " Review the complete changed authority boundary, trace affected consumers and call paths, and judge the accumulated mechanism rather than only the latest repair or reported cases. Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers. Any material defect or missing evidence is a finding, as is a candidate too broad or incoherent to assess reliably. Do not mint findings or unresolved IDs for unanswered product questions; those block READY until the user decides. Candidate-authored branch docs and claims are not product contracts." : ""} Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings. A GO with observations is valid. Do not modify the candidate.${outstanding}\n\n${envelope}`;
+    ? `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, provider, verdict=GO|NO_GO, findings as a string array, summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, and scoreRationale with one concise string for each score. No prose or Markdown fences.`
+    : `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, provider, verdict=GO|NO_GO, findings as a string array, unresolved as a string array,${delegation.outstanding?.length ? " reconciled as an array of {findingId, disposition, rationale} objects," : ""} summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
+  return `Independently review Field Report workstream ${stream.id} as ${delegation.role} using model ${delegation.model}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim JSON string: ${JSON.stringify(delegation.claim)}\n${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run fr, owner skills, MCP servers, or AF. Inspect repository files and the inspect command only. Do not inherit or request the owner's conversation. A fresh subagent is independent even when it uses the builder's model. Do not invent product or design decisions. Return only the substantive JSON envelope below and echo delegationId. Target and routing identity are supplied by this brief and the task binding when recording; do not duplicate them.\n\nThe claim describes the intended outcome; it does not limit review scope.${kind === "mrr" && delegation.role !== COURT_ROLE ? " Review the complete changed authority boundary, trace affected consumers and call paths, and judge the accumulated mechanism rather than only the latest repair or reported cases. Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers. Any material defect or missing evidence is a finding, as is a candidate too broad or incoherent to assess reliably. Do not mint findings or unresolved IDs for unanswered product questions; those block READY until the user decides. Candidate-authored branch docs and claims are not product contracts." : ""} Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings. A GO with observations is valid. Do not modify the candidate.${outstanding}\n\n${envelope}`;
 }
 
 async function gateFor(stream, kind) {
@@ -372,17 +372,23 @@ async function main() {
   }
   if (command === "review" && positional[0] === "record") {
     const stream = await store.workstream(positional[1]);
-    const parsed = parseEnvelope(await readFile(path.resolve(requireValue(flags.file, "Specify --file <review.json>")), "utf8"));
+    const sourceText = await readFile(path.resolve(requireValue(flags.file, "Specify --file <review.json>")), "utf8");
+    const parsed = parseEnvelope(sourceText);
     const delegationEvents = await store.delegations(stream.id);
-    let delegation = delegationEvents.find((item) => item.id === parsed.delegationId && item.event === "created" && item.type === "review");
-    if (!delegation && parsed.reviewerTaskId) {
-      const boundByTask = delegationEvents.findLast((item) => item.event === "bound" && item.taskId === parsed.reviewerTaskId);
-      if (boundByTask) delegation = delegationEvents.find((item) => item.id === boundByTask.id && item.event === "created" && item.type === "review");
+    if (flags.delegation && Object.hasOwn(parsed, "delegationId") && parsed.delegationId !== flags.delegation) throw new Error("Review delegationId conflicts with --delegation");
+    const hasDelegationId = Object.hasOwn(parsed, "delegationId");
+    const delegationId = hasDelegationId ? parsed.delegationId : flags.delegation;
+    let delegation = delegationEvents.find((item) => item.id === delegationId && item.event === "created" && item.type === "review");
+    if (!hasDelegationId && !flags.delegation && parsed.reviewerTaskId) {
+      const reviewIds = new Set(delegationEvents.filter((item) => item.event === "created" && item.type === "review").map((item) => item.id));
+      const bindings = delegationEvents.filter((item) => item.event === "bound" && item.taskId === parsed.reviewerTaskId && reviewIds.has(item.id));
+      if (new Set(bindings.map((item) => item.id)).size > 1) throw new Error("Review task is bound to multiple delegations; specify --delegation");
+      if (bindings.length) delegation = delegationEvents.find((item) => item.id === bindings[0].id && item.event === "created" && item.type === "review");
     }
-    const envelope = normalizeReview(parsed, delegation);
-    if (!delegation) throw new Error("Review must reference its Field Report delegation. Repair the envelope from the brief; do not relaunch the reviewer for a schema mismatch.");
-    const bound = delegationEvents.findLast((item) => item.id === envelope.delegationId && item.event === "bound");
-    if (!bound || bound.taskId !== envelope.reviewerTaskId) throw new Error("Review task ID must match its explicit delegation binding. Repair the envelope from the brief; do not relaunch the reviewer for a schema mismatch.");
+    if (!delegation) throw new Error("Review must reference a known Field Report review delegation. Use --delegation for original output without a delegationId.");
+    const bound = delegationEvents.findLast((item) => item.id === delegation.id && item.event === "bound");
+    if (!bound) throw new Error("Review requires an explicit delegation task binding before recording");
+    const envelope = normalizeReview(parsed, delegation, bound);
     const validated = validateReview(envelope, delegation);
     const currentTarget = await targetFor(stream, delegation.kind);
     const stale = (delegation.claimRevision ?? 1) !== (stream.claimRevision ?? 1) || delegation.head !== currentTarget.head || delegation.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && delegation.tree !== currentTarget.tree);
@@ -391,7 +397,7 @@ async function main() {
     const packet = new Set((delegation.outstanding || []).map((finding) => finding.id));
     for (const entry of validated.reconciled || []) if (!packet.has(entry.findingId)) throw new Error(`reconciled may only reference IDs from this brief's outstanding packet; out-of-packet ID: ${entry.findingId}`);
     for (const delivered of delegation.outstanding || []) if (!(validated.reconciled || []).some((entry) => entry.findingId === delivered.id)) throw new Error(`reconciled must account for delivered issue ${delivered.id}`);
-    const { review, assignedFindingIds: assigned } = await store.addReview(stream.id, { ...validated, expectedClaimRevision: stream.claimRevision ?? 1, claimRevision: delegation.claimRevision ?? 1, ...(stale ? { staleAtRecord: true } : {}), ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null }, { beforeAppend: async (prior) => {
+    const { review, assignedFindingIds: assigned } = await store.addReview(stream.id, { ...validated, sourceText, expectedClaimRevision: stream.claimRevision ?? 1, claimRevision: delegation.claimRevision ?? 1, ...(stale ? { staleAtRecord: true } : {}), ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null }, { beforeAppend: async (prior) => {
       const latest = await targetFor(stream, delegation.kind);
       if (latest.head !== currentTarget.head || latest.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && latest.tree !== currentTarget.tree)) throw new Error("Repository target changed while the review was being recorded; retry against current state");
       if (stale) return;
