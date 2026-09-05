@@ -43,7 +43,7 @@ function delegationState(events, reviews = []) {
   const byId = new Map();
   for (const event of events) byId.set(event.id, { ...(byId.get(event.id) || {}), ...event });
   return [...byId.values()].map((item) => {
-    const status = recorded.has(item.id) || item.event === "completed" ? "complete" : item.event === "failed" ? "failed" : item.event === "bound" ? "active" : "open";
+    const status = recorded.has(item.id) || item.event === "completed" ? "complete" : item.event === "bound" ? "active" : "open";
     return { ...item, status };
   });
 }

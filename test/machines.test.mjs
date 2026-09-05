@@ -6,22 +6,22 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { quote } from "../src/hooks.mjs";
-import { fableInvokeCommand, fableInvokeInner, solInvokeCommand } from "../src/machines.mjs";
+import { fableInvokeCommand, fableInvokeInner, astraInvokeCommand } from "../src/machines.mjs";
 
 const exec = promisify(execFile);
 const cli = path.resolve("bin/fr.mjs");
 const sha = "a".repeat(40);
 const head = "b".repeat(40);
 
-test("Sol and Fable invoke commands use the login shell and the shared CLI recipes", () => {
+test("Astra and Fable invoke commands use the login shell and the shared CLI recipes", () => {
   const repo = "/tmp/work repo";
   const prompt = "/tmp/brief's.txt";
-  const sol = solInvokeCommand({ promptFile: prompt, cwd: repo, kind: "review" });
-  assert.match(sol, /^zsh -ic /);
-  assert.match(sol, /codex exec -m gpt-5.6-sol -s read-only --ignore-user-config --json --color never/);
-  assert.doesNotMatch(sol, /--ask-for-approval|--ephemeral|--sandbox /);
-  assert.match(sol, /cd "\/tmp\/work repo"/);
-  const work = solInvokeCommand({ promptFile: prompt, cwd: repo, kind: "work" });
+  const astra = astraInvokeCommand({ promptFile: prompt, cwd: repo, kind: "review" });
+  assert.match(astra, /^zsh -ic /);
+  assert.match(astra, /codex exec -m gpt-6-astra -s read-only --ignore-user-config --json --color never/);
+  assert.doesNotMatch(astra, /--ask-for-approval|--ephemeral|--sandbox /);
+  assert.match(astra, /cd "\/tmp\/work repo"/);
+  const work = astraInvokeCommand({ promptFile: prompt, cwd: repo, kind: "work" });
   assert.match(work, /-s workspace-write/);
   const fable = fableInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: head });
   assert.match(fable, /claude --print --permission-mode dontAsk/);
@@ -50,8 +50,12 @@ test("CLI prints exact invoke lines and refuses status or worker commands", asyn
   await writeFile(prompt, "review");
   const invoke = (await exec(process.execPath, [cli, "machines", "invoke", "fable", "--prompt-file", prompt, "--cwd", repo, "--base", sha, "--head", head], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout.trim();
   assert.equal(invoke, fableInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: head }));
-  const sol = (await exec(process.execPath, [cli, "machines", "invoke", "sol", "--prompt-file", prompt, "--cwd", repo, "--kind", "review"], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout.trim();
-  assert.equal(sol, solInvokeCommand({ promptFile: prompt, cwd: repo, kind: "review" }));
+  const astra = (await exec(process.execPath, [cli, "machines", "invoke", "astra", "--prompt-file", prompt, "--cwd", repo, "--kind", "review"], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout.trim();
+  assert.equal(astra, astraInvokeCommand({ promptFile: prompt, cwd: repo, kind: "review" }));
+  await assert.rejects(
+    exec(process.execPath, [cli, "machines", "invoke", "sol", "--prompt-file", prompt, "--cwd", repo, "--kind", "review"], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } }),
+    /Invoke provider must be astra or fable/
+  );
 });
 
 test("Fable inner command checks HEAD and a clean worktree before invoking claude", async () => {

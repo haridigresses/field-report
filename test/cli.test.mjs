@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
+import { createStore } from "../src/store.mjs";
 
 const exec = promisify(execFile);
 const cli = path.resolve("bin/fr.mjs");
@@ -70,6 +71,7 @@ test("a next action is a sticky note on context and show", async () => {
   await assert.rejects(run(["update", "outcome", "--next"], repo, state), /Specify --next/);
   assert.match(await run(["update", "outcome", "--next", "Record CRR then commit"], repo, state), /Updated outcome/);
   assert.match(await run(["context", "outcome"], repo, state), /Next: Record CRR then commit/);
+  assert.match(await run(["context", "outcome"], repo, state), /Reviews never require permission/);
   assert.match(await run(["show", "outcome"], repo, state), /Next: Record CRR then commit/);
 });
 
@@ -94,21 +96,22 @@ test("crr briefs prefer a local native subagent", async () => {
   assert.equal(crr.execution.mcp, "none");
   assert.equal(crr.execution.route, "native");
   assert.match(crr.execution.launch, /Prefer a local model/);
-  assert.match(crr.prompt, /kind=crr, role=crr/);
+  assert.match(crr.prompt, /delegationId=/);
   assert.doesNotMatch(crr.prompt, /necessity=/);
 });
 
-test("mrr briefs seat Sol, Grok, and Fable and isolate reviewers from AF", async () => {
+test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
   const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
   const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
   const fable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
-  assert.equal(deep.delegation.model, "gpt-5.6-sol");
+  assert.equal(deep.delegation.model, "gpt-6-astra");
+  assert.equal(deep.delegation.intendedModel, "gpt-6-astra");
   assert.equal(structural.delegation.model, "grok-4.6");
   assert.equal(fable.delegation.model, "claude-fable-5");
   assert.equal(deep.execution.mcp, "none");
-  assert.match(deep.execution.launch, /codex exec -m gpt-5.6-sol/);
+  assert.match(deep.execution.launch, /codex exec -m gpt-6-astra/);
   assert.match(deep.execution.launch, /--ignore-user-config/);
   assert.match(deep.execution.launch, /--color never/);
   assert.doesNotMatch(deep.execution.launch, /--ask-for-approval/);
@@ -123,9 +126,49 @@ test("mrr briefs seat Sol, Grok, and Fable and isolate reviewers from AF", async
   assert.doesNotMatch(fable.execution.launch, /Bash\(git diff \*\)/);
   assert.doesNotMatch(fable.execution.launch, /claude-aws/);
   assert.doesNotMatch(fable.execution.launch, /Bash\(git \*\)/);
-  assert.match(deep.prompt, /kind=mrr/);
+  assert.match(deep.prompt, /delegationId=/);
   assert.match(deep.prompt, /Do not run fr, owner skills, MCP servers, or AF/);
   assert.equal(deep.inspection.command, `git diff --no-ext-diff --no-textconv ${deep.delegation.baseHead} ${deep.delegation.head} --`);
+});
+
+test("worktree persona and court launches use the reviewed checkout instead of the configured project root", async () => {
+  const { root, repo, state } = await fixture();
+  const worktree = path.join(root, "review worktree");
+  await exec("git", ["worktree", "add", "-b", "feature", worktree], { cwd: repo });
+  const worktreeRoot = (await exec("git", ["rev-parse", "--show-toplevel"], { cwd: worktree })).stdout.trim();
+  await writeFile(path.join(worktree, "README.md"), "worktree change\n");
+  await exec("git", ["add", "README.md"], { cwd: worktree });
+  await exec("git", ["commit", "-m", "worktree feature"], { cwd: worktree });
+  await run(["update", "outcome", "--branch", "feature"], worktree, state);
+  const mainHead = (await exec("git", ["rev-parse", "HEAD"], { cwd: repo })).stdout.trim();
+  const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], worktree, state));
+  const fable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], worktree, state));
+  assert.notEqual(deep.delegation.head, mainHead);
+  for (const brief of [deep, fable]) {
+    assert.ok(brief.execution.launch.includes(`cd "${worktreeRoot}"`), brief.execution.launch);
+    assert.ok(!brief.execution.launch.includes(`cd "${repo}"`), brief.execution.launch);
+  }
+  await run(["review", "bind", "outcome", "--delegation", deep.delegation.id, "--task-id", "worktree-astra"], worktree, state);
+  const file = path.join(root, "review.json");
+  await writeFile(file, JSON.stringify({
+    reviewComplete: true, independent: true, delegationId: deep.delegation.id, reviewerTaskId: "worktree-astra",
+    claim: deep.delegation.claim, kind: "mrr", role: "deep-code-review",
+    head: deep.delegation.head, baseHead: deep.delegation.baseHead,
+    provider: "openai", model: "gpt-6-astra", route: "cli", verdict: "NO_GO", findings: ["Review worktree finding"], unresolved: [],
+    summary: "Reviewed", ...scores("NO_GO")
+  }));
+  await run(["review", "record", "outcome", "--file", file], worktree, state);
+  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "deep-code-review", "--model", "claude-fable-5"], worktree, state));
+  assert.ok(court.execution.launch.includes(`cd "${worktreeRoot}"`), court.execution.launch);
+  assert.ok(!court.execution.launch.includes(`cd "${repo}"`), court.execution.launch);
+});
+
+test("version identifies runtime source and revision independently of the current checkout", async () => {
+  const { repo, state } = await fixture();
+  const runtimeRoot = path.dirname(path.dirname(cli));
+  const revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: runtimeRoot })).stdout.trim();
+  const { version } = JSON.parse(await readFile(path.join(runtimeRoot, "package.json"), "utf8"));
+  assert.equal(await run(["version"], repo, state), `Field Report ${version}\nRuntime source: ${runtimeRoot}\nGit revision: ${revision}\n`);
 });
 
 test("mrr native route isolates a fresh subagent", async () => {
@@ -133,7 +176,7 @@ test("mrr native route isolates a fresh subagent", async () => {
   await featureBranch({ repo, state });
   const native = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--route", "native"], repo, state));
   assert.equal(native.execution.route, "native");
-  assert.match(native.execution.launch, /fresh native gpt-5.6-sol subagent/);
+  assert.match(native.execution.launch, /fresh native gpt-6-astra subagent/);
   assert.match(native.execution.launch, /no MCP servers, including agent-fixes/);
   const nativeFable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge", "--route", "native"], repo, state));
   assert.equal(nativeFable.execution.route, "native");
@@ -159,25 +202,70 @@ test("deep mrr briefs carry outstanding findings; crr findings do not", async ()
   const fresh = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
   assert.equal(fresh.delegation.outstanding, undefined);
   const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
-  assert.deepEqual(deep.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
+  assert.equal(deep.delegation.outstanding, undefined);
+  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "structural-challenge", "--model", "gpt-6-astra"], repo, state));
+  assert.equal(court.delegation.role, "reconciliation");
+  assert.equal(court.delegation.jobRole, "structural-challenge");
+  assert.deepEqual(court.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
+  assert.match(court.prompt, /disposition=rejected when inapplicable/);
+  await writeFile(path.join(repo, "README.md"), "older-head\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
+  await exec("git", ["commit", "-m", "move head"], { cwd: repo });
+  const deepLater = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
+  assert.deepEqual(deepLater.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
 });
 
-test("an mrr provider failure does not satisfy its persona", async () => {
+test("a completed envelope occupies the job; fail and shopping are not escapes", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
-  const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
   const unused = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
-  assert.notEqual(unused.delegation.id, structural.delegation.id);
-  await assert.rejects(run(["review", "fail", "outcome", "--delegation", structural.delegation.id, "--task-id", "never-started", "--reason", "no envelope"], repo, state), /already-bound run/);
-  await run(["review", "bind", "outcome", "--delegation", unused.delegation.id, "--task-id", "cursor-cli"], repo, state);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state), /already attempted on this claim and target/);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state), /backup requires a terminal grok-4.6 failure/);
-  await run(["review", "fail", "outcome", "--delegation", unused.delegation.id, "--task-id", "cursor-cli", "--reason", "no envelope"], repo, state);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state), /already failed on this claim and target/);
-  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /missing deep-code-review review/);
-  const backup = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-5.6-sol"], repo, state));
-  assert.equal(backup.delegation.model, "gpt-5.6-sol");
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge", "--model", "gpt-5.6-sol"], repo, state), /named backup/);
+  const second = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
+  assert.notEqual(unused.delegation.id, second.delegation.id);
+  await assert.rejects(run(["review", "fail", "outcome", "--delegation", unused.delegation.id, "--task-id", "never-started", "--reason", "no envelope"], repo, state), /does not record provider failure/);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra"], repo, state), /substitution requires a non-empty substitutionReason/);
+  const substitute = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "cursor-agent not on PATH"], repo, state));
+  assert.equal(substitute.delegation.model, "gpt-6-astra");
+  assert.equal(substitute.delegation.substitutionReason, "cursor-agent not on PATH");
+  await run(["review", "bind", "outcome", "--delegation", unused.delegation.id, "--task-id", "grok-run"], repo, state);
+  const review = {
+    reviewComplete: true, independent: true, delegationId: unused.delegation.id, reviewerTaskId: "grok-run",
+    claim: unused.delegation.claim, kind: "mrr", role: "structural-challenge",
+    head: unused.delegation.head, baseHead: unused.delegation.baseHead,
+    provider: "cursor", model: "grok-4.6", route: "cli", verdict: "NO_GO", findings: ["Unsound boundary"], unresolved: [],
+    summary: "Reviewed", ...scores("NO_GO")
+  };
+  const file = path.join(repo, "review.json");
+  await writeFile(file, JSON.stringify(review));
+  await run(["review", "record", "outcome", "--file", file], repo, state);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "shop for GO"], repo, state), /occupied by Grok NO_GO/);
+  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /not a finding-free GO/);
+  const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
+  assert.match(status, /BLOCKED/);
+  assert.match(status, /structural-challenge is not a finding-free GO/);
+});
+
+test("attested substitution fills the job and prints on status", async () => {
+  const { repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  await recordMrrLane(repo, state, "deep-code-review", "sol-run");
+  await recordMrrLane(repo, state, "fable-challenge", "fable-run");
+  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "cursor-agent not on PATH"], repo, state));
+  assert.equal(brief.execution.substituted, true);
+  await run(["review", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "sol-sub"], repo, state);
+  const review = {
+    reviewComplete: true, independent: true, delegationId: brief.delegation.id, reviewerTaskId: "sol-sub",
+    claim: brief.delegation.claim, kind: "mrr", role: "structural-challenge",
+    head: brief.delegation.head, baseHead: brief.delegation.baseHead,
+    provider: "openai", model: "gpt-6-astra", route: "cli", verdict: "GO", findings: [], unresolved: [],
+    substitutionReason: "cursor-agent not on PATH", summary: "Complete adversarial review", ...scores("GO")
+  };
+  const file = path.join(path.dirname(repo), "sol-sub.json");
+  await writeFile(file, JSON.stringify(review));
+  await run(["review", "record", "outcome", "--file", file], repo, state);
+  const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
+  assert.match(status, /READY/);
+  assert.match(status, /structural-challenge: GO via Astra; intended Grok was substituted: cursor-agent not on PATH/);
+  assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
 });
 
 test("coordinator workflow keeps user-owned collaborators and the thin loop", async () => {
@@ -186,7 +274,12 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(output, /When the user explicitly asks for an agent they will work with directly, create a user-owned task/);
   const shared = await run(["workflow"], root, path.join(root, "state"));
   assert.match(shared, /CRR against the exact staged tree/);
-  assert.match(shared, /two finding-free persona GOs/i);
+  assert.match(shared, /three finding-free persona GOs/i);
+  assert.match(shared, /Reviews never require permission/);
+  assert.match(shared, /occupying envelope/);
+  assert.match(shared, /fr review adjudicate/);
+  assert.match(shared, /does not record provider failure/);
+  assert.doesNotMatch(shared, /two finding-free persona GOs/i);
   assert.match(shared, /Do not auto-open a pull request/);
   assert.match(shared, /Reviewers must not use MCP servers or AF/);
   assert.match(shared, /empty user-level MCP file/);
@@ -208,11 +301,13 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   const help = await run(["help"], root, path.join(root, "state"));
   assert.doesNotMatch(help, /fr question|fr catchup|fr publish|fr delegate/);
   assert.match(help, /fr machines invoke/);
+  assert.match(help, /fr review adjudicate/);
+  assert.doesNotMatch(help, /fr review fail/);
   assert.doesNotMatch(help, /fr machines \[status\|worker\]|fr machines status|fr machines worker/);
 });
 
 const mrrModels = {
-  "deep-code-review": { model: "gpt-5.6-sol", provider: "openai" },
+  "deep-code-review": { model: "gpt-6-astra", provider: "openai" },
   "structural-challenge": { model: "grok-4.6", provider: "cursor" },
   "fable-challenge": { model: "claude-fable-5", provider: "anthropic" }
 };
@@ -229,11 +324,42 @@ async function recordMrrLane(repo, state, role, taskId, stream = "outcome") {
     verdict: "GO", findings: [], unresolved: [],
     summary: "Complete adversarial review", ...scores("GO")
   };
-  const file = path.join(repo, `${taskId}.json`);
+  const file = path.join(state, `${taskId}.json`);
   await writeFile(file, JSON.stringify(review));
   await run(["review", "record", stream, "--file", file], repo, state);
   return brief;
 }
+
+test("a historical Sol NO_GO can be recorded, courted, and rerun without inventing a substitution", async () => {
+  const { repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  const target = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state)).delegation;
+  const { id, event, createdAt, intendedModel, ...fields } = target;
+  const old = await createStore(state).addDelegation("outcome", { ...fields, model: "gpt-5.6-sol" });
+  const record = async (d, task, extra) => {
+    await run(["review", "bind", "outcome", "--delegation", d.id, "--task-id", task], repo, state);
+    const file = path.join(state, `${task}.json`);
+    await writeFile(file, JSON.stringify({
+      ...d, delegationId: d.id, reviewerTaskId: task, reviewComplete: true, independent: true,
+      provider: d.model === "grok-4.6" ? "cursor" : "openai", findings: [], unresolved: [],
+      summary: "Independent evidence", ...scores(), ...extra
+    }));
+    await run(["review", "record", "outcome", "--file", file], repo, state);
+  };
+  await record(old, "old-sol", { verdict: "NO_GO", findings: ["Incorrect finding"] });
+  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "deep-code-review", "--model", "grok-4.6"], repo, state));
+  await record(court.delegation, "grok-court", {
+    verdict: "GO", reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Independent evidence disproves the finding." }]
+  });
+  const rerun = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--model", "gpt-5.6-sol", "--route", "native"], repo, state));
+  assert.equal(rerun.delegation.intendedModel, "gpt-5.6-sol");
+  assert.equal(rerun.delegation.substitutionReason, undefined);
+  assert.equal(rerun.execution.substituted, false);
+  await record(rerun.delegation, "sol-rerun", { verdict: "GO" });
+  await recordMrrLane(repo, state, "structural-challenge", "grok-persona");
+  await recordMrrLane(repo, state, "fable-challenge", "fable-persona");
+  assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
+});
 
 test("a skip without prior MRR is rejected", async () => {
   const { repo, state } = await fixture();
@@ -287,4 +413,53 @@ test("later commits are churn until the user skips or asks for final MRR", async
   await assert.rejects(run(["review", "waive", "outcome", "--reason", "duplicate"], repo, state), /already recorded for this exact head/);
   assert.match(await run(["context", "outcome"], repo, state), /merge-ready via skip/);
   await assert.rejects(run(["gate", "bots", "outcome"], repo, state), /GitHub lookup failed:/);
+});
+
+test("raw review recording preserves source and limitations without owner identity repair", async () => {
+  const { root, repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
+  const d = brief.delegation;
+  await run(["review", "bind", "outcome", "--delegation", d.id, "--task-id", "original-fable-run"], repo, state);
+  const replacement = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
+  await assert.rejects(run(["review", "bind", "outcome", "--delegation", replacement.delegation.id, "--task-id", "original-fable-run"], repo, state), /already bound/);
+  const file = path.join(root, "original.json");
+  const raw = { reviewComplete: true, independent: true, provider: "anthropic", verdict: "NO_GO",
+    findings: [], unresolved: ["Cannot mechanically inspect base-to-head diff"], summary: "Review is limited", ...scores("NO_GO") };
+  const source = JSON.stringify({ subtype: "success", is_error: false, result: `\`\`\`json\n${JSON.stringify(raw)}\n\`\`\`` });
+  await writeFile(file, source);
+  await run(["review", "record", "outcome", "--delegation", d.id, "--file", file], repo, state);
+  const [recorded] = await createStore(state).reviews("outcome");
+  assert.equal(recorded.sourceText, source);
+  assert.equal(recorded.delegationId, d.id);
+  assert.equal(recorded.reviewerTaskId, "original-fable-run");
+  assert.equal(recorded.verdict, "NO_GO");
+  assert.deepEqual(recorded.unresolved, raw.unresolved);
+  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /not a finding-free GO/);
+});
+
+test("record refuses conflicting provenance, pass, and lossy evidence instead of manufacturing GO", async () => {
+  const { root, repo, state } = await fixture();
+  await featureBranch({ repo, state });
+  const { delegation: d } = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
+  await run(["review", "bind", "outcome", "--delegation", d.id, "--task-id", "original-astra"], repo, state);
+  const file = path.join(root, "output.json");
+  const raw = { reviewComplete: true, independent: true, provider: "openai", verdict: "GO", findings: [], unresolved: [], summary: "Reviewed", ...scores() };
+  for (const extra of [
+    { delegationId: "unknown", reviewerTaskId: "original-astra" },
+    { head: "f".repeat(40) }, { reviewerTaskId: "replacement-task" },
+    { verdict: "pass", summary: "Could not inspect diff" },
+    { unresolved: [{ limitation: "Could not inspect diff" }] },
+    { findings: [{ text: "Looks fine", caveat: "Could not inspect diff" }] }
+  ]) {
+    await writeFile(file, JSON.stringify({ ...raw, ...extra }));
+    await assert.rejects(run(["review", "record", "outcome", "--delegation", d.id, "--file", file], repo, state));
+  }
+  await writeFile(file, JSON.stringify({ ...raw, delegationId: "unknown", reviewerTaskId: "original-astra" }));
+  await assert.rejects(run(["review", "record", "outcome", "--file", file], repo, state));
+  assert.deepEqual(await createStore(state).reviews("outcome"), []);
+  // The unedited substantive result needs no duplicated routing identity.
+  await writeFile(file, JSON.stringify(raw));
+  await run(["review", "record", "outcome", "--delegation", d.id, "--file", file], repo, state);
+  assert.equal((await createStore(state).reviews("outcome"))[0].verdict, "GO");
 });

@@ -1,8 +1,8 @@
-# My Machines for Sol and Fable
+# My Machines for Astra and Fable
 
-Cursor Cloud Agents run their model loop in Cursor's cloud. My Machines makes their tool calls execute on a specific checkout on this host, so `codex` (Sol) and ordinary `claude` (Fable) can use the user's existing login-shell credentials.
+Cursor Cloud Agents run their model loop in Cursor's cloud. My Machines makes their tool calls execute on a specific checkout on this host, so `codex` (Astra) and ordinary `claude` (Fable) can use the user's existing login-shell credentials.
 
-Field Report prints the Sol and Fable CLI recipes. It does not probe host accessibility, start workers, or enumerate other repositories. Cursor owns worker lifecycle, authentication, and connectivity. See [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines).
+Field Report prints the Astra and Fable CLI recipes. It does not probe host accessibility, start workers, or enumerate other repositories. Cursor owns worker lifecycle, authentication, and connectivity. See [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines).
 
 ## Host setup for one checkout
 
@@ -23,12 +23,12 @@ Route work to this host while it is online: choose `local` in the Cloud Agent en
 Prefer a native same-type path when the invoking agent is that family. Cloud Agents are third-party: write the Field Report brief to a prompt file, then print the exact host command:
 
 ```bash
-fr machines invoke sol --prompt-file /tmp/sol.txt --cwd /path/to/repo --kind review
+fr machines invoke astra --prompt-file /tmp/astra.txt --cwd /path/to/repo --kind review
 fr machines invoke fable --prompt-file /tmp/fable.txt --cwd /path/to/repo --base <40-char-sha> --head <40-char-sha>
 ```
 
-Sol CLI reviews use `gpt-5.6-sol` through `codex exec`. Fable CLI uses `claude-fable-5` through ordinary `claude` after confirming `HEAD` matches the brief and the worktree is clean, with Bash limited to the exact `git diff` of the brief SHAs.
+Astra CLI reviews use `gpt-6-astra` through `codex exec`. Fable CLI uses `claude-fable-5` through ordinary `claude` after confirming `HEAD` matches the brief and the worktree is clean, with Bash limited to the exact `git diff` of the brief SHAs.
 
-If that command fails, report the failure. Do not treat a missing binary, a failed login, or a disconnected worker as a reason to substitute Cursor-hosted Sol/Fable models. Use ordinary `claude`, never `claude-aws`.
+If that command fails, report the failure. Do not treat a missing binary, a failed login, or a disconnected worker as a reason to substitute Cursor-hosted Astra/Fable models. Use ordinary `claude`, never `claude-aws`.
 
 Bind the provider-run ID or last-message path with `fr review bind` before `fr review record`.

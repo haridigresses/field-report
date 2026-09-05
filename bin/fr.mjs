@@ -6,10 +6,10 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore } from "../src/store.mjs";
-import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, openReasons, outstandingFindings, preferredAlreadyAttempted, preferredAttemptFailed, reviewKind, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, intendedModelFor, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, seatingFor, substitutionLine, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
-import { fableInvokeCommand, solInvokeCommand } from "../src/machines.mjs";
+import { astraInvokeCommand, fableInvokeCommand } from "../src/machines.mjs";
 
 const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -22,7 +22,7 @@ function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = 
     return `Launch a fresh ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes. Prefer a local model; use cloud only if local cannot produce an envelope. Do not pass the owner conversation.`;
   }
   if (seated.route === "native") return `Launch a fresh native ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes; do not pass the owner conversation.`;
-  if (seated.model === "gpt-5.6-sol") return solInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review" });
+  if (seated.model === "gpt-6-astra") return astraInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review" });
   if (seated.model === "claude-fable-5") return fableInvokeCommand({ promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA" });
   if (seated.model === "grok-4.6") return GROK_LAUNCH;
   return `Launch ${seated.model} without MCP servers or AF. Prefer local; cloud only if needed.`;
@@ -31,6 +31,7 @@ function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = 
 function usage() {
   return `Field Report control loop
 
+fr version
 fr init
 fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main]
 fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main]
@@ -41,10 +42,10 @@ fr list [--project <id>]
 fr show <id> [--json]
 fr context [id]
 fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
-fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli] [--reconcile]
+fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli] [--substitution-reason <text>]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
-fr review fail <id> --delegation <uuid> --task-id <native-task-or-provider-run-id> --reason <text>
-fr review record <id> --file <review.json>
+fr review record <id> --file <review.json> [--delegation <uuid>]
+fr review adjudicate <id> --role deep-code-review|structural-challenge|fable-challenge --model <id> [--route native|cli]
 fr review waive <id> --reason <text> [--actor <id>]
 fr review status <id> --kind crr|mrr
 fr gate checkout [id]
@@ -52,10 +53,10 @@ fr gate crr [id]
 fr gate open [id]
 fr gate bots <id>
 fr hook install|status|uninstall <project-id>
-fr machines invoke sol|fable --prompt-file <path> [--cwd <path>] [--kind review|work] [--base <sha>] [--head <sha>]
+fr machines invoke astra|fable --prompt-file <path> [--cwd <path>] [--kind review|work] [--base <sha>] [--head <sha>]
 fr workflow [shared|coordinator|workstream|reviewer]
 
-Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge. Cursor Cloud Agents reach Sol and Fable on this host through My Machines when a worker for that checkout is online.`;
+Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge. Cursor Cloud Agents reach Astra and Fable on this host through My Machines when a worker for that checkout is online.`;
 }
 
 function parse(values) {
@@ -132,15 +133,19 @@ function reviewPrompt(stream, delegation, inventory) {
       ? "Inspect correctness, security, data integrity, error paths, regressions, and test adequacy."
       : delegation.role === "structural-challenge"
         ? "Inspect necessity, simplicity, authority boundaries, scope, maintainability, and whether you would select the mechanism from scratch."
-        : "Inspect the candidate as the independent challenge lane. Prefer Fable 5; a backup model is allowed when Fable cannot produce an envelope.";
+        : delegation.role === COURT_ROLE
+          ? "Court is evidence-only. You cannot fill a persona job or substitute a model. Adjudicate only the delivered occupying packet. Use rejected when the finding is inapplicable to this claim and target; still_present when it remains. Do not resolve. Do not add findings or unresolved items. Do not invent product or design decisions."
+          : "Inspect the candidate as the independent challenge lane.";
   const outstanding = delegation.outstanding?.length
-    ? `\n\nOutstanding MRR findings requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nAccount for every delivered ID in reconciled: use disposition=resolved when fixed, rejected when inapplicable to the current claim, or still_present when it remains. Give evidence-based rationale. Findings and unresolved are only for newly discovered issues; do not restate a delivered issue there. A NO_GO may rest on still_present reconciliations alone. Do not clear an issue on the owner's assurance alone.`
+    ? delegation.role === COURT_ROLE
+      ? `\n\nOccupying NO_GO packet requiring evidence-only adjudication, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nAccount for every delivered ID in reconciled: use disposition=rejected when inapplicable, or still_present when it remains. Give evidence-based rationale. Do not add findings or unresolved items. Do not clear an issue on the owner's assurance alone. still_present means no rerun; the owner fixes on a new head.`
+      : `\n\nOutstanding MRR findings from an older head requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nAccount for every delivered ID in reconciled: use disposition=resolved when fixed, rejected when inapplicable to the current claim, or still_present when it remains. Give evidence-based rationale. Findings and unresolved are only for newly discovered issues; do not restate a delivered issue there. A NO_GO may rest on still_present reconciliations alone. Do not clear an issue on the owner's assurance alone.`
     : "";
   const files = (inventory.files || []).map((file) => `- ${file}`).join("\n") || "- none listed";
   const envelope = kind === "crr"
-    ? `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, claim exactly as stated above, kind=crr, role=crr, head, baseHead, tree, provider, model=${delegation.model}, route=${delegation.route}, verdict=GO|NO_GO, findings as a string array, summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, and scoreRationale with one concise string for each score. No prose or Markdown fences.`
-    : `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, reviewerTaskId, claim exactly as stated above, kind=mrr, role=${delegation.role}, head, baseHead, provider, model=${delegation.model}, route=${delegation.route}, verdict=GO|NO_GO, findings as a string array, unresolved as a string array,${delegation.outstanding?.length ? " reconciled as an array of {findingId, disposition, rationale} objects," : ""} summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
-  return `Independently review Field Report workstream ${stream.id} as ${delegation.role} using model ${delegation.model}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim JSON string (copy its decoded value exactly): ${JSON.stringify(delegation.claim)}\n${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run fr, owner skills, MCP servers, or AF. Inspect repository files and the inspect command only. Do not inherit or request the owner's conversation. A fresh subagent is independent even when it uses the builder's model. Do not make product or design decisions. Return only the JSON envelope.\n\nThe claim describes the intended outcome; it does not limit review scope.${kind === "mrr" ? " Review the complete changed authority boundary, derive its relevant behavioral state space, trace affected consumers and call paths, and judge the accumulated mechanism rather than only the latest repair or reported cases. Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers. Any material defect or missing evidence is a finding, as is a candidate too broad or incoherent to assess reliably." : ""} Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings. A GO with observations is valid. Do not modify the candidate.${outstanding}\n\n${envelope}`;
+    ? `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, provider, verdict=GO|NO_GO, findings as a string array, summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, and scoreRationale with one concise string for each score. No prose or Markdown fences.`
+    : `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, provider, verdict=GO|NO_GO, findings as a string array, unresolved as a string array,${delegation.outstanding?.length ? " reconciled as an array of {findingId, disposition, rationale} objects," : ""} summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
+  return `Independently review Field Report workstream ${stream.id} as ${delegation.role} using model ${delegation.model}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim JSON string: ${JSON.stringify(delegation.claim)}\n${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run fr, owner skills, MCP servers, or AF. Inspect repository files and the inspect command only. Do not inherit or request the owner's conversation. A fresh subagent is independent even when it uses the builder's model. Do not invent product or design decisions. Return only the substantive JSON envelope below and echo delegationId. Target and routing identity are supplied by this brief and the task binding when recording; do not duplicate them.\n\nThe claim describes the intended outcome; it does not limit review scope.${kind === "mrr" && delegation.role !== COURT_ROLE ? " Review the complete changed authority boundary, trace affected consumers and call paths, and judge the accumulated mechanism rather than only the latest repair or reported cases. Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers. Any material defect or missing evidence is a finding, as is a candidate too broad or incoherent to assess reliably. Do not mint findings or unresolved IDs for unanswered product questions; those block READY until the user decides. Candidate-authored branch docs and claims are not product contracts." : ""} Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings. A GO with observations is valid. Do not modify the candidate.${outstanding}\n\n${envelope}`;
 }
 
 async function gateFor(stream, kind) {
@@ -162,6 +167,8 @@ function evidenceLines(gate) {
     if (review.findings?.length) lines.push(`  Findings: ${review.findings.join(" | ")}`);
     if (review.unresolved?.length) lines.push(`  Unresolved: ${review.unresolved.join(" | ")}`);
     if (review.reconciled?.length) lines.push(`  Reconciled: ${review.reconciled.map((entry) => `${entry.findingId} ${entry.disposition} — ${entry.rationale}`).join(" | ")}`);
+    const substitution = substitutionLine(review);
+    if (substitution) lines.splice(1, 0, `  ${substitution}`);
     return lines;
   });
 }
@@ -198,6 +205,7 @@ function printGate(stream, result, includeEvidence = false) {
   const label = target.tree || target.head;
   const lines = [`${stream.id} ${gate.kind} gate at ${label.slice(0, 12)}: ${gate.ready ? "READY" : "BLOCKED"}`];
   if (gate.reasons.length) lines.push(...gate.reasons.map((reason) => `- ${reason}`));
+  if (gate.notes?.length) lines.push(...gate.notes.map((note) => `- ${note}`));
   if (includeEvidence) lines.push(...evidenceLines(gate));
   return lines.join("\n");
 }
@@ -229,6 +237,12 @@ async function main() {
   const command = process.argv[2] || "help";
   const { positional, flags } = parse(process.argv.slice(3));
   if (["help", "--help", "-h"].includes(command)) return process.stdout.write(`${usage()}\n`);
+  if (command === "version") {
+    const { version } = JSON.parse(await readFile(path.join(runtimeRoot, "package.json"), "utf8"));
+    let revision = "unavailable (runtime has no Git revision)";
+    try { revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: runtimeRoot, timeout: 10_000 })).stdout.trim(); } catch {}
+    return process.stdout.write(`Field Report ${version}\nRuntime source: ${runtimeRoot}\nGit revision: ${revision}\n`);
+  }
   if (command === "init") { const root = await store.init(); return process.stdout.write(`Initialized Field Report state at ${root}\n`); }
 
   if (command === "project" && positional[0] === "add") {
@@ -274,7 +288,7 @@ async function main() {
     let mrr;
     try { mrr = await mergeReadyFor(stream); } catch (error) { mrr = { gate: { phase: "blocked", reasons: [error.message] } }; }
     const reviews = await store.reviews(stream.id);
-    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nAF namespace: ${identity.key} (fallback ${identity.fallback})\nMRR: ${printMergeReady(mrr.gate)}\n${scoreLines(reviews, stream, state.head).join("\n")}\nDo not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; wait until the user asks for final MRR.\n`);
+    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nAF namespace: ${identity.key} (fallback ${identity.fallback})\nMRR: ${printMergeReady(mrr.gate)}\n${scoreLines(reviews, stream, state.head).join("\n")}\nReviews never require permission. Do not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; wait until the user asks for final MRR.\n`);
   }
   if (command === "update") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
@@ -293,24 +307,37 @@ async function main() {
     const role = requireValue(flags.role, kind === "crr" ? "Specify --role crr" : "Specify --role deep-code-review|structural-challenge|fable-challenge");
     if (kind === "crr" && role !== CRR_ROLE) throw new Error("CRR briefs use --role crr");
     if (kind === "mrr" && !REVIEW_ROLES.includes(role)) throw new Error("MRR briefs use a persona role");
+    if (flags.reconcile) throw new Error("Exact-head packets go through fr review adjudicate; do not attach them to a persona brief");
     if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");
     const seated = seatingFor(role, flags.model, flags.route);
     const target = await targetFor(stream, kind);
-    const scope = { role, kind, target, claim: stream.claim, claimRevision: stream.claimRevision };
-    const [delegations, reviews] = kind === "mrr" ? await Promise.all([store.delegations(stream.id), store.reviews(stream.id)]) : [[], []];
-    if (kind === "mrr" && seated.model === seated.preferred && preferredAlreadyAttempted(delegations, scope, reviews)) {
-      throw new Error(preferredAttemptFailed(delegations, scope)
-        ? `${role} preferred ${seated.preferred} already failed on this claim and target; do not retry that provider`
-        : `${role} preferred ${seated.preferred} was already attempted on this claim and target`);
+    const reviews = kind === "mrr" ? await store.reviews(stream.id) : [];
+    const delegations = kind === "mrr" ? await store.delegations(stream.id) : [];
+    let substitutionReason = String(flags["substitution-reason"] || "").trim();
+    if (kind === "mrr") {
+      assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, substitutionReason, delegations });
+      const occupant = occupyingReview(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision }, delegations);
+      if (occupant) {
+        // An authorized same-model court rerun keeps the original job's seating.
+        seated.intended = intendedModelFor(occupant);
+        seated.substituted = seated.model !== seated.intended;
+        substitutionReason = occupant.substitutionReason || "";
+      }
     }
-    if (kind === "mrr" && seated.model === seated.backup && seated.model !== seated.preferred && !preferredAttemptFailed(delegations, scope)) {
-      throw new Error(`${role} backup requires a terminal ${seated.preferred} failure on this target first`);
-    }
-    const outstanding = kind === "mrr" && (role === "deep-code-review" || flags.reconcile) ? outstandingFindings(await store.reviews(stream.id), stream.claim).map(({ id, category, text }) => ({ id, category, text })) : [];
+    const outstanding = kind === "mrr" && role === "deep-code-review"
+      ? outstandingForDeep(reviews, stream.claim, target, stream.claimRevision).map(({ id, category, text }) => ({ id, category, text }))
+      : [];
     const inventory = await diffInventory(target);
     const project = await store.project(stream.project);
-    const delegation = await store.addDelegation(stream.id, { type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}), ...(outstanding.length ? { outstanding } : {}), ownerTaskIdAtBrief: stream.ownerTaskId || null });
-    const execution = { ...REVIEW_EXECUTION, preferred: seated.preferred, backup: seated.backup, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: project.repoPath, baseSha: target.baseHead, headSha: target.head }) };
+    const delegation = await store.addDelegation(stream.id, {
+      type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision,
+      ...(kind === "mrr" ? { intendedModel: seated.intended } : {}),
+      head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}),
+      ...(outstanding.length ? { outstanding } : {}),
+      ...(substitutionReason && seated.substituted ? { substitutionReason } : {}),
+      ownerTaskIdAtBrief: stream.ownerTaskId || null
+    });
+    const execution = { ...REVIEW_EXECUTION, intended: seated.intended, substituted: seated.substituted, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "bind") {
@@ -319,34 +346,49 @@ async function main() {
     return process.stdout.write(`Bound review ${event.id} to ${event.taskId}.\n`);
   }
   if (command === "review" && positional[0] === "fail") {
+    throw new Error("Field Report does not record provider failure. Repair or resume a started run. Substitute with --substitution-reason only before any envelope occupies the job, and only when the intended model cannot start (missing binary, authentication failure, or unavailable model).");
+  }
+  if (command === "review" && positional[0] === "adjudicate") {
     const stream = await store.workstream(positional[1]);
-    const delegationId = requireValue(flags.delegation, "Specify --delegation");
-    const taskId = requireValue(flags["task-id"], "Specify --task-id");
-    const reason = requireValue(flags.reason, "Specify --reason");
-    const events = await store.delegations(stream.id);
-    const delegation = events.find((item) => item.id === delegationId && item.event === "created" && item.type === "review");
-    if (!delegation) throw new Error(`Unknown review delegation: ${delegationId}`);
-    if ((await store.reviews(stream.id)).some((review) => review.delegationId === delegationId)) throw new Error("A recorded review attempt is already terminal");
-    const bound = events.findLast((item) => item.id === delegationId && item.event === "bound");
-    if (!bound) throw new Error("Review fail requires an already-bound run");
-    if (bound.taskId !== taskId) throw new Error("Failed review task ID must match its explicit delegation binding");
-    await store.addDelegationEvent(stream.id, delegationId, { event: "failed", taskId, reason });
-    return process.stdout.write(`Recorded terminal ${delegation.role} review failure for ${delegationId}. Do not retry that provider.${reviewKind(delegation.kind) === "mrr" ? " Use the named backup only if you still need that persona; two finding-free GOs already pass when this lane is unavailable." : ""}\n`);
+    const jobRole = requireValue(flags.role, "Specify --role deep-code-review|structural-challenge|fable-challenge");
+    if (!REVIEW_ROLES.includes(jobRole)) throw new Error("Court requires the persona job being adjudicated");
+    if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");
+    const seated = seatingFor(COURT_ROLE, flags.model, flags.route);
+    const target = await targetFor(stream, "mrr");
+    const reviews = await store.reviews(stream.id);
+    assertCourtJobAvailable(reviews, { jobRole, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, ownerTaskId: stream.ownerTaskId });
+    const occupant = occupyingReview(reviews, { role: jobRole, target, claim: stream.claim, claimRevision: stream.claimRevision });
+    const outstanding = outstandingOccupantPacket(reviews, occupant, stream.claim).map(({ id, category, text }) => ({ id, category, text }));
+    if (!outstanding.length) throw new Error(`${jobRole} occupying NO_GO has no outstanding packet to adjudicate`);
+    const inventory = await diffInventory(target);
+    const project = await store.project(stream.project);
+    const delegation = await store.addDelegation(stream.id, {
+      type: "review", kind: "mrr", role: COURT_ROLE, jobRole, reconciliationOnly: true, model: seated.model, route: seated.route,
+      claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, outstanding,
+      ownerTaskIdAtBrief: stream.ownerTaskId || null
+    });
+    const execution = { ...REVIEW_EXECUTION, intended: null, substituted: false, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
+    return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "record") {
     const stream = await store.workstream(positional[1]);
-    const parsed = parseEnvelope(await readFile(path.resolve(requireValue(flags.file, "Specify --file <review.json>")), "utf8"));
+    const sourceText = await readFile(path.resolve(requireValue(flags.file, "Specify --file <review.json>")), "utf8");
+    const parsed = parseEnvelope(sourceText);
     const delegationEvents = await store.delegations(stream.id);
-    let delegation = delegationEvents.find((item) => item.id === parsed.delegationId && item.event === "created" && item.type === "review");
-    if (!delegation && parsed.reviewerTaskId) {
-      const boundByTask = delegationEvents.findLast((item) => item.event === "bound" && item.taskId === parsed.reviewerTaskId);
-      if (boundByTask) delegation = delegationEvents.find((item) => item.id === boundByTask.id && item.event === "created" && item.type === "review");
+    if (flags.delegation && Object.hasOwn(parsed, "delegationId") && parsed.delegationId !== flags.delegation) throw new Error("Review delegationId conflicts with --delegation");
+    const hasDelegationId = Object.hasOwn(parsed, "delegationId");
+    const delegationId = hasDelegationId ? parsed.delegationId : flags.delegation;
+    let delegation = delegationEvents.find((item) => item.id === delegationId && item.event === "created" && item.type === "review");
+    if (!hasDelegationId && !flags.delegation && parsed.reviewerTaskId) {
+      const reviewIds = new Set(delegationEvents.filter((item) => item.event === "created" && item.type === "review").map((item) => item.id));
+      const bindings = delegationEvents.filter((item) => item.event === "bound" && item.taskId === parsed.reviewerTaskId && reviewIds.has(item.id));
+      if (new Set(bindings.map((item) => item.id)).size > 1) throw new Error("Review task is bound to multiple delegations; specify --delegation");
+      if (bindings.length) delegation = delegationEvents.find((item) => item.id === bindings[0].id && item.event === "created" && item.type === "review");
     }
-    const envelope = normalizeReview(parsed, delegation);
-    if (!delegation) throw new Error("Review must reference its Field Report delegation. Repair the envelope from the brief; do not relaunch the reviewer for a schema mismatch.");
-    const bound = delegationEvents.findLast((item) => item.id === envelope.delegationId && item.event === "bound");
-    if (!bound || bound.taskId !== envelope.reviewerTaskId) throw new Error("Review task ID must match its explicit delegation binding. Repair the envelope from the brief; do not relaunch the reviewer for a schema mismatch.");
-    if (delegationEvents.some((item) => item.id === envelope.delegationId && item.event === "failed")) throw new Error("A failed review attempt is terminal; create a new brief to retry");
+    if (!delegation) throw new Error("Review must reference a known Field Report review delegation. Use --delegation for original output without a delegationId.");
+    const bound = delegationEvents.findLast((item) => item.id === delegation.id && item.event === "bound");
+    if (!bound) throw new Error("Review requires an explicit delegation task binding before recording");
+    const envelope = normalizeReview(parsed, delegation, bound);
     const validated = validateReview(envelope, delegation);
     const currentTarget = await targetFor(stream, delegation.kind);
     const stale = (delegation.claimRevision ?? 1) !== (stream.claimRevision ?? 1) || delegation.head !== currentTarget.head || delegation.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && delegation.tree !== currentTarget.tree);
@@ -354,10 +396,17 @@ async function main() {
     if (stale && (validated.reconciled || []).some((entry) => entry.disposition !== "still_present")) throw new Error("A stale review may mark delivered findings still_present but may not resolve or reject them");
     const packet = new Set((delegation.outstanding || []).map((finding) => finding.id));
     for (const entry of validated.reconciled || []) if (!packet.has(entry.findingId)) throw new Error(`reconciled may only reference IDs from this brief's outstanding packet; out-of-packet ID: ${entry.findingId}`);
-    for (const delivered of delegation.outstanding || []) if (!(validated.reconciled || []).some((entry) => entry.findingId === delivered.id)) throw new Error(`reconciled must account for delivered issue ${delivered.id} as resolved, rejected, or still_present`);
-    const { review, assignedFindingIds: assigned } = await store.addReview(stream.id, { ...validated, expectedClaimRevision: stream.claimRevision ?? 1, claimRevision: delegation.claimRevision ?? 1, ...(stale ? { staleAtRecord: true } : {}), ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null }, { beforeAppend: async () => {
+    for (const delivered of delegation.outstanding || []) if (!(validated.reconciled || []).some((entry) => entry.findingId === delivered.id)) throw new Error(`reconciled must account for delivered issue ${delivered.id}`);
+    const { review, assignedFindingIds: assigned } = await store.addReview(stream.id, { ...validated, sourceText, expectedClaimRevision: stream.claimRevision ?? 1, claimRevision: delegation.claimRevision ?? 1, ...(stale ? { staleAtRecord: true } : {}), ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null }, { beforeAppend: async (prior) => {
       const latest = await targetFor(stream, delegation.kind);
       if (latest.head !== currentTarget.head || latest.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && latest.tree !== currentTarget.tree)) throw new Error("Repository target changed while the review was being recorded; retry against current state");
+      if (stale) return;
+      const scope = { target: currentTarget, claim: stream.claim, claimRevision: stream.claimRevision };
+      if (validated.role === COURT_ROLE) {
+        assertCourtJobAvailable(prior, { jobRole: delegation.jobRole, ...scope, model: validated.model, reviewerTaskId: validated.reviewerTaskId, ownerTaskId: stream.ownerTaskId });
+      } else if (reviewKind(delegation.kind) === "mrr") {
+        assertPersonaJobAvailable(prior, { role: validated.role, ...scope, model: validated.model, substitutionReason: validated.substitutionReason, reviewerTaskId: validated.reviewerTaskId, delegations: delegationEvents, currentDelegation: delegation });
+      }
     } });
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);
   }
@@ -370,7 +419,7 @@ async function main() {
     if (exact.gate.ready) throw new Error("Exact-head MRR is already READY; no skip is needed");
     const last = lastReadyMrr(reviews, stream, await store.delegations(stream.id));
     if (!last) throw new Error("A skip requires a prior finding-free MRR on this claim");
-    const outstanding = outstandingFindings(reviews, stream.claim);
+    const outstanding = outstandingFindings(reviews, stream.claim, target, stream.claimRevision ?? 1);
     if (outstanding.length) throw new Error(`Reconcile outstanding MRR findings before skipping the panel: ${outstanding.map((item) => item.id).join(", ")}`);
     if (matchingWaiver(waivers, { target, workstream: stream })) throw new Error("A skip is already recorded for this exact head");
     const actor = String(flags.actor || process.env.CODEX_THREAD_ID || stream.ownerTaskId || "").trim();
@@ -456,16 +505,16 @@ async function main() {
     const action = positional[0];
     const cwd = flags.cwd ? path.resolve(flags.cwd) : process.cwd();
     if (action === "status" || action === "worker") {
-      throw new Error("Field Report does not probe host accessibility or start My Machines workers. Start a worker for this checkout with Cursor's agent CLI. Print a Sol or Fable command with fr machines invoke.");
+      throw new Error("Field Report does not probe host accessibility or start My Machines workers. Start a worker for this checkout with Cursor's agent CLI. Print an Astra or Fable command with fr machines invoke.");
     }
     if (action === "invoke") {
-      const provider = requireValue(positional[1], "Specify sol or fable");
+      const provider = requireValue(positional[1], "Specify astra or fable");
       const promptFile = path.resolve(requireValue(flags["prompt-file"], "Specify --prompt-file"));
-      if (provider === "sol") return process.stdout.write(`${solInvokeCommand({ promptFile, cwd, kind: flags.kind || "review" })}\n`);
+      if (provider === "astra") return process.stdout.write(`${astraInvokeCommand({ promptFile, cwd, kind: flags.kind || "review" })}\n`);
       if (provider === "fable") return process.stdout.write(`${fableInvokeCommand({ promptFile, cwd, baseSha: requireValue(flags.base, "Specify --base <sha>"), headSha: requireValue(flags.head, "Specify --head <sha>") })}\n`);
-      throw new Error("Invoke provider must be sol or fable");
+      throw new Error("Invoke provider must be astra or fable");
     }
-    throw new Error("Use fr machines invoke sol|fable --prompt-file <path>");
+    throw new Error("Use fr machines invoke astra|fable --prompt-file <path>");
   }
 
   if (command === "workflow") {

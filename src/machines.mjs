@@ -2,7 +2,7 @@ import path from "node:path";
 import { quote } from "./hooks.mjs";
 
 export const LOGIN_SHELL = "zsh";
-export const SOL_MODEL = "gpt-5.6-sol";
+export const ASTRA_MODEL = "gpt-6-astra";
 export const FABLE_MODEL = "claude-fable-5";
 export const FABLE_ROUTE = "claude";
 const SHA = /^[0-9a-f]{40}$/i;
@@ -27,17 +27,17 @@ function resolveMaybe(value) {
   return path.resolve(text);
 }
 
-export function solInvokeInner({ promptFile, cwd, kind = "review", lastMessageFile = null }) {
-  if (!["review", "work"].includes(kind)) throw new Error("Sol invoke kind must be review or work");
+export function astraInvokeInner({ promptFile, cwd, kind = "review", lastMessageFile = null }) {
+  if (!["review", "work"].includes(kind)) throw new Error("Astra invoke kind must be review or work");
   const sandbox = kind === "work" ? "workspace-write" : "read-only";
   const repo = resolveMaybe(cwd);
   const prompt = resolveMaybe(promptFile);
   const lastMessage = resolveMaybe(lastMessageFile || `${prompt}.last.txt`);
-  return `cd ${doubleQuote(repo)} && codex exec -m ${SOL_MODEL} -s ${sandbox} --ignore-user-config --json --color never -o ${doubleQuote(lastMessage)} -C ${doubleQuote(repo)} - < ${doubleQuote(prompt)}`;
+  return `cd ${doubleQuote(repo)} && codex exec -m ${ASTRA_MODEL} -s ${sandbox} --ignore-user-config --json --color never -o ${doubleQuote(lastMessage)} -C ${doubleQuote(repo)} - < ${doubleQuote(prompt)}`;
 }
 
-export function solInvokeCommand(options, shell = LOGIN_SHELL) {
-  return loginShellCommand(solInvokeInner(options), shell);
+export function astraInvokeCommand(options, shell = LOGIN_SHELL) {
+  return loginShellCommand(astraInvokeInner(options), shell);
 }
 
 function fableCli({ promptFile, cwd, baseSha, headSha }) {
