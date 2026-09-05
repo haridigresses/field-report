@@ -177,6 +177,9 @@ export function validateReview(input, delegation) {
     if (unresolved.length) throw new Error("Court cannot add unresolved items");
   }
   if (input.verdict === "NO_GO" && !noGoHasEvidence({ ...input, unresolved })) throw new Error("NO_GO requires at least one finding, unresolved item, or still_present reconciliation");
+  if (input.verdict === "GO" && (input.findings.length || unresolved.length || (input.reconciled || []).some((entry) => entry.disposition === "still_present"))) {
+    throw new Error("GO cannot carry findings, unresolved items, or still_present reconciliations");
+  }
   if (!String(input.summary || "").trim()) throw new Error("Review requires a summary");
   for (const key of SCORE_KEYS) assertScore(input.scores?.[key], key);
   for (const key of SCORE_KEYS) if (!String(input.scoreRationale?.[key] || "").trim()) throw new Error(`${key} requires explanatory rationale`);
@@ -334,15 +337,19 @@ export function courtReviewsOnTarget(reviews, { target, claim, claimRevision }) 
 }
 
 export function courtFullyRejected(reviews, occupant, { target, claim, claimRevision }) {
-  const ids = occupantPacket(reviews, occupant).map((finding) => finding.id);
-  if (!ids.length) return false;
+  const original = occupantPacket(reviews, occupant);
+  if (!original.length) return false;
+  const courts = jobCourts(reviews, { jobRole: occupant.role, target, claim, claimRevision });
+  if (!courts.length) return false;
   const latest = new Map();
-  for (const court of jobCourts(reviews, { jobRole: occupant.role, target, claim, claimRevision })) {
+  for (const court of courts) {
     for (const entry of court.reconciled || []) {
-      if (ids.includes(entry.findingId)) latest.set(entry.findingId, entry.disposition);
+      if (original.some((finding) => finding.id === entry.findingId)) latest.set(entry.findingId, entry.disposition);
     }
   }
-  return ids.every((id) => latest.get(id) === "rejected");
+  const outstandingIds = outstandingOccupantPacket(reviews, occupant, claim).map((finding) => finding.id);
+  if (outstandingIds.length) return outstandingIds.every((id) => latest.get(id) === "rejected");
+  return original.every((finding) => latest.get(finding.id) === "rejected" || !outstandingFindings(reviews, claim, occupant, occupant.claimRevision ?? 1).some((item) => item.id === finding.id));
 }
 
 function createdDelegation(delegations, delegationId) {

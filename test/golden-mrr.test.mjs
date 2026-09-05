@@ -273,6 +273,29 @@ test("a court rerun must come from a brief created after the court", () => {
   );
 });
 
+test("GO cannot carry findings, unresolved items, or still_present", () => {
+  const d = mrrDelegation("structural-challenge");
+  assert.throws(() => validateReview(envelope(d, "grok-go", { findings: ["Gap"] }), d), /GO cannot carry findings/);
+  assert.throws(() => validateReview(envelope(d, "grok-go", { unresolved: ["Open question"] }), d), /GO cannot carry/);
+  assert.throws(
+    () => validateReview(envelope(d, "grok-go", { reconciled: [{ findingId: "F1", disposition: "still_present", rationale: "Remains." }] }), d),
+    /GO cannot carry/
+  );
+});
+
+test("court authorizes a rerun against the outstanding occupant packet it briefed", () => {
+  const occupant = persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound A", "Unsound B"] });
+  const later = { ...persona("deep-code-review", "sol-later", { reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed on a later head." }] }), head: "d".repeat(40) };
+  const beforeCourt = [occupant, later];
+  const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
+  assert.deepEqual(outstandingOccupantPacket(beforeCourt, occupant, claim).map((item) => item.id), ["F2"]);
+  const rejected = court("structural-challenge", "sol-court", { reconciled: [{ findingId: "F2", disposition: "rejected", rationale: "Inapplicable." }] });
+  const reviews = [...beforeCourt, rejected];
+  assert.doesNotThrow(() => assertPersonaJobAvailable(reviews, { ...scope, model: "grok-4.6" }));
+  const rerun = persona("structural-challenge", "grok-rerun");
+  assert.equal(occupyingReview([...reviews, rerun], scope).reviewerTaskId, "grok-rerun");
+});
+
 test("a stale adverse envelope occupies again when the exact target returns", () => {
   const occupant = { ...persona("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] }), staleAtRecord: true };
   const scope = { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 };
