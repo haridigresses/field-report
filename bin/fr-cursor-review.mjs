@@ -16,7 +16,7 @@ export function userMcpPath(home = os.homedir()) {
   return path.join(home, ".cursor", "mcp.json");
 }
 
-export function isolatedCursorHome(realHome = os.homedir()) {
+export function isolatedCursorHome(realHome = os.homedir(), platform = process.platform) {
   const home = mkdtempSync(path.join(os.tmpdir(), "fr-cursor-review-"));
   const cursor = path.join(home, ".cursor");
   mkdirSync(cursor, { recursive: true });
@@ -24,6 +24,16 @@ export function isolatedCursorHome(realHome = os.homedir()) {
   for (const name of AUTH_FILES) {
     const source = path.join(realHome, ".cursor", name);
     if (existsSync(source)) symlinkSync(source, path.join(cursor, name));
+  }
+  // macOS security resolves its default login keychain relative to HOME.
+  // Keep that existing path available without copying secrets or linking Library.
+  if (platform === "darwin") {
+    const keychain = path.join(realHome, "Library", "Keychains", "login.keychain-db");
+    if (existsSync(keychain)) {
+      const directory = path.join(home, "Library", "Keychains");
+      mkdirSync(directory, { recursive: true });
+      symlinkSync(keychain, path.join(directory, "login.keychain-db"));
+    }
   }
   return home;
 }
