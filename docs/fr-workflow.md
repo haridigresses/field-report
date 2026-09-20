@@ -7,7 +7,7 @@ Field Report binds a delivery unit and records review evidence. The owner launch
 - Coordinators and workstream owners: if unnamed, run `fr identity --role coordinator|owner` and AF-save that key (or its fallback). Do not ask the user to name you. Attempt `af-onboard-safe` for useful session context. If AF is unavailable or fails, report it briefly and continue; AF is never a work gate. Reviewers must not use MCP servers or AF, and must not save an AF name.
 - Keep one workstream per product outcome. Bind it to its repository, branch, claim, and owner session. Session names are `{project}/{role}` with fallback `{project}/{role}-2` (examples: `aon/coordinator`, `ad/owner`). Persist only material review state in Field Report. File todos as AF issues in that repo's AF namespace — `aon`, `ad`, and so on — not in Field Report.
 - Read this repository's `merge-ready-review.md` when judging merge quality. Field Report does not copy or replace it.
-- Product behavior, meaningful scope expansion, security, migrations, durable data, and materially debatable architecture remain user decisions. Catch overengineering. Do not make those calls without asking the user. If consequential technical or architecture ambiguity remains after inspecting the evidence, consult Astra or Grok once; that advice is not review evidence and not a gate.
+- Product behavior, domain facts, meaningful scope expansion, security, migrations, durable data, and materially debatable architecture remain user decisions. Catch overengineering. Do not make those calls without asking the user. Schema, migrations, comments, and existing code show what was built; they are not the product contract. Product and domain questions go to the user, especially when the answer would shape data modeling or a one-way decision. Stop and ask; do not infer them from the repo. Those questions never go to Astra or Grok. If consequential technical or architecture ambiguity remains after inspecting the evidence, consult Astra or Grok once; that advice is not review evidence and not a gate.
 - Before implementing or recommending a behavior-changing fix, describe one concrete scenario: what happens today, what should happen afterward, and what user instruction or previously approved product rule establishes that outcome. Existing code, tests, schema, agent-written documentation, and reviewer agreement establish behavior, not user intent. If the proposed outcome requires an unsettled product choice, explain it in plain English, recommend an option, and ask before implementing that part or declaring it ready. Continue independent work. Reuse prior explicit decisions without asking again. Reviewers must flag unsupported product assumptions even when the implementation is correct.
 - Reviews never require permission. Commission CRR, MRR, and court without asking. If Auto-review blocks a review CLI, retry it; that is not a user question. Repo `.cursor/permissions.json` only steers Auto-review; it is not the IDE allowlist.
 - Reconcile MRR findings against the stated claim, code, and tests—not by vote, shopping models, or treating candidate-authored docs as product law.
@@ -32,6 +32,25 @@ Field Report binds a delivery unit and records review evidence. The owner launch
 - Durable findings live on MRR reviews until the owner addresses them. CRR findings do not. A GO cannot carry findings, unresolved items, or still_present. Exact-target packets (head and baseHead) go through court, including a NO_GO that rests only on still_present; `deep-code-review` carries outstanding issues from a different head, base, or claim revision. Court rejection is scoped to that exact head, base, claim, and claim revision; it does not suppress the finding after a head, base, or claim-revision change. Court authorizes a rerun against the outstanding occupant packet it briefed. `still_present` does not become a full reject if a later review resolves the ID. A stale adverse envelope occupies again if that exact target returns. The authorized rerun brief must be created after the court and cannot reuse a pre-court reviewer task ID. Substitution attestation is pinned to the brief; READY joins a substituted occupant to that brief.
 - `fr gate open` is the pre-CI / ready-for-bots check. It does not open the PR. `fr gate bots` is the post-CI merge-readiness check on an open PR. An already-ready PR with that evidence is fine; do not convert it to draft. An empty GitHub check rollup is not evidence that CI ran; `fr gate bots` stays BLOCKED until checks are observed.
 
+### TRR
+
+- Tabula Rasa Review is an informational pass, not a Field Report kind. It does not use `fr review brief`, `record`, or `gate`. Do not mint unused delegations.
+- The user says `TRR`, alone or with final MRR. On a long-lived or complex PR (10+ commits or thousands of lines are examples; size is a proxy), the owner may suggest TRR, then wait. Do not auto-run from a threshold.
+- When asked, launch three fresh agents in parallel with final MRR using the intended MRR models (`gpt-6-astra`, `grok-4.6`, `claude-fable-5`) and the same launch recipes. Fetch origin first. Inspect with `git diff --no-ext-diff --no-textconv <base> <head> --`.
+- Do not pass the owner conversation, MRR findings, court packets, or how the workstream arrived here. Do not redo correctness, tests, or security except where they exist only to support unjustified machinery. Answer only the slash questions. Write the prompt to a file; return prose, not a JSON envelope.
+- Present the three writeups in a separate **Tabula Rasa Review** section, in addition to typical MRR. Each writeup must propose whether the simpler shape can stay on this branch or calls for a rebuild. Cuts the user accepts on this branch become a new head plus CRR. A rebuild the user accepts is a user product decision, not a Field Report READY input. Keep-as-is is also a user product decision.
+- Owner prompt template:
+
+```
+Independently assess this exact diff as if you had never seen the workstream, owner conversation, or prior reviews. Claim is context, not a product contract. Inspect with: git diff --no-ext-diff --no-textconv <base> <head> --
+Do not review correctness, tests, or security except where they exist only to support unjustified machinery.
+1. Is any of this overengineering, or variance in product assumptions the user did not specify or request?
+2. Is this the simplest possible shape of implementation?
+3. If you came into this in a vacuum, what would you slash / simplify / streamline, where the juice is not worth the squeeze, or a product decision is unnecessary and adds cruft or layers of logic that are not justified?
+4. For that simpler shape: stay on this branch, or rebuild? Say which, and why. Stay on this branch only if the current commits can be edited into that shape. Call for a rebuild if the accumulated mechanism should be discarded and started over.
+Separate blockers-to-slash from optional taste. Do not invent product decisions.
+```
+
 ### After a pull request is open
 
 - Watch GitHub checks. Flake vs real failure is owner judgment. If it is on the border, consult Astra or Grok once before deciding whether to address it. That consult is not a hard gate.
@@ -52,17 +71,17 @@ Field Report binds a delivery unit and records review evidence. The owner launch
 ## Repository coordinator
 
 - Name this session into the repo namespace with `fr identity --role coordinator` and AF save (example: `aon/coordinator`). Assign workstreams to named owner sessions in that namespace. Field Report stores the binding; AF stores the todos as issues in that same repo namespace (`aon`, `ad`, etc.).
-- Maintain outcome ownership, sequencing, collision awareness, and MRR/bots visibility. Do not become a second issue tracker.
+- Maintain outcome ownership, sequencing, collision awareness, and MRR/bots visibility. Do not become a second issue tracker. TRR is owner-commissioned when the user asks; coordinators do not launch it.
 - When the user explicitly asks for an agent they will work with directly, create a user-owned task. Use an internal subagent only for delegated work the current task will consume.
-- Do not answer product or workstream architecture questions for the user.
+- Do not answer product or workstream architecture questions for the user. Send those to the user; do not infer them from the repo.
 
 ## Workstream owner
 
 - Name this session with `fr identity --role owner` if unnamed. Own the stated outcome. Choose a coherent, reviewable delivery unit and state exactly what it claims.
-- Use judgment. Bring uncertainty about product behavior to the user. Catch overengineering.
-- Keep one implementation owner for the current unit. Launch implementation workers as fresh subagents with a bounded slice and no owner conversation. Verify their work. Do not mint a second FR todo or completion ceremony for that; AF issues in the repo namespace (`aon`, `ad`, etc.) are the ledger.
+- Use judgment. Bring product and domain uncertainty to the user before implementing. If the answer would shape data modeling or a one-way decision, stop; do not guess from schema or code. Catch overengineering.
+- Keep one implementation owner for the current unit. Launch implementation workers as fresh subagents with a bounded slice and no owner conversation. Do not dispatch a worker to settle a product or domain question. Verify their work. Do not mint a second FR todo or completion ceremony for that; AF issues in the repo namespace (`aon`, `ad`, etc.) are the ledger.
 - Keep a one-line next action with `fr update <id> --next`. Update it when you stop or the next step changes. It is a sticky note, not a todo ledger. AF issues remain the todos.
-- CRR before you run `git commit` on a commit you intend to keep. A green checkout hook is not CRR. WIP and amend are owner judgment. MRR before opening a PR. After that, CRR through churn. Final MRR only when the user asks; argue substantiveness if a skip seems right, then wait. Reviews never require permission. Launch each intended model. A completed envelope occupies that job. If the intended model cannot start before any occupant exists, substitute with `--substitution-reason`; repair or resume a started hang. Do not record provider failure and do not shop after a NO_GO. Three finding-free persona GOs are READY. Court an occupying NO_GO once with `fr review adjudicate`.
+- CRR before you run `git commit` on a commit you intend to keep. A green checkout hook is not CRR. WIP and amend are owner judgment. MRR before opening a PR. After that, CRR through churn. Final MRR only when the user asks; argue substantiveness if a skip seems right, then wait. When the user asks for TRR, or agrees after you suggest it on a long or complex PR, launch the three TRR agents alongside the panel and present the writeups separately, including each agent's stay-on-this-branch vs rebuild call. Do not record them. Reviews never require permission. Launch each intended model. A completed envelope occupies that job. If the intended model cannot start before any occupant exists, substitute with `--substitution-reason`; repair or resume a started hang. Do not record provider failure and do not shop after a NO_GO. Three finding-free persona GOs are READY. Court an occupying NO_GO once with `fr review adjudicate`.
 - Do not auto-open a pull request. After `fr gate open` is READY, you may open one or leave that to the user. Never merge.
 - Summarize stored MRR evidence clearly, leading with anything that needs attention.
 
@@ -86,4 +105,5 @@ These are swings this program already made. Do not take them again.
 - Do not hand-rewrite reviewer output to fix schema, turn pass into GO, remove limitations, or replace delegation IDs. Supported formatting is handled by the recorder; resume the same reviewer for corrections that require judgment. Do not restore `claude-aws`, Fable plan-mode, or unrestricted `Bash(git *)`.
 - Do not add `fr question`. Product questions go to the user. Do not make coordinators mute relays or factory owners; they assign and sequence in the repo namespace.
 - Do not add a user-permission step before reviews.
+- Do not add `kind=trr`, TRR occupancy, court, durable F-ids, `fr gate trr`, or auto LOC/commit detectors. TRR stays an unrecorded informational pass.
 - Keep one canonical skill source, with launch recipes in the skill because agents follow `SKILL.md`. Do not maintain host-specific copies, and do not replace the skill with a pointer that nobody reads.

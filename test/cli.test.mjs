@@ -72,6 +72,9 @@ test("a next action is a sticky note on context and show", async () => {
   assert.match(await run(["update", "outcome", "--next", "Record CRR then commit"], repo, state), /Updated outcome/);
   assert.match(await run(["context", "outcome"], repo, state), /Next: Record CRR then commit/);
   assert.match(await run(["context", "outcome"], repo, state), /Reviews never require permission/);
+  assert.match(await run(["context", "outcome"], repo, state), /Product and domain questions go to the user/);
+  assert.match(await run(["context", "outcome"], repo, state), /do not infer them from schema or code/);
+
   assert.match(await run(["show", "outcome"], repo, state), /Next: Record CRR then commit/);
 });
 
@@ -289,6 +292,12 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /Launch implementation workers as fresh subagents/);
   assert.match(shared, /Do not restore `claude-aws`/);
   assert.match(shared, /Do not add `fr question`/);
+  assert.match(shared, /Tabula Rasa Review is an informational pass/);
+  assert.match(shared, /Do not add `kind=trr`/);
+  assert.match(shared, /do not infer them from the repo/);
+  assert.match(shared, /Those questions never go to Astra or Grok/);
+  assert.match(shared, /Do not dispatch a worker to settle a product or domain question/);
+
   assert.match(shared, /fr review waive/);
   assert.match(shared, /one-line next action/);
   assert.match(shared, /green checkout hook is not CRR/);
