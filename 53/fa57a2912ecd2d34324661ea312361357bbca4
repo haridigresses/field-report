@@ -1,0 +1,45 @@
+skills/repo-coordinator/SKILL.md
+  s_0a3f2c07aa98dc::t_a2fb4bcbf6aa8e 10
+bin/fr.mjs
+  s_75a5cd144d98a7::t_e87465b60c96d3 294
+docs/fr-workflow.md
+  s_d7df521d1dfb14::t_0472da38973040 10,35-53,74,76,81-82,84,108
+skills/field-report/SKILL.md
+  s_d7df521d1dfb14::t_5b2decf84acfad 12,15,31
+skills/workstream-orchestrator/SKILL.md
+  s_d7df521d1dfb14::t_2e30e21a87b2c6 10,14
+test/cli.test.mjs
+  s_d7df521d1dfb14::t_36aef449b47f9d 75-77,295-300
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "53fa57a2912ecd2d34324661ea312361357bbca4",
+  "prompts": {},
+  "sessions": {
+    "s_0a3f2c07aa98dc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06fb8-0874-7133-b6d9-8fa7cb659a03",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "haridigresses <117231445+haridigresses@users.noreply.github.com>"
+    },
+    "s_75a5cd144d98a7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0b52a-0e54-7bf0-8521-6a9739fc55a1",
+        "model": "unknown"
+      },
+      "human_author": "haridigresses <117231445+haridigresses@users.noreply.github.com>"
+    },
+    "s_d7df521d1dfb14": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "8fae2d74-e140-47c7-9973-7b85f14d8eb8",
+        "model": "unknown"
+      },
+      "human_author": "haridigresses <117231445+haridigresses@users.noreply.github.com>"
+    }
+  }
+}
