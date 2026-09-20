@@ -1,0 +1,25 @@
+test/cli.test.mjs
+  s_d7df521d1dfb14::t_01ed12313bfc35 297
+docs/fr-workflow.md
+  s_d7df521d1dfb14::t_b12b4713cbd833 39,41,84
+skills/field-report/SKILL.md
+  s_d7df521d1dfb14::t_3db216a1427070 15
+skills/workstream-orchestrator/SKILL.md
+  s_d7df521d1dfb14::t_24bc877ae6a805 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "81d279e79917b0c476b01fa5b4f6b0c4d1dd95d8",
+  "prompts": {},
+  "sessions": {
+    "s_d7df521d1dfb14": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "8fae2d74-e140-47c7-9973-7b85f14d8eb8",
+        "model": "grok-4.6"
+      },
+      "human_author": "haridigresses <117231445+haridigresses@users.noreply.github.com>"
+    }
+  }
+}
