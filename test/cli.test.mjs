@@ -294,6 +294,7 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /Do not add `fr question`/);
   assert.match(shared, /Tabula Rasa Review is an informational pass/);
   assert.match(shared, /Do not add `kind=trr`/);
+  assert.match(shared, /Do not commission MRR because the user asked for TRR/);
   assert.match(shared, /do not infer them from the repo/);
   assert.match(shared, /Those questions never go to Astra or Grok/);
   assert.match(shared, /Do not dispatch a worker to settle a product or domain question/);
