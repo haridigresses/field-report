@@ -130,6 +130,7 @@ test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", asy
   assert.doesNotMatch(fable.execution.launch, /claude-aws/);
   assert.doesNotMatch(fable.execution.launch, /Bash\(git \*\)/);
   assert.match(deep.prompt, /delegationId=/);
+  for (const brief of [deep, structural, fable]) assert.doesNotMatch(brief.prompt, /\bprovider\b/);
   assert.match(deep.prompt, /Do not run fr, owner skills, MCP servers, or AF/);
   assert.equal(deep.inspection.command, `git diff --no-ext-diff --no-textconv ${deep.delegation.baseHead} ${deep.delegation.head} --`);
 });

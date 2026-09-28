@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, providerForModel, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { normalizeReview } from "../src/envelope.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
@@ -62,6 +62,34 @@ const crrComplete = (id, extras = {}) => {
   const d = extras.delegation || crrDelegation(undefined, extras);
   return validateReview(crrEnvelope(d, id, extras), d);
 };
+
+test("provider is derived from the seated model and a supplied label does not fail the review", () => {
+  assert.equal(providerForModel("gpt-6-astra"), "openai");
+  assert.equal(providerForModel("gpt-5.6-sol"), "openai");
+  assert.equal(providerForModel("claude-fable-5"), "anthropic");
+  assert.equal(providerForModel("grok-4.6"), "xai");
+  assert.equal(providerForModel("composer-2"), null);
+  const astra = mrrDelegation("deep-code-review");
+  const omitted = { ...mrrEnvelope(astra, "astra-omit") };
+  delete omitted.provider;
+  const recorded = validateReview(omitted, astra);
+  assert.equal(recorded.provider, "openai");
+  assert.equal(recorded.verdict, "GO");
+  assert.equal(validateReview(mrrEnvelope(astra, "astra-label", { provider: "OpenAI" }), astra).provider, "openai");
+  assert.equal(validateReview(mrrEnvelope(astra, "astra-other", { provider: "Codex" }), astra).provider, "openai");
+  const grok = mrrDelegation("structural-challenge");
+  assert.equal(validateReview(mrrEnvelope(grok, "grok-cursor", { provider: "cursor" }), grok).provider, "xai");
+  assert.equal(validateReview(mrrEnvelope(grok, "grok-wrong", { provider: "OpenAI" }), grok).provider, "xai");
+  const fable = mrrDelegation("fable-challenge");
+  assert.equal(validateReview(mrrEnvelope(fable, "fable-label", { provider: "Claude" }), fable).provider, "anthropic");
+  const crr = crrDelegation();
+  const crrRecorded = validateReview(crrEnvelope(crr, "crr-free", { provider: "OpenAI/Codex" }), crr);
+  assert.equal("provider" in crrRecorded, false);
+  assert.equal(crrRecorded.model, "composer-2");
+  const crrOmitted = { ...crrEnvelope(crr, "crr-omit") };
+  delete crrOmitted.provider;
+  assert.equal("provider" in validateReview(crrOmitted, crr), false);
+});
 
 test("canonical models accept Cursor Grok aliases and reject unknown ids", () => {
   assert.equal(canonicalReviewModel("cursor-grok-4.6-high"), "grok-4.6");

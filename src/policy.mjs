@@ -60,11 +60,12 @@ export function reviewModelLabel(model) {
   return String(model || "unknown");
 }
 
-function providersFor(canonical) {
-  if (canonical === REVIEW_MODELS.astra || canonical === REVIEW_MODELS.sol) return ["openai"];
-  if (canonical === REVIEW_MODELS.fable) return ["anthropic"];
-  if (canonical === REVIEW_MODELS.grok) return ["cursor", "xai"];
-  return [];
+export function providerForModel(model) {
+  const canonical = canonicalReviewModel(model);
+  if (canonical === REVIEW_MODELS.astra || canonical === REVIEW_MODELS.sol) return "openai";
+  if (canonical === REVIEW_MODELS.fable) return "anthropic";
+  if (canonical === REVIEW_MODELS.grok) return "xai";
+  return null;
 }
 
 export function reviewKind(kind) {
@@ -164,12 +165,10 @@ export function validateReview(input, delegation) {
   if (kind === "crr") {
     if (!String(input.model || "").trim()) throw new Error("Review requires a model id");
     if (delegation.model && String(delegation.model) !== String(input.model)) throw new Error("Review model must match its exact delegation");
-    if (!String(input.provider || "").trim()) throw new Error("Review requires a provider");
   } else {
     const model = canonicalReviewModel(input.model);
     if (!model) throw new Error(`Review model must be ${REVIEW_MODEL_HELP}`);
     if (delegation.model && canonicalReviewModel(delegation.model) !== model) throw new Error("Review model must match its exact delegation");
-    if (!providersFor(model).includes(input.provider)) throw new Error(`Provider does not match review model ${model}`);
     if (role !== COURT_ROLE) {
       const intended = intendedModelFor(delegation);
       if (!intended) throw new Error("Review brief has an invalid intendedModel");
@@ -180,7 +179,7 @@ export function validateReview(input, delegation) {
       if (model !== intended && !substitutionReason) throw new Error(`${role} substitution requires a non-empty substitutionReason; intended model is ${intended}`);
       if (model === intended && substitutionReason) throw new Error("substitutionReason is only valid when the intended model was not used");
     }
-    input = { ...input, model };
+    input = { ...input, model, provider: providerForModel(model) };
   }
   if (!["native", "cli"].includes(input.route) || input.route !== delegation?.route) throw new Error("Review route must match its exact delegation");
   if (!Array.isArray(input.findings) || !input.findings.every((item) => typeof item === "string" && item.trim())) throw new Error("Review findings must be a nonblank string array");
@@ -218,9 +217,10 @@ export function validateReview(input, delegation) {
   } else if (role === COURT_ROLE) {
     throw new Error("Court must adjudicate the delivered packet");
   }
-  const { reconciliationOnly: _reconciliationOnly, jobRole: _jobRole, legacy: _legacy, staleAtRecord: _staleAtRecord, intendedModel: _intendedModel, ...rest } = input;
+  const { reconciliationOnly: _reconciliationOnly, jobRole: _jobRole, legacy: _legacy, staleAtRecord: _staleAtRecord, intendedModel: _intendedModel, provider, ...rest } = input;
   return {
     ...rest,
+    ...(kind === "mrr" ? { provider } : {}),
     kind,
     role,
     unresolved,
