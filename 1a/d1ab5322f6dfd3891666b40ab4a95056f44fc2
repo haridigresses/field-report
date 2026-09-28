@@ -1,0 +1,37 @@
+bin/fr.mjs
+  s_d1c4af3ef3c300::t_b8842bdd62ebc3 149-150
+docs/fr-workflow.md
+  s_85f330403b2b81::t_60c9948c5bf3bb 63,95
+skills/field-report/SKILL.md
+  s_85f330403b2b81::t_d5a1525b64dcba 17
+src/policy.mjs
+  s_85f330403b2b81::t_22ecc75831056f 63-68,182,220,223
+test/cli.test.mjs
+  s_85f330403b2b81::t_4952ac8504914c 133
+test/policy.test.mjs
+  s_85f330403b2b81::t_ba219ffa27c6fd 4,66-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ad1ab5322f6dfd3891666b40ab4a95056f44fc2",
+  "prompts": {},
+  "sessions": {
+    "s_85f330403b2b81": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d77e-1400-7682-947f-6f9d74b77099",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "haridigresses <117231445+haridigresses@users.noreply.github.com>"
+    },
+    "s_d1c4af3ef3c300": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "ca1ea101-c17b-4a48-9c41-5c3d89e66d85",
+        "model": "grok-4.7"
+      },
+      "human_author": "haridigresses <117231445+haridigresses@users.noreply.github.com>"
+    }
+  }
+}
