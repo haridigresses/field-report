@@ -1,0 +1,59 @@
+bin/fr.mjs
+  s_d1c4af3ef3c300::t_b8842bdd62ebc3 149-150
+  s_34e6be59441b5c::t_3b99ceb5925034 9,25-26,56,326,516-517
+docs/fr-workflow.md
+  s_85f330403b2b81::t_60c9948c5bf3bb 95
+  s_34e6be59441b5c::t_3b99ceb5925034 30,39,63,84,103
+skills/field-report/SKILL.md
+  s_85f330403b2b81::t_d5a1525b64dcba 17
+  s_34e6be59441b5c::t_3b99ceb5925034 15,22,25,27
+src/policy.mjs
+  s_85f330403b2b81::t_22ecc75831056f 103,108,224,262,265
+  s_34e6be59441b5c::t_3b99ceb5925034 18-19,22-23,25,27,29,47-56,59,61-77,81-92,98-100,104-107,154,177-179,183,221-222,373,459
+test/cli.test.mjs
+  s_85f330403b2b81::t_4952ac8504914c 135
+  s_34e6be59441b5c::t_3b99ceb5925034 115-117,125,138-148,200,336,347
+test/policy.test.mjs
+  s_85f330403b2b81::t_ba219ffa27c6fd 66-69,73-96
+  s_34e6be59441b5c::t_3b99ceb5925034 4,70-72,103-110,121-122,124-129,133-139,247,251-255,257-263,265-276
+src/machines.mjs
+  s_34e6be59441b5c::t_3b99ceb5925034 3,6-7,31-39,41,46,53-54,58,63,67
+test/machines.test.mjs
+  s_34e6be59441b5c::t_3b99ceb5925034 32-38,61-68,96
+docs/mymachines.md
+  s_34e6be59441b5c::t_3b99ceb5925034 30
+README.md
+  s_34e6be59441b5c::t_3b99ceb5925034 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f6adaea807a79feead370f8df975924f82f4c3e",
+  "prompts": {},
+  "sessions": {
+    "s_34e6be59441b5c": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "22f68143-1056-4cac-a856-656eb4380b2c",
+        "model": "grok-4.7"
+      },
+      "human_author": "haridigresses <117231445+haridigresses@users.noreply.github.com>"
+    },
+    "s_85f330403b2b81": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d77e-1400-7682-947f-6f9d74b77099",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "haridigresses <117231445+haridigresses@users.noreply.github.com>"
+    },
+    "s_d1c4af3ef3c300": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "ca1ea101-c17b-4a48-9c41-5c3d89e66d85",
+        "model": "grok-4.7"
+      },
+      "human_author": "haridigresses <117231445+haridigresses@users.noreply.github.com>"
+    }
+  }
+}
