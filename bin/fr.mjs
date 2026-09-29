@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore } from "../src/store.mjs";
-import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, intendedModelFor, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, seatingFor, substitutionLine, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, intendedModelFor, lastReadyMrr, latestClaimReviews, matchingWaiver, modelFamily, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, satisfiesIntended, seatingFor, substitutionLine, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 import { astraInvokeCommand, fableInvokeCommand } from "../src/machines.mjs";
@@ -22,8 +22,8 @@ function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = 
     return `Launch a fresh ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes. Prefer a local model; use cloud only if local cannot produce an envelope. Do not pass the owner conversation.`;
   }
   if (seated.route === "native") return `Launch a fresh native ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes; do not pass the owner conversation.`;
-  if (seated.model === "gpt-6-astra") return astraInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review" });
-  if (seated.model === "claude-fable-5") return fableInvokeCommand({ promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA" });
+  if (modelFamily(seated.model) === "codex") return astraInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review", model: seated.model });
+  if (modelFamily(seated.model) === "anthropic") return fableInvokeCommand({ promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA", model: seated.model });
   if (seated.model === "grok-4.6") return GROK_LAUNCH;
   return `Launch ${seated.model} without MCP servers or AF. Prefer local; cloud only if needed.`;
 }
@@ -53,7 +53,7 @@ fr gate crr [id]
 fr gate open [id]
 fr gate bots <id>
 fr hook install|status|uninstall <project-id>
-fr machines invoke astra|fable --prompt-file <path> [--cwd <path>] [--kind review|work] [--base <sha>] [--head <sha>]
+fr machines invoke astra|fable --prompt-file <path> [--cwd <path>] [--kind review|work] [--base <sha>] [--head <sha>] [--model <id>]
 fr workflow [shared|coordinator|workstream|reviewer]
 
 Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge. Cursor Cloud Agents reach Astra and Fable on this host through My Machines when a worker for that checkout is online.`;
@@ -323,7 +323,7 @@ async function main() {
       if (occupant) {
         // An authorized same-model court rerun keeps the original job's seating.
         seated.intended = intendedModelFor(occupant);
-        seated.substituted = seated.model !== seated.intended;
+        seated.substituted = !satisfiesIntended(seated.model, seated.intended);
         substitutionReason = occupant.substitutionReason || "";
       }
     }
@@ -513,8 +513,8 @@ async function main() {
     if (action === "invoke") {
       const provider = requireValue(positional[1], "Specify astra or fable");
       const promptFile = path.resolve(requireValue(flags["prompt-file"], "Specify --prompt-file"));
-      if (provider === "astra") return process.stdout.write(`${astraInvokeCommand({ promptFile, cwd, kind: flags.kind || "review" })}\n`);
-      if (provider === "fable") return process.stdout.write(`${fableInvokeCommand({ promptFile, cwd, baseSha: requireValue(flags.base, "Specify --base <sha>"), headSha: requireValue(flags.head, "Specify --head <sha>") })}\n`);
+      if (provider === "astra") return process.stdout.write(`${astraInvokeCommand({ promptFile, cwd, kind: flags.kind || "review", model: flags.model })}\n`);
+      if (provider === "fable") return process.stdout.write(`${fableInvokeCommand({ promptFile, cwd, baseSha: requireValue(flags.base, "Specify --base <sha>"), headSha: requireValue(flags.head, "Specify --head <sha>"), model: flags.model })}\n`);
       throw new Error("Invoke provider must be astra or fable");
     }
     throw new Error("Use fr machines invoke astra|fable --prompt-file <path>");

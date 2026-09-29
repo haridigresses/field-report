@@ -15,14 +15,18 @@ export const REVIEW_MODELS = Object.freeze({
   astra: "gpt-6-astra",
   sol: "gpt-5.6-sol",
   grok: "grok-4.6",
+  opus: "claude-opus-5-5",
+  fable51: "claude-fable-5-1",
   fable: "claude-fable-5"
 });
+export const CODEX_PREFERENCE = Object.freeze([REVIEW_MODELS.astra, REVIEW_MODELS.sol]);
+export const ANTHROPIC_PREFERENCE = Object.freeze([REVIEW_MODELS.opus, REVIEW_MODELS.fable51, REVIEW_MODELS.fable]);
 export const INTENDED_MODELS = Object.freeze({
-  "deep-code-review": REVIEW_MODELS.astra,
+  "deep-code-review": CODEX_PREFERENCE[0],
   "structural-challenge": REVIEW_MODELS.grok,
-  "fable-challenge": REVIEW_MODELS.fable
+  "fable-challenge": ANTHROPIC_PREFERENCE[0]
 });
-const REVIEW_MODEL_HELP = "gpt-6-astra, grok-4.6, or claude-fable-5";
+const REVIEW_MODEL_HELP = "a Codex model (prefer gpt-6-astra, then gpt-5.6-sol), grok-4.6, or an Anthropic model (prefer claude-opus-5-5, then claude-fable-5-1, then claude-fable-5)";
 
 function assertScore(value, key) {
   if (!Number.isInteger(value) || value < 0 || value > 100) throw new Error(`${key} must be an integer from 0 to 100`);
@@ -40,15 +44,50 @@ function hasMrrSignals(input) {
 }
 
 const GROK_MODEL = /^(?:cursor-)?grok-4\.6(?:-(?:high|low|medium|xhigh))?(?:-fast)?$/;
+const EFFORT_SUFFIX = /-(?:thinking-(?:xhigh|high|medium|low|max)|xhigh|high|medium|low|fast|max)$/;
+const CODEX_MODEL = /^(?:gpt|codex)(?:-[a-z0-9.]+)+$/;
+const ANTHROPIC_MODEL = /^claude(?:-[a-z0-9.]+)+$/;
+
+function bareModel(model) {
+  let text = String(model || "").trim().toLowerCase();
+  if (text.startsWith("cursor-")) text = text.slice("cursor-".length);
+  if (EFFORT_SUFFIX.test(text)) text = text.replace(EFFORT_SUFFIX, "");
+  return text;
+}
 
 export function canonicalReviewModel(model) {
-  const text = String(model || "").trim();
-  const lower = text.toLowerCase();
-  if (lower === "gpt-6-astra") return REVIEW_MODELS.astra;
-  if (lower === "gpt-5.6-sol") return REVIEW_MODELS.sol;
-  if (lower === "claude-fable-5") return REVIEW_MODELS.fable;
+  const lower = String(model || "").trim().toLowerCase();
   if (GROK_MODEL.test(lower)) return REVIEW_MODELS.grok;
+  const bare = bareModel(model);
+  if (bare === REVIEW_MODELS.astra) return REVIEW_MODELS.astra;
+  if (bare === REVIEW_MODELS.sol) return REVIEW_MODELS.sol;
+  if (bare === REVIEW_MODELS.opus) return REVIEW_MODELS.opus;
+  if (bare === REVIEW_MODELS.fable51) return REVIEW_MODELS.fable51;
+  if (bare === REVIEW_MODELS.fable) return REVIEW_MODELS.fable;
+  if (CODEX_MODEL.test(bare)) return bare;
+  if (ANTHROPIC_MODEL.test(bare)) return bare;
   return null;
+}
+
+export function modelFamily(model) {
+  const canonical = canonicalReviewModel(model);
+  if (!canonical) return null;
+  if (canonical === REVIEW_MODELS.grok) return "xai";
+  if (ANTHROPIC_MODEL.test(canonical)) return "anthropic";
+  if (CODEX_MODEL.test(canonical)) return "codex";
+  return null;
+}
+
+// Same-family Codex and Anthropic models fill their seat. Grok stays one model.
+// Another family is a substitution.
+export function satisfiesIntended(model, intended) {
+  const selected = canonicalReviewModel(model);
+  const target = canonicalReviewModel(intended);
+  if (!selected || !target) return false;
+  if (selected === target) return true;
+  const family = modelFamily(selected);
+  if (family !== "codex" && family !== "anthropic") return false;
+  return family === modelFamily(target);
 }
 
 export function reviewModelLabel(model) {
@@ -56,15 +95,16 @@ export function reviewModelLabel(model) {
   if (canonical === REVIEW_MODELS.astra) return "Astra";
   if (canonical === REVIEW_MODELS.sol) return "Sol";
   if (canonical === REVIEW_MODELS.grok) return "Grok";
-  if (canonical === REVIEW_MODELS.fable) return "Fable";
-  return String(model || "unknown");
+  if (canonical === REVIEW_MODELS.opus) return "Opus";
+  if (canonical === REVIEW_MODELS.fable || canonical === REVIEW_MODELS.fable51) return "Fable";
+  return canonical || String(model || "unknown");
 }
 
 export function providerForModel(model) {
-  const canonical = canonicalReviewModel(model);
-  if (canonical === REVIEW_MODELS.astra || canonical === REVIEW_MODELS.sol) return "openai";
-  if (canonical === REVIEW_MODELS.fable) return "anthropic";
-  if (canonical === REVIEW_MODELS.grok) return "xai";
+  const family = modelFamily(model);
+  if (family === "codex") return "openai";
+  if (family === "anthropic") return "anthropic";
+  if (family === "xai") return "xai";
   return null;
 }
 
@@ -111,7 +151,7 @@ export function seatingFor(role, model = null, route = null) {
     role,
     intended,
     model: selected,
-    substituted: selected !== intended,
+    substituted: !satisfiesIntended(selected, intended),
     route: route || "cli"
   };
 }
@@ -134,11 +174,13 @@ export function substitutionReasonOf(item) {
 }
 
 // New briefs pin seating. Before that field existed, Sol was the intended
-// deep reviewer; the first Astra briefs also shipped without the field.
-// Preserve those original reviews without inventing substitution attestations.
+// deep reviewer and Fable 5 was the intended fable reviewer; the first Astra
+// briefs also shipped without the field. Preserve those original reviews
+// without inventing substitution attestations.
 export function intendedModelFor(item) {
   if (item?.intendedModel != null) return canonicalReviewModel(item.intendedModel);
   if (item?.role === "deep-code-review" && canonicalReviewModel(item.model) === REVIEW_MODELS.sol && !substitutionReasonOf(item)) return REVIEW_MODELS.sol;
+  if (item?.role === "fable-challenge" && canonicalReviewModel(item.model) === REVIEW_MODELS.fable && !substitutionReasonOf(item)) return REVIEW_MODELS.fable;
   return INTENDED_MODELS[item?.role];
 }
 
@@ -176,8 +218,8 @@ export function validateReview(input, delegation) {
       if (substitutionReasonOf(input) && substitutionReasonOf(input) !== substitutionReason) {
         throw new Error("substitutionReason must match its exact delegation");
       }
-      if (model !== intended && !substitutionReason) throw new Error(`${role} substitution requires a non-empty substitutionReason; intended model is ${intended}`);
-      if (model === intended && substitutionReason) throw new Error("substitutionReason is only valid when the intended model was not used");
+      if (!satisfiesIntended(model, intended) && !substitutionReason) throw new Error(`${role} substitution requires a non-empty substitutionReason; intended model is ${intended}`);
+      if (satisfiesIntended(model, intended) && substitutionReason) throw new Error("substitutionReason is only valid when the intended model was not used");
     }
     input = { ...input, model, provider: providerForModel(model) };
   }
@@ -328,7 +370,7 @@ const acceptedMrr = (review, delegations = []) => {
   const delegation = (delegations || []).find((item) => item.id === review.delegationId && item.event === "created");
   const intended = intendedModelFor(delegation || review);
   const model = canonicalReviewModel(review.model);
-  if (intended && model === intended) return true;
+  if (intended && satisfiesIntended(model, intended)) return true;
   return Boolean(intended && substitutionReasonOf(delegation || (delegations.length ? null : review)));
 };
 const acceptedCrr = (review) => reviewKind(review?.kind) === "crr" && review?.role === CRR_ROLE && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && !(review.findings || []).length && !(review.unresolved || []).length;
@@ -414,7 +456,7 @@ export function assertPersonaJobAvailable(reviews, { role, target, claim, claimR
     throw new Error("A court reviewer cannot fill a persona job");
   }
   if (!occupant) {
-    if (selected !== intended && !String(substitutionReason || "").trim()) {
+    if (!satisfiesIntended(selected, intended) && !String(substitutionReason || "").trim()) {
       throw new Error(`${role} substitution requires a non-empty substitutionReason; intended model is ${intended}`);
     }
     return;

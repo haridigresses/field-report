@@ -112,7 +112,9 @@ test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", asy
   assert.equal(deep.delegation.model, "gpt-6-astra");
   assert.equal(deep.delegation.intendedModel, "gpt-6-astra");
   assert.equal(structural.delegation.model, "grok-4.6");
-  assert.equal(fable.delegation.model, "claude-fable-5");
+  assert.equal(fable.delegation.model, "claude-opus-5-5");
+  assert.equal(fable.delegation.intendedModel, "claude-opus-5-5");
+  assert.equal(fable.execution.substituted, false);
   assert.equal(deep.execution.mcp, "none");
   assert.match(deep.execution.launch, /codex exec -m gpt-6-astra/);
   assert.match(deep.execution.launch, /--ignore-user-config/);
@@ -120,7 +122,7 @@ test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", asy
   assert.doesNotMatch(deep.execution.launch, /--ask-for-approval/);
   assert.match(structural.execution.launch, /fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json/);
   assert.doesNotMatch(structural.execution.launch, /--force|--yolo|--mode ask|--approve-mcps/);
-  assert.match(fable.execution.launch, /--model claude-fable-5/);
+  assert.match(fable.execution.launch, /--model claude-opus-5-5/);
   assert.doesNotMatch(fable.execution.launch, /anthropic\.claude-fable-5/);
   assert.match(fable.execution.launch, /git rev-parse HEAD/);
   assert.match(fable.execution.launch, /git status --porcelain/);
@@ -133,6 +135,17 @@ test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", asy
   for (const brief of [deep, structural, fable]) assert.doesNotMatch(brief.prompt, /\bprovider\b/);
   assert.match(deep.prompt, /Do not run fr, owner skills, MCP servers, or AF/);
   assert.equal(deep.inspection.command, `git diff --no-ext-diff --no-textconv ${deep.delegation.baseHead} ${deep.delegation.head} --`);
+  const sol = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--model", "gpt-5.6-terra"], repo, state));
+  assert.equal(sol.delegation.model, "gpt-5.6-terra");
+  assert.equal(sol.delegation.intendedModel, "gpt-6-astra");
+  assert.equal(sol.execution.substituted, false);
+  assert.equal(sol.delegation.substitutionReason, undefined);
+  assert.match(sol.execution.launch, /codex exec -m gpt-5.6-terra /);
+  const fable5 = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge", "--model", "claude-fable-5"], repo, state));
+  assert.equal(fable5.delegation.model, "claude-fable-5");
+  assert.equal(fable5.delegation.intendedModel, "claude-opus-5-5");
+  assert.equal(fable5.execution.substituted, false);
+  assert.match(fable5.execution.launch, /--model claude-fable-5 /);
 });
 
 test("worktree persona and court launches use the reviewed checkout instead of the configured project root", async () => {
@@ -184,7 +197,7 @@ test("mrr native route isolates a fresh subagent", async () => {
   assert.match(native.execution.launch, /no MCP servers, including agent-fixes/);
   const nativeFable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge", "--route", "native"], repo, state));
   assert.equal(nativeFable.execution.route, "native");
-  assert.match(nativeFable.execution.launch, /fresh native claude-fable-5 subagent/);
+  assert.match(nativeFable.execution.launch, /fresh native claude-opus-5-5 subagent/);
 });
 
 test("deep mrr briefs carry outstanding findings; crr findings do not", async () => {
@@ -320,7 +333,7 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
 const mrrModels = {
   "deep-code-review": { model: "gpt-6-astra", provider: "openai" },
   "structural-challenge": { model: "grok-4.6", provider: "cursor" },
-  "fable-challenge": { model: "claude-fable-5", provider: "anthropic" }
+  "fable-challenge": { model: "claude-opus-5-5", provider: "anthropic" }
 };
 
 async function recordMrrLane(repo, state, role, taskId, stream = "outcome") {
@@ -331,7 +344,7 @@ async function recordMrrLane(repo, state, role, taskId, stream = "outcome") {
     reviewComplete: true, independent: true, delegationId: brief.delegation.id, reviewerTaskId: taskId,
     claim: brief.delegation.claim, kind: "mrr", role,
     head: brief.delegation.head, baseHead: brief.delegation.baseHead,
-    provider: seated.provider, model: seated.model, route: "cli",
+    provider: seated.provider, model: brief.delegation.model, route: "cli",
     verdict: "GO", findings: [], unresolved: [],
     summary: "Complete adversarial review", ...scores("GO")
   };

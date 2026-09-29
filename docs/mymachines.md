@@ -27,7 +27,7 @@ fr machines invoke astra --prompt-file /tmp/astra.txt --cwd /path/to/repo --kind
 fr machines invoke fable --prompt-file /tmp/fable.txt --cwd /path/to/repo --base <40-char-sha> --head <40-char-sha>
 ```
 
-Astra CLI reviews use `gpt-6-astra` through `codex exec`. Fable CLI uses `claude-fable-5` through ordinary `claude` after confirming `HEAD` matches the brief and the worktree is clean, with Bash limited to the exact `git diff` of the brief SHAs.
+Codex CLI reviews prefer `gpt-6-astra`, then `gpt-5.6-sol`, then any other Codex model, through `codex exec -m`. Anthropic CLI reviews prefer `claude-opus-5-5`, then `claude-fable-5-1`, then `claude-fable-5`, then any other `claude-*` model, through ordinary `claude --model` after confirming `HEAD` matches the brief and the worktree is clean, with Bash limited to the exact `git diff` of the brief SHAs. Pass `--model` to `fr machines invoke` to select another model in that family. The default invoke models are Astra and Opus 5.5.
 
 If that command fails, report the failure. Do not treat a missing binary, a failed login, or a disconnected worker as a reason to substitute Cursor-hosted Astra/Fable models. Use ordinary `claude`, never `claude-aws`.
 

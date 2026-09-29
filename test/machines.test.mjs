@@ -29,7 +29,13 @@ test("Astra and Fable invoke commands use the login shell and the shared CLI rec
   assert.match(fable, new RegExp(`test "\\$\\(git rev-parse HEAD\\)" = "${head}"`));
   assert.match(fable, new RegExp(`Bash\\(git diff --no-ext-diff --no-textconv ${sha} ${head} --\\)`));
   assert.match(fable, /git status --porcelain/);
-  assert.equal(fable, `zsh -ic ${quote(`cd "/tmp/work repo" && test "$(git rev-parse HEAD)" = "${head}" && test -z "$(git status --porcelain)" && claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff --no-ext-diff --no-textconv ${sha} ${head} --)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model claude-fable-5 "$(< "/tmp/brief's.txt")"`)}`);
+  assert.equal(fable, `zsh -ic ${quote(`cd "/tmp/work repo" && test "$(git rev-parse HEAD)" = "${head}" && test -z "$(git status --porcelain)" && claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff --no-ext-diff --no-textconv ${sha} ${head} --)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model claude-opus-5-5 "$(< "/tmp/brief's.txt")"`)}`);
+  const fable51 = fableInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: head, model: "claude-fable-5-1-thinking-high" });
+  assert.match(fable51, /--model claude-fable-5-1 /);
+  const sol = astraInvokeCommand({ promptFile: prompt, cwd: repo, kind: "review", model: "gpt-5.6-sol-medium" });
+  assert.match(sol, /codex exec -m gpt-5.6-sol /);
+  assert.throws(() => fableInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: head, model: "gpt-6-astra" }), /Anthropic model/);
+  assert.throws(() => astraInvokeCommand({ promptFile: prompt, cwd: repo, kind: "review", model: "claude-opus-5-5" }), /Codex model/);
 });
 
 test("CLI prints exact invoke lines and refuses status or worker commands", async () => {
@@ -52,6 +58,14 @@ test("CLI prints exact invoke lines and refuses status or worker commands", asyn
   assert.equal(invoke, fableInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: head }));
   const astra = (await exec(process.execPath, [cli, "machines", "invoke", "astra", "--prompt-file", prompt, "--cwd", repo, "--kind", "review"], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout.trim();
   assert.equal(astra, astraInvokeCommand({ promptFile: prompt, cwd: repo, kind: "review" }));
+  const sol = (await exec(process.execPath, [cli, "machines", "invoke", "astra", "--prompt-file", prompt, "--cwd", repo, "--kind", "review", "--model", "gpt-5.6-sol"], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout.trim();
+  assert.equal(sol, astraInvokeCommand({ promptFile: prompt, cwd: repo, kind: "review", model: "gpt-5.6-sol" }));
+  const opus = (await exec(process.execPath, [cli, "machines", "invoke", "fable", "--prompt-file", prompt, "--cwd", repo, "--base", sha, "--head", head, "--model", "claude-fable-5"], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } })).stdout.trim();
+  assert.match(opus, /--model claude-fable-5 /);
+  await assert.rejects(
+    exec(process.execPath, [cli, "machines", "invoke", "fable", "--prompt-file", prompt, "--cwd", repo, "--base", sha, "--head", head, "--model", "gpt-6-astra"], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } }),
+    /Anthropic model/
+  );
   await assert.rejects(
     exec(process.execPath, [cli, "machines", "invoke", "sol", "--prompt-file", prompt, "--cwd", repo, "--kind", "review"], { env: { ...process.env, FIELD_REPORT_STATE_ROOT: state } }),
     /Invoke provider must be astra or fable/
@@ -79,7 +93,7 @@ test("Fable inner command checks HEAD and a clean worktree before invoking claud
   await exec("sh", ["-c", fableInvokeInner({ promptFile: prompt, cwd: repo, baseSha: realHead, headSha: realHead })], { env });
   const logged = await readFile(log, "utf8");
   assert.ok(logged.includes(repo));
-  assert.match(logged, /claude-fable-5/);
+  assert.match(logged, /claude-opus-5-5/);
   await assert.rejects(exec("sh", ["-c", fableInvokeInner({ promptFile: prompt, cwd: repo, baseSha: realHead, headSha: head })], { env }));
   await writeFile(path.join(repo, "file.txt"), "dirty\n");
   await assert.rejects(exec("sh", ["-c", fableInvokeInner({ promptFile: prompt, cwd: repo, baseSha: realHead, headSha: realHead })], { env }));
