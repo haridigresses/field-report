@@ -1,9 +1,10 @@
 import path from "node:path";
 import { quote } from "./hooks.mjs";
+import { canonicalReviewModel, modelFamily, REVIEW_MODELS } from "./policy.mjs";
 
 export const LOGIN_SHELL = "zsh";
-export const ASTRA_MODEL = "gpt-6-astra";
-export const FABLE_MODEL = "claude-fable-5";
+export const ASTRA_MODEL = REVIEW_MODELS.astra;
+export const FABLE_MODEL = REVIEW_MODELS.opus;
 export const FABLE_ROUTE = "claude";
 const SHA = /^[0-9a-f]{40}$/i;
 
@@ -27,32 +28,43 @@ function resolveMaybe(value) {
   return path.resolve(text);
 }
 
-export function astraInvokeInner({ promptFile, cwd, kind = "review", lastMessageFile = null }) {
+function invokeModel(model, family, fallback) {
+  const selected = canonicalReviewModel(model || fallback);
+  if (modelFamily(selected) !== family) {
+    throw new Error(family === "codex" ? "Invoke model must be a Codex model" : "Invoke model must be an Anthropic model");
+  }
+  return selected;
+}
+
+export function astraInvokeInner({ promptFile, cwd, kind = "review", lastMessageFile = null, model = ASTRA_MODEL }) {
   if (!["review", "work"].includes(kind)) throw new Error("Astra invoke kind must be review or work");
+  const selected = invokeModel(model, "codex", ASTRA_MODEL);
   const sandbox = kind === "work" ? "workspace-write" : "read-only";
   const repo = resolveMaybe(cwd);
   const prompt = resolveMaybe(promptFile);
   const lastMessage = resolveMaybe(lastMessageFile || `${prompt}.last.txt`);
-  return `cd ${doubleQuote(repo)} && codex exec -m ${ASTRA_MODEL} -s ${sandbox} --ignore-user-config --json --color never -o ${doubleQuote(lastMessage)} -C ${doubleQuote(repo)} - < ${doubleQuote(prompt)}`;
+  return `cd ${doubleQuote(repo)} && codex exec -m ${selected} -s ${sandbox} --ignore-user-config --json --color never -o ${doubleQuote(lastMessage)} -C ${doubleQuote(repo)} - < ${doubleQuote(prompt)}`;
 }
 
 export function astraInvokeCommand(options, shell = LOGIN_SHELL) {
   return loginShellCommand(astraInvokeInner(options), shell);
 }
 
-function fableCli({ promptFile, cwd, baseSha, headSha }) {
+function fableCli({ promptFile, cwd, baseSha, headSha, model = FABLE_MODEL }) {
+  const selected = invokeModel(model, "anthropic", FABLE_MODEL);
   const diff = `git diff --no-ext-diff --no-textconv ${baseSha} ${headSha} --`;
   const repo = resolveMaybe(cwd);
   const prompt = resolveMaybe(promptFile);
-  const claude = `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(${diff})" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model ${FABLE_MODEL} "$(< ${doubleQuote(prompt)})"`;
+  const claude = `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(${diff})" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model ${selected} "$(< ${doubleQuote(prompt)})"`;
   const headCheck = SHA.test(headSha) ? `test "$(git rev-parse HEAD)" = ${doubleQuote(headSha)} && test -z "$(git status --porcelain)" && ` : "";
   return `cd ${doubleQuote(repo)} && ${headCheck}${claude}`;
 }
 
-export function fableInvokeInner({ promptFile, cwd, baseSha, headSha }) {
+export function fableInvokeInner({ promptFile, cwd, baseSha, headSha, model = FABLE_MODEL }) {
   return fableCli({
     promptFile,
     cwd,
+    model,
     baseSha: requireSha(baseSha, "base SHA"),
     headSha: requireSha(headSha, "head SHA")
   });
