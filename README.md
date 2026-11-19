@@ -2,7 +2,7 @@
 
 Field Report is a thin control loop around a delivery unit. It binds repo, branch, claim, and owner session; records CRR and mixed-provider MRR; and gates readiness for CI bots. It does not launch reviewers, open pull requests, or merge.
 
-Agent Fixes owns sessions, names, and todos. Each target repository's `merge-ready-review.md` owns merge quality. Cursor Cloud Agents reach Astra and Fable on this host through My Machines when a worker for that checkout is online.
+Agent Fixes, when installed, owns sessions and names. Each project's tracker — AF issues or a Linear team — owns todos. Field Report stores only that pointer. Each target repository's `merge-ready-review.md` owns merge quality. Cursor Cloud Agents reach Astra and Fable on this host through My Machines when a worker for that checkout is online.
 
 ## Core loop
 
@@ -51,6 +51,14 @@ fr project add aon --label AON --repo /path/to/aon --github owner/aon
 fr hook install aon
 fr hook status aon
 ```
+
+Todos default to AF issues in the project namespace. To file them in Linear instead (no AF required):
+
+```bash
+fr project update aon --tracker linear --linear-team ENG --linear-label agent-todo
+```
+
+`fr context` prints the tracker on its `Todos:` line. Owners need the Linear MCP or CLI authorized; reviewers never touch the tracker.
 
 Agents may self-register an unbound branch with `fr create`, or bind the correct existing outcome with `fr update --branch <current> --owner-task <current-task>`. The checkout hook only checks that the branch is bound. It does not run a review panel and must not grow one.
 
