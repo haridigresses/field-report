@@ -487,3 +487,15 @@ test("record refuses conflicting provenance, pass, and lossy evidence instead of
   await run(["review", "record", "outcome", "--delegation", d.id, "--file", file], repo, state);
   assert.equal((await createStore(state).reviews("outcome"))[0].verdict, "GO");
 });
+
+test("context and identity print the project's todo tracker", async () => {
+  const { repo, state } = await fixture();
+  assert.match(await run(["context", "outcome"], repo, state), /Todos: AF issues in namespace sample/);
+  assert.match(await run(["context", "outcome"], repo, state), /Session name: sample\/owner/);
+  await assert.rejects(run(["project", "update", "sample", "--linear-team", "ENG"], repo, state), /require --tracker linear/);
+  await assert.rejects(run(["project", "update", "sample", "--tracker"], repo, state), /Specify --tracker <value>/);
+  await run(["project", "update", "sample", "--tracker", "linear", "--linear-team", "ENG", "--linear-label", "agent-todo"], repo, state);
+  assert.match(await run(["context", "outcome"], repo, state), /Todos: Linear team ENG, label agent-todo/);
+  assert.equal(JSON.parse(await run(["identity", "--role", "owner"], repo, state)).todos, "Linear team ENG, label agent-todo");
+  assert.match(await run(["project", "list"], repo, state), /\tlinear\n$/);
+});

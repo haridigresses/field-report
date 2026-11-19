@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
-import { createStore } from "../src/store.mjs";
+import { createStore, describeTracker, trackerFor } from "../src/store.mjs";
 import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, intendedModelFor, lastReadyMrr, latestClaimReviews, matchingWaiver, modelFamily, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, satisfiesIntended, seatingFor, substitutionLine, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
@@ -33,8 +33,8 @@ function usage() {
 
 fr version
 fr init
-fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main]
-fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main]
+fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>]
+fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>]
 fr project list
 fr identity --role coordinator|owner
 fr create <id> --project <id> --title <title> --outcome <text> [--branch <branch>] [--owner-task <id>]
@@ -57,6 +57,12 @@ fr machines invoke astra|fable --prompt-file <path> [--cwd <path>] [--kind revie
 fr workflow [shared|coordinator|workstream|reviewer]
 
 Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge. Cursor Cloud Agents reach Astra and Fable on this host through My Machines when a worker for that checkout is online.`;
+}
+
+function trackerFlags(flags) {
+  for (const name of ["tracker", "linear-team", "linear-label"]) if (flags[name] === true) throw new Error(`Specify --${name} <value>`);
+  if (flags.tracker == null && flags["linear-team"] == null && flags["linear-label"] == null) return null;
+  return { kind: flags.tracker, team: flags["linear-team"], label: flags["linear-label"] };
 }
 
 function parse(values) {
@@ -249,14 +255,14 @@ async function main() {
   if (command === "init") { const root = await store.init(); return process.stdout.write(`Initialized Field Report state at ${root}\n`); }
 
   if (command === "project" && positional[0] === "add") {
-    const record = await store.saveProject({ id: positional[1], label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base });
+    const record = await store.saveProject({ id: positional[1], label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base, tracker: trackerFlags(flags) });
     return process.stdout.write(`Saved project ${record.id}. Install its checkout hook explicitly with: fr hook install ${record.id}\n`);
   }
   if (command === "project" && positional[0] === "update") {
-    const record = await store.updateProject(positional[1], { label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base });
+    const record = await store.updateProject(positional[1], { label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base, tracker: trackerFlags(flags) });
     return process.stdout.write(`Updated project ${record.id}.\n`);
   }
-  if (command === "project" && positional[0] === "list") return process.stdout.write(`${(await store.projects()).map((project) => `${project.id}\t${project.baseBranch}\t${project.repoPath}`).join("\n")}\n`);
+  if (command === "project" && positional[0] === "list") return process.stdout.write(`${(await store.projects()).map((project) => `${project.id}\t${project.baseBranch}\t${project.repoPath}\t${trackerFor(project).kind}`).join("\n")}\n`);
 
   if (command === "identity") {
     const role = requireValue(flags.role, "Specify --role coordinator|owner");
@@ -266,7 +272,8 @@ async function main() {
       project: project.id,
       role,
       ...identity,
-      instruction: "If AF whoami has no name, save this session as key. If that name is held by a live session, use fallback. Do not ask the user to name you. Reviewers must not save."
+      todos: describeTracker(trackerFor(project), project.id),
+      instruction: "If AF is installed and AF whoami has no name, save this session as key. If that name is held by a live session, use fallback. If AF is not installed, skip naming and continue. Do not ask the user to name you. Reviewers must not save."
     }, null, 2)}\n`);
   }
 
@@ -291,7 +298,7 @@ async function main() {
     let mrr;
     try { mrr = await mergeReadyFor(stream); } catch (error) { mrr = { gate: { phase: "blocked", reasons: [error.message] } }; }
     const reviews = await store.reviews(stream.id);
-    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nAF namespace: ${identity.key} (fallback ${identity.fallback})\nMRR: ${printMergeReady(mrr.gate)}\n${scoreLines(reviews, stream, state.head).join("\n")}\nReviews never require permission. Do not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; wait until the user asks for final MRR. Product and domain questions go to the user; do not infer them from schema or code.\n`);
+    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nTodos: ${describeTracker(trackerFor(project), project.id)}\nSession name: ${identity.key} (fallback ${identity.fallback}; AF-save if AF is installed)\nMRR: ${printMergeReady(mrr.gate)}\n${scoreLines(reviews, stream, state.head).join("\n")}\nReviews never require permission. Do not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; wait until the user asks for final MRR. Product and domain questions go to the user; do not infer them from schema or code.\n`);
   }
   if (command === "update") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));

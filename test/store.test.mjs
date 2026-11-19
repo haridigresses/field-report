@@ -136,3 +136,24 @@ test("one reviewer run cannot bind to two review delegations even concurrently",
   const bound = (await store.delegations("sample-outcome")).find((r) => r.event === "bound");
   await store.addDelegationEvent("sample-outcome", bound.id, { event: "bound", taskId: "same-run" });
 });
+
+test("projects default to AF todos and accept a Linear tracker pointer", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-tracker-"));
+  const store = createStore(root);
+  assert.deepEqual((await store.saveProject({ id: "sample", label: "Sample", repoPath: root })).tracker, { kind: "af" });
+  await assert.rejects(store.updateProject("sample", { tracker: { team: "ENG" } }), /require --tracker linear/);
+  await assert.rejects(store.updateProject("sample", { tracker: { kind: "linear" } }), /needs --linear-team/);
+  await assert.rejects(store.updateProject("sample", { tracker: { kind: "jira" } }), /Tracker must be af or linear/);
+  await assert.rejects(store.updateProject("sample", { tracker: { kind: "linear", team: "ENG TEAM" } }), /team key uses/);
+  assert.deepEqual((await store.updateProject("sample", { tracker: { kind: "linear", team: "ENG" } })).tracker, { kind: "linear", team: "ENG", label: null });
+  assert.deepEqual((await store.updateProject("sample", { tracker: { label: "agent-todo" } })).tracker, { kind: "linear", team: "ENG", label: "agent-todo" });
+  assert.deepEqual((await store.updateProject("sample", { baseBranch: "develop" })).tracker, { kind: "linear", team: "ENG", label: "agent-todo" });
+  assert.deepEqual((await store.updateProject("sample", { tracker: { kind: "af" } })).tracker, { kind: "af" });
+});
+
+test("projects saved before trackers existed read as AF", async () => {
+  const { trackerFor, describeTracker } = await import("../src/store.mjs");
+  assert.deepEqual(trackerFor({ id: "legacy" }), { kind: "af" });
+  assert.equal(describeTracker(trackerFor({ id: "legacy" }), "legacy"), "AF issues in namespace legacy");
+  assert.equal(describeTracker({ kind: "linear", team: "ENG", label: "agent-todo" }, "x"), "Linear team ENG, label agent-todo");
+});

@@ -36,6 +36,35 @@ async function writeJson(file, value) {
   await rename(temporary, file);
 }
 
+export const TRACKER_KINDS = ["af", "linear"];
+
+// Where agents file todos for a project. Field Report stores only this pointer;
+// the tracker itself owns the issues. Projects saved before trackers existed
+// read as AF.
+export function normalizeTracker(value, previous = null) {
+  const prior = previous || { kind: "af" };
+  if (value == null) return prior;
+  const kind = value.kind == null ? prior.kind : requiredString(value.kind, "Tracker", 20).toLowerCase();
+  if (!TRACKER_KINDS.includes(kind)) throw new Error(`Tracker must be ${TRACKER_KINDS.join(" or ")}`);
+  if (kind === "af") {
+    if (value.team != null || value.label != null) throw new Error("--linear-team and --linear-label require --tracker linear");
+    return { kind };
+  }
+  const carried = prior.kind === "linear" ? prior : {};
+  const team = value.team == null ? carried.team : requiredString(value.team, "Linear team key", 50);
+  if (!team) throw new Error("A Linear tracker needs --linear-team <team key>");
+  if (!/^[A-Za-z0-9_-]+$/.test(team)) throw new Error("Linear team key uses letters, numbers, underscores, and hyphens");
+  const label = value.label == null ? carried.label ?? null : optionalString(value.label, "Linear label", 100);
+  return { kind, team, label };
+}
+
+export function trackerFor(project) { return normalizeTracker(null, project?.tracker); }
+
+export function describeTracker(tracker, projectId) {
+  if (tracker.kind === "linear") return `Linear team ${tracker.team}${tracker.label ? `, label ${tracker.label}` : ""}`;
+  return `AF issues in namespace ${projectId}`;
+}
+
 export function defaultStateRoot() { return process.env.FIELD_REPORT_STATE_ROOT || DEFAULT_ROOT; }
 
 export function createStore(root = defaultStateRoot()) {
@@ -91,6 +120,7 @@ export function createStore(root = defaultStateRoot()) {
       repoPath: path.resolve(requiredString(value.repoPath, "Repository path", 1000)),
       githubRepo: optionalString(value.githubRepo, "GitHub repository", 300),
       baseBranch: optionalString(value.baseBranch, "Base branch", 200) || "main",
+      tracker: normalizeTracker(value.tracker),
       updatedAt: new Date().toISOString()
     };
     await locked(async () => {
@@ -112,6 +142,7 @@ export function createStore(root = defaultStateRoot()) {
         repoPath: value.repoPath == null ? previous.repoPath : path.resolve(requiredString(value.repoPath, "Repository path", 1000)),
         githubRepo: value.githubRepo == null ? previous.githubRepo : optionalString(value.githubRepo, "GitHub repository", 300),
         baseBranch: value.baseBranch == null ? previous.baseBranch : requiredString(value.baseBranch, "Base branch", 200),
+        tracker: normalizeTracker(value.tracker, previous.tracker),
         updatedAt: new Date().toISOString()
       };
       await writeJson(file, project);
