@@ -9,7 +9,7 @@ import { createStore, describeTracker, trackerFor, trackerTarget } from "../src/
 import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, intendedModelFor, intendedProviderFor, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, fitsSeat, seatingFor, substitutionLine, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
-import { agyReviewCommand, claudeInvokeCommand, codexInvokeCommand, cursorReviewCommand, devinReviewCommand, HOST_LAUNCHERS } from "../src/machines.mjs";
+import { claudeInvokeCommand, codexInvokeCommand, cursorReviewCommand, HOST_LAUNCHERS } from "../src/machines.mjs";
 import { configSource, launchEntry, REVIEW_ROLES as SEATS, seatFor } from "../src/seats.mjs";
 
 const exec = promisify(execFile);
@@ -28,8 +28,6 @@ function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = 
   if (launch === "codex") return codexInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review", model });
   if (launch === "claude") return claudeInvokeCommand({ promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA", model });
   if (launch === "cursor") return cursorReviewCommand({ promptFile, model });
-  if (launch === "devin") return devinReviewCommand({ promptFile, cwd: cwd || "<repo>", model });
-  if (launch === "agy") return agyReviewCommand({ promptFile, cwd: cwd || "<repo>", model });
   return `Launch ${seated.model} without MCP servers or AF. Prefer local; cloud only if needed.`;
 }
 
@@ -47,7 +45,7 @@ fr list [--project <id>]
 fr show <id> [--json]
 fr context [id]
 fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
-fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli] [--substitution-reason <text>] [--user-approved <user's words>]
+fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli] [--substitution-reason <text>]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review record <id> --file <review.json> [--delegation <uuid>]
 fr review adjudicate <id> --role deep-code-review|structural-challenge|fable-challenge --model <id> [--route native|cli]
@@ -327,8 +325,7 @@ async function main() {
     if (kind === "mrr" && !REVIEW_ROLES.includes(role)) throw new Error("MRR briefs use a persona role");
     if (flags.reconcile) throw new Error("Exact-head packets go through fr review adjudicate; do not attach them to a persona brief");
     if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");
-    if (flags["user-approved"] === true) throw new Error("Specify --user-approved <the user's words approving this model>");
-    const seated = { ...seatingFor(role, flags.model, flags.route, flags["user-approved"] || null), requested: flags.model || null };
+    const seated = { ...seatingFor(role, flags.model, flags.route), requested: flags.model || null };
     const target = await targetFor(stream, kind);
     const reviews = kind === "mrr" ? await store.reviews(stream.id) : [];
     const delegations = kind === "mrr" ? await store.delegations(stream.id) : [];
@@ -341,7 +338,6 @@ async function main() {
         const source = delegations.find((item) => item.id === occupant.delegationId && item.event === "created") || occupant;
         seated.intended = intendedModelFor(source);
         seated.intendedProvider = intendedProviderFor(source);
-        for (const key of ["seatAccept", "seatModels", "userApproved"]) { if (source[key] != null) seated[key] = source[key]; else delete seated[key]; }
         seated.substituted = !fitsSeat(seated.model, source);
         substitutionReason = occupant.substitutionReason || "";
       }
@@ -353,13 +349,7 @@ async function main() {
     const project = await store.project(stream.project);
     const delegation = await store.addDelegation(stream.id, {
       type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision,
-      ...(kind === "mrr" ? {
-        intendedModel: seated.intended,
-        intendedProvider: seated.intendedProvider,
-        ...(seated.seatAccept ? { seatAccept: seated.seatAccept } : {}),
-        ...(seated.seatModels ? { seatModels: seated.seatModels } : {}),
-        ...(seated.userApproved ? { userApproved: seated.userApproved } : {})
-      } : {}),
+      ...(kind === "mrr" ? { intendedModel: seated.intended, intendedProvider: seated.intendedProvider } : {}),
       head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}),
       ...(outstanding.length ? { outstanding } : {}),
       ...(substitutionReason && seated.substituted ? { substitutionReason } : {}),
@@ -533,10 +523,10 @@ async function main() {
     const lines = [`Config: ${configSource()}`];
     for (const role of SEATS) {
       const seat = seatFor(role);
-      lines.push(`${role}: ${seat.provider} (accepts ${seat.accept === "listed" ? "listed models only" : "any model from this provider"})`);
+      lines.push(`${role}: ${seat.provider}`);
       seat.models.forEach((model, index) => lines.push(`  ${index === 0 ? "intended" : "next"}: ${model.id} via ${model.launch}${model.cliModel !== model.id ? ` (${model.cliModel})` : ""}`));
     }
-    lines.push("Edit the config file to change models or what each seat accepts; no code change is needed. In session, --user-approved lets the user approve an unlisted model for a listed seat.");
+    lines.push("Any model from a seat's provider fills it; another provider is a substitution. Edit the config file to change models; no code change is needed.");
     return process.stdout.write(`${lines.join("\n")}\n`);
   }
 

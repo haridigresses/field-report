@@ -78,19 +78,6 @@ export function claudeInvokeCommand(options, shell = LOGIN_SHELL) {
   return loginShellCommand(claudeInvokeInner(options), shell);
 }
 
-// Devin and Antigravity (agy) recipes follow each CLI's documented headless
-// flags and have not been run end to end. Neither CLI documents a per-run way
-// to turn off MCP servers, so these launches do not isolate MCP.
-export function devinReviewCommand({ promptFile = "<prompt>", cwd = "<repo>", model }) {
-  const selected = launcherModel("devin", model);
-  return `cd ${doubleQuote(resolveMaybe(cwd))} && devin --model ${selected} --permission-mode normal --respect-workspace-trust false --prompt-file ${doubleQuote(resolveMaybe(promptFile))} --print`;
-}
-
-export function agyReviewCommand({ promptFile = "<prompt>", cwd = "<repo>", model }) {
-  const selected = launcherModel("agy", model);
-  return `cd ${doubleQuote(resolveMaybe(cwd))} && agy --model ${selected} --mode plan --sandbox --output-format stream-json --input-format text --print < ${doubleQuote(resolveMaybe(promptFile))}`;
-}
-
 // Cursor-hosted reviewers run through the MCP-isolating wrapper. The brief goes
 // on stdin: some hosts kill processes given an argument over about 1,000
 // characters.

@@ -9,7 +9,6 @@ import test from "node:test";
 import { EXAMPLE_SEATS } from "./support/seats.mjs";
 import { evaluateGate, seatingFor, validateReview } from "../src/policy.mjs";
 import { parseSeatConfig, seatConfig, seatFor, useSeatConfig } from "../src/seats.mjs";
-import { agyReviewCommand, devinReviewCommand } from "../src/machines.mjs";
 
 const exec = promisify(execFile);
 const cli = path.resolve("bin/fr.mjs");
@@ -36,11 +35,11 @@ test("config file rejects ambiguous or single-provider panels", () => {
   assert.throws(broken((raw) => { raw.seats["structural-challenge"].models.push({ id: "gemini-4-neon", launch: "cursor" }); }), /mixes providers/);
   assert.throws(broken((raw) => { raw.seats["structural-challenge"] = { models: [{ id: "muse-spark-1.3", launch: "cursor" }] }; }), /matches no configured provider prefix/);
   assert.throws(broken((raw) => { raw.seats["structural-challenge"] = { models: [{ id: "gemini-4-neon-high", launch: "cursor" }] }; }), /bare model id without a cursor- prefix or effort suffix/);
-  assert.throws(broken((raw) => { raw.seats["structural-challenge"].models[0].launch = "ssh"; }), /launch must be one of codex, claude, cursor, devin, agy/);
+  assert.throws(broken((raw) => { raw.seats["structural-challenge"].models[0].launch = "ssh"; }), /launch must be one of codex, claude, cursor/);
   assert.throws(broken((raw) => { raw.providers.openai.prefixes.push("claude-"); }), /overlaps/);
-  assert.throws(broken((raw) => { raw.seats["structural-challenge"].acccept = "listed"; }), /unknown key "acccept"/);
+  assert.throws(broken((raw) => { raw.seats["structural-challenge"].accept = "listed"; }), /unknown key "accept"/);
   assert.throws(broken((raw) => { raw.seats["structural-challenge"].models[0].cliModel = "grok; rm -rf ~"; }), /cliModel must be one token/);
-  assert.throws(broken((raw) => { raw.accept = "any"; }), /accept must be provider or listed/);
+  assert.throws(broken((raw) => { raw.accept = "provider"; }), /unknown key "accept"/);
 });
 
 test("a configured Gemini seat needs no code change and makes Grok the substitution", () => {
@@ -50,33 +49,6 @@ test("a configured Gemini seat needs no code change and makes Grok the substitut
     assert.deepEqual([seated.intended, seated.intendedProvider, seated.substituted], ["gemini-4-neon", "google", false]);
     assert.equal(seatingFor("structural-challenge", "gemini-4-neon-xhigh").substituted, false);
     assert.equal(seatingFor("structural-challenge", "grok-4.6").substituted, true);
-  } finally { useSeatConfig(null); }
-});
-
-test("a listed seat takes only its listed models unless the user approves another in session", () => {
-  try {
-    const raw = clone();
-    raw.seats["structural-challenge"].accept = "listed";
-    useSeatConfig(raw);
-    assert.equal(seatingFor("structural-challenge", "grok-4.6-high").substituted, false);
-    assert.equal(seatingFor("structural-challenge", "grok-4.7").substituted, true);
-    assert.equal(seatingFor("deep-code-review", "gpt-7").substituted, false, "other seats keep the provider default");
-    const approved = seatingFor("structural-challenge", "grok-4.7", null, "User: use grok-4.7 for this panel");
-    assert.deepEqual([approved.substituted, approved.userApproved, approved.seatModels], [false, "User: use grok-4.7 for this panel", ["grok-4.6"]]);
-    assert.equal(seatingFor("structural-challenge", "gpt-6-astra", null, "ok").substituted, true, "approval never covers another provider");
-  } finally { useSeatConfig(null); }
-});
-
-test("Devin and Antigravity seats print their headless review recipes", () => {
-  try {
-    const raw = clone();
-    raw.providers.cognition = { prefixes: ["swe-"] };
-    raw.providers.google = { prefixes: ["gemini-"] };
-    raw.seats["deep-code-review"] = { models: [{ id: "swe-1.6", launch: "devin" }] };
-    raw.seats["structural-challenge"] = { models: [{ id: "gemini-4-neon", launch: "agy", cliModel: "gemini-4-neon-high" }] };
-    useSeatConfig(raw);
-    assert.equal(devinReviewCommand({ promptFile: "/tmp/p.txt", cwd: "/repo", model: "swe-1.6" }), 'cd "/repo" && devin --model swe-1.6 --permission-mode normal --respect-workspace-trust false --prompt-file "/tmp/p.txt" --print');
-    assert.equal(agyReviewCommand({ promptFile: "/tmp/p.txt", cwd: "/repo", model: "gemini-4-neon" }), 'cd "/repo" && agy --model gemini-4-neon-high --mode plan --sandbox --output-format stream-json --input-format text --print < "/tmp/p.txt"');
   } finally { useSeatConfig(null); }
 });
 
@@ -102,6 +74,10 @@ test("editing the config later does not reinterpret recorded seating", () => {
     useSeatConfig(withNeon());
     assert.equal(evaluateGate(args).ready, true, "a Grok GO briefed under the old config still fills its job");
     assert.equal(evaluateGate(args).notes.length, 0);
+    const withoutXai = withNeon();
+    delete withoutXai.providers.xai;
+    useSeatConfig(withoutXai);
+    assert.equal(evaluateGate(args).ready, true, "removing the xai provider later does not unseat a recorded Grok GO");
   } finally { useSeatConfig(null); }
 });
 
@@ -136,8 +112,8 @@ test("fr seats prints the resolved panel, and briefs follow the config", async (
   await run(["create", "outcome", "--project", "sample", "--title", "Outcome", "--outcome", "Ship it", "--branch", "feature", "--owner-task", "owner-1"]);
   const machine = await run(["seats"]);
   assert.match(machine, new RegExp(`Config: ${seats}`));
-  assert.match(machine, /structural-challenge: xai \(accepts any model from this provider\)\n  intended: grok-4\.6 via cursor \(cursor-grok-4\.6-high\)/);
-  assert.match(machine, /fable-challenge: anthropic \(accepts any model from this provider\)\n  intended: claude-opus-5-5 via claude\n  next: claude-fable-5-1 via claude/);
+  assert.match(machine, /structural-challenge: xai\n  intended: grok-4\.6 via cursor \(cursor-grok-4\.6-high\)/);
+  assert.match(machine, /fable-challenge: anthropic\n  intended: claude-opus-5-5 via claude\n  next: claude-fable-5-1 via claude/);
   await writeFile(seats, JSON.stringify(withNeon()));
   const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"]));
   assert.equal(brief.delegation.intendedModel, "gemini-4-neon");

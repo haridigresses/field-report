@@ -1,4 +1,4 @@
-import { canonicalModel, providerForModel, providerNames, REVIEW_ROLES, seatFor } from "./seats.mjs";
+import { canonicalModel, normalizeId, providerForModel, providerNames, REVIEW_ROLES, seatFor } from "./seats.mjs";
 
 const SHA = /^[0-9a-f]{40}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,13 +40,14 @@ export function satisfiesIntended(model, intended, intendedProvider = null) {
   return Boolean(provider && target && provider === target);
 }
 
-// Whether a model fills the seat its brief pinned: the seat's provider, and,
-// for a seat that accepts only listed models, a listed model or one the user
-// approved in session.
-export function fitsSeat(model, brief) {
-  if (!satisfiesIntended(model, intendedModelFor(brief), intendedProviderFor(brief))) return false;
-  if (brief?.seatAccept !== "listed" || brief?.userApproved) return true;
-  return (brief.seatModels || []).includes(canonicalReviewModel(model));
+// Whether a model fills the seat its brief pinned. A recorded review passes its
+// stored provider as the fallback for a model the config no longer classifies,
+// so removing a provider later does not unseat it. (Older records stored
+// labels such as "cursor", so the config wins when it knows the model.)
+export function fitsSeat(model, brief, storedProvider = null) {
+  const provider = providerForModel(model) || storedProvider;
+  const target = intendedProviderFor(brief);
+  return Boolean(provider && target && provider === target);
 }
 
 export function reviewModelLabel(model) {
@@ -77,7 +78,7 @@ export function identityKey(projectId, role) {
   return { key: `${project}/${role}`, fallback: `${project}/${role}-2` };
 }
 
-export function seatingFor(role, model = null, route = null, userApproved = null) {
+export function seatingFor(role, model = null, route = null) {
   if (role === CRR_ROLE) {
     const selected = String(model || "local").trim();
     if (!selected) throw new Error("crr requires a model id");
@@ -92,18 +93,12 @@ export function seatingFor(role, model = null, route = null, userApproved = null
   const intended = seat.models[0].id;
   const selected = model ? canonicalReviewModel(model) : intended;
   if (!selected) throw new Error(`Unknown review model: ${model}. Use ${reviewModelHelp()}`);
-  const pin = {
-    intendedProvider: seat.provider,
-    seatAccept: seat.accept,
-    ...(seat.accept === "listed" ? { seatModels: seat.models.map((entry) => entry.id) } : {}),
-    ...(String(userApproved || "").trim() ? { userApproved: String(userApproved).trim() } : {})
-  };
   return {
     role,
     intended,
-    ...pin,
+    intendedProvider: seat.provider,
     model: selected,
-    substituted: !fitsSeat(selected, { ...pin, intendedModel: intended }),
+    substituted: !satisfiesIntended(selected, intended, seat.provider),
     route: route || "cli"
   };
 }
@@ -129,7 +124,9 @@ export function substitutionReasonOf(item) {
 // own model as intended when that model's provider fills the configured seat;
 // otherwise it falls back to the seat's preferred model.
 export function intendedModelFor(item) {
-  if (item?.intendedModel != null) return canonicalReviewModel(item.intendedModel);
+  // A brief that pinned its provider stays readable after that provider leaves
+  // the config.
+  if (item?.intendedModel != null) return canonicalReviewModel(item.intendedModel) || (item.intendedProvider ? normalizeId(item.intendedModel) : null);
   if (!REVIEW_ROLES.includes(item?.role)) return null;
   const seat = seatFor(item.role);
   if (!substitutionReasonOf(item) && providerForModel(item?.model) === seat.provider) return canonicalReviewModel(item.model);
@@ -219,7 +216,7 @@ export function validateReview(input, delegation) {
   } else if (role === COURT_ROLE) {
     throw new Error("Court must adjudicate the delivered packet");
   }
-  const { reconciliationOnly: _reconciliationOnly, jobRole: _jobRole, legacy: _legacy, staleAtRecord: _staleAtRecord, intendedModel: _intendedModel, intendedProvider: _intendedProvider, seatAccept: _seatAccept, seatModels: _seatModels, userApproved: _userApproved, provider, ...rest } = input;
+  const { reconciliationOnly: _reconciliationOnly, jobRole: _jobRole, legacy: _legacy, staleAtRecord: _staleAtRecord, intendedModel: _intendedModel, intendedProvider: _intendedProvider, provider, ...rest } = input;
   return {
     ...rest,
     ...(kind === "mrr" ? { provider } : {}),
@@ -229,13 +226,7 @@ export function validateReview(input, delegation) {
     findings: [...input.findings],
     scores: { ...input.scores },
     ...(substitutionReason ? { substitutionReason } : {}),
-    ...(kind === "mrr" && role !== COURT_ROLE ? {
-      intendedModel: intendedModelFor(delegation),
-      intendedProvider: intendedProviderFor(delegation),
-      ...(delegation.seatAccept ? { seatAccept: delegation.seatAccept } : {}),
-      ...(delegation.seatModels ? { seatModels: [...delegation.seatModels] } : {}),
-      ...(delegation.userApproved ? { userApproved: delegation.userApproved } : {})
-    } : {}),
+    ...(kind === "mrr" && role !== COURT_ROLE ? { intendedModel: intendedModelFor(delegation), intendedProvider: intendedProviderFor(delegation) } : {}),
     ...(input.reconciled ? { reconciled: input.reconciled.map((entry) => ({ ...entry })) } : {}),
     ...(role === COURT_ROLE ? { reconciliationOnly: true, jobRole: delegation.jobRole } : {})
   };
@@ -336,7 +327,7 @@ const acceptedMrr = (review, delegations = []) => {
   const delegation = (delegations || []).find((item) => item.id === review.delegationId && item.event === "created");
   const source = delegation || review;
   const intended = intendedModelFor(source);
-  if (intended && fitsSeat(review.model, source)) return true;
+  if (intended && fitsSeat(review.model, source, review.provider)) return true;
   return Boolean(intended && substitutionReasonOf(delegation || (delegations.length ? null : review)));
 };
 const acceptedCrr = (review) => reviewKind(review?.kind) === "crr" && review?.role === CRR_ROLE && review?.verdict === "GO" && review.reviewComplete === true && review.independent === true && hasScores(review) && !(review.findings || []).length && !(review.unresolved || []).length;
@@ -505,8 +496,6 @@ function evaluateMrrGate({ target, workstream, reviews, delegations = [] }) {
     else reasons.push(`missing ${role} review`);
     const substitution = substitutionLine(review, role);
     if (substitution) notes.push(substitution);
-    const source = review && ((delegations || []).find((item) => item.id === review.delegationId && item.event === "created") || review);
-    if (source?.userApproved) notes.push(`${role}: ${review.verdict} via ${reviewModelLabel(review.model)}; user approved outside the listed models: ${source.userApproved}`);
   }
   // A config edit between briefs could seat two jobs on one provider.
   const pinned = REVIEW_ROLES.map((role) => lanes[role] && intendedProviderFor((delegations || []).find((item) => item.id === lanes[role].delegationId && item.event === "created") || lanes[role])).filter(Boolean);

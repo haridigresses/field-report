@@ -3,15 +3,14 @@ import os from "node:os";
 import path from "node:path";
 
 // Field Report knows no model names. Which models fill each MRR seat, which
-// provider each model id belongs to, how each model launches, and which
-// models a seat accepts all live in the user's config file. A new model is a
-// config edit, not a code change.
+// provider each model id belongs to, and how each model launches live in the
+// user's config file. Any model from a seat's provider fills it; a model from
+// another provider is a substitution. A new model is a config edit, not a code
+// change.
 
 export const REVIEW_ROLES = ["deep-code-review", "structural-challenge", "fable-challenge"];
-export const LAUNCHERS = ["codex", "claude", "cursor", "devin", "agy"];
-// "provider": any model from the seat's provider fills it. "listed": only the
-// seat's listed models do, unless the user approves another in session.
-export const ACCEPT_MODES = ["provider", "listed"];
+// Each launcher runs reviewers without MCP servers.
+export const LAUNCHERS = ["codex", "claude", "cursor"];
 const NAME = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
 // A cursor- prefix and one effort or speed suffix name the same model.
 const EFFORT_SUFFIX = /-(?:thinking-(?:xhigh|high|medium|low|max)|xhigh|high|medium|low|fast|max)$/;
@@ -39,7 +38,9 @@ function onlyKeys(value, allowed, label) {
   if (extra) fail(`${label} has unknown key ${JSON.stringify(extra)}; allowed keys are ${allowed.join(", ")}`);
 }
 
-function normalizeId(model) {
+// Syntax only, independent of the config: recorded reviews keep their identity
+// after a provider leaves the config.
+export function normalizeId(model) {
   let text = String(model || "").trim().toLowerCase();
   if (text.startsWith("cursor-")) text = text.slice("cursor-".length);
   // One effort suffix, optionally followed by -fast.
@@ -52,11 +53,6 @@ function providerOf(providers, id) {
   if (!id) return null;
   for (const [name, provider] of Object.entries(providers)) if (provider.prefixes.some((prefix) => id.startsWith(prefix))) return name;
   return null;
-}
-
-function parseAccept(value, label) {
-  if (value != null && !ACCEPT_MODES.includes(value)) fail(`${label} must be ${ACCEPT_MODES.join(" or ")}`);
-  return value ?? null;
 }
 
 function parseModel(entry, label, providers) {
@@ -72,8 +68,7 @@ function parseModel(entry, label, providers) {
 export function parseSeatConfig(raw) {
   object(raw, "the config");
   if (raw.schemaVersion !== 1) fail("schemaVersion must be 1");
-  onlyKeys(raw, ["schemaVersion", "accept", "providers", "seats"], "the config");
-  const accept = parseAccept(raw.accept, "accept") || "provider";
+  onlyKeys(raw, ["schemaVersion", "providers", "seats"], "the config");
   const providers = {};
   const seen = new Map();
   for (const [name, provider] of Object.entries(object(raw.providers, "providers"))) {
@@ -95,12 +90,12 @@ export function parseSeatConfig(raw) {
   for (const role of REVIEW_ROLES) {
     const seat = rawSeats[role];
     if (!seat) fail(`seats is missing seat ${role}`);
-    onlyKeys(object(seat, `seats.${role}`), ["models", "accept"], `seats.${role}`);
+    onlyKeys(object(seat, `seats.${role}`), ["models"], `seats.${role}`);
     if (!Array.isArray(seat.models) || !seat.models.length) fail(`seats.${role} needs a non-empty models list`);
     const models = seat.models.map((entry, index) => parseModel(entry, `seats.${role}.models[${index}]`, providers));
     const provider = providerOf(providers, models[0].id);
     for (const model of models) if (providerOf(providers, model.id) !== provider) fail(`seats.${role} mixes providers; one seat is one provider (${model.id} is not ${provider})`);
-    seats[role] = { role, provider, models, accept: parseAccept(seat.accept, `seats.${role}.accept`) || accept };
+    seats[role] = { role, provider, models };
   }
   const used = REVIEW_ROLES.map((role) => seats[role].provider);
   if (new Set(used).size !== used.length) fail(`seats must use three different providers (got ${used.join(", ")})`);

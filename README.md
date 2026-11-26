@@ -9,7 +9,7 @@ Agent Fixes, when installed, owns sessions and names. Each project's tracker —
 - When AF is installed, coordinators and owners name themselves (`fr identity`, then AF save); without AF they skip naming. The user does not name agents. Reviewers stay unnamed and off AF.
 - Before you run `git commit` on a commit you intend to keep, stop and run CRR (1–2 subagents, local models first, scores required). A green checkout hook is not CRR. WIP or amend is owner judgment. Findings are for the owner on that staged tree, not a durable ledger. CRR records still persist; they do not enter the SHA-by-SHA finding ledger. `fr context` always prints the latest scores and structural risk (higher = more risk), even when the gate is blocked.
 - Keep a one-line next action with `fr update <id> --next`. It is a sticky note, not a todo ledger.
-- MRR (three seats on three different providers, chosen in your config file; see [Seats](#seats)) before a PR is opened. The config's `accept` decides which other models fill a seat. READY is exact head + exact base + three finding-free GOs. A completed envelope occupies the job; substitute only before that, with `--substitution-reason`. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR.
+- MRR (three seats on three different providers, chosen in your config file; see [Seats](#seats)) before a PR is opened. Any model from a seat's provider fills it; another provider is a substitution. READY is exact head + exact base + three finding-free GOs. A completed envelope occupies the job; substitute only before that, with `--substitution-reason`. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR.
 - Do not auto-open a PR. After `fr gate open`, the owner or the user may open one.
 - After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission. An empty GitHub check rollup keeps that gate blocked.
 - Borderline CI flake vs real: consult a seated model from another provider once. Not a hard gate.
@@ -78,11 +78,11 @@ Field Report hardcodes no model names. Your config file decides which models fil
 
 - `providers` maps a provider name to model-id prefixes (`gpt-` → `openai`, `gemini-` → `google`, …). Every seated model must match one.
 - Each seat lists models in preference order. The first is the intended model.
-- `accept` (top level or per seat) decides what fills a seat without a substitution: `"provider"` (default) takes any model from the seat's provider; `"listed"` takes only the listed models. In a session, the user can approve another model from that provider: `fr review brief ... --model <id> --user-approved "<the user's words>"`. A model from another provider is a substitution (`--substitution-reason`).
-- `launch` is `codex`, `claude`, `cursor` (through `fr-cursor-review`), `devin`, or `agy`. `--route native` runs any seat as a native subagent instead. `cliModel` is the id that launcher expects, when it differs (Cursor ids carry effort suffixes). The `devin` and `agy` recipes follow those CLIs' documented headless flags, have not been run end to end, and cannot turn off MCP servers per run; use them only where that CLI has no MCP servers configured.
+- Any model from the seat's provider fills it without a substitution. A model from another provider is a substitution (`--substitution-reason`).
+- `launch` is `codex`, `claude`, or `cursor` (through `fr-cursor-review`). `--route native` runs any seat as a native subagent instead. `cliModel` is the id that launcher expects, when it differs (Cursor ids carry effort suffixes).
 - The three seats must use three different providers.
 
-When a new model ships, edit the config. `fr seats` prints the resolved panel. Briefs pin the intended model, provider, and accept setting.
+When a new model ships, edit the config. `fr seats` prints the resolved panel. Briefs pin the intended model and provider.
 
 ## My Machines
 
