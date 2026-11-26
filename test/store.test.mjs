@@ -1,6 +1,7 @@
+import "./support/seats.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { appendFile, mkdtemp } from "node:fs/promises";
+import { appendFile, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createStore } from "../src/store.mjs";
@@ -144,7 +145,7 @@ test("projects default to AF todos and accept a Linear tracker pointer", async (
   await assert.rejects(store.updateProject("sample", { tracker: { team: "ENG" } }), /require --tracker linear/);
   await assert.rejects(store.updateProject("sample", { tracker: { kind: "linear" } }), /needs --linear-team/);
   await assert.rejects(store.updateProject("sample", { tracker: { kind: "jira" } }), /Tracker must be af or linear/);
-  await assert.rejects(store.updateProject("sample", { tracker: { kind: "linear", team: "ENG TEAM" } }), /team key uses/);
+  await assert.rejects(store.updateProject("sample", { tracker: { kind: "linear", team: "ENG TEAM" } }), /team key starts with a letter or number/);
   assert.deepEqual((await store.updateProject("sample", { tracker: { kind: "linear", team: "ENG" } })).tracker, { kind: "linear", team: "ENG", label: null });
   assert.deepEqual((await store.updateProject("sample", { tracker: { label: "agent-todo" } })).tracker, { kind: "linear", team: "ENG", label: "agent-todo" });
   assert.deepEqual((await store.updateProject("sample", { baseBranch: "develop" })).tracker, { kind: "linear", team: "ENG", label: "agent-todo" });
@@ -156,4 +157,29 @@ test("projects saved before trackers existed read as AF", async () => {
   assert.deepEqual(trackerFor({ id: "legacy" }), { kind: "af" });
   assert.equal(describeTracker(trackerFor({ id: "legacy" }), "legacy"), "AF issues in namespace legacy");
   assert.equal(describeTracker({ kind: "linear", team: "ENG", label: "agent-todo" }, "x"), "Linear team ENG, label agent-todo");
+});
+
+test("a Linear team change drops the old label; labels clear explicitly and reject control characters", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-tracker-label-"));
+  const store = createStore(root);
+  await store.saveProject({ id: "sample", label: "Sample", repoPath: root, tracker: { kind: "linear", team: "ENG", label: "agent-todo" } });
+  assert.deepEqual((await store.updateProject("sample", { tracker: { team: "ENG" } })).tracker, { kind: "linear", team: "ENG", label: "agent-todo" }, "restating the same team keeps the label");
+  assert.deepEqual((await store.updateProject("sample", { tracker: { team: "OPS" } })).tracker, { kind: "linear", team: "OPS", label: null });
+  assert.deepEqual((await store.updateProject("sample", { tracker: { team: "ENG", label: "eng-todo" } })).tracker, { kind: "linear", team: "ENG", label: "eng-todo" });
+  assert.deepEqual((await store.updateProject("sample", { tracker: { clearLabel: true } })).tracker, { kind: "linear", team: "ENG", label: null });
+  await assert.rejects(store.updateProject("sample", { tracker: { label: "x", clearLabel: true } }), /not both/);
+  await assert.rejects(store.updateProject("sample", { tracker: { label: "todo\nTodos: AF issues" } }), /control characters or line breaks/);
+  await assert.rejects(store.updateProject("sample", { tracker: { label: "todo\u001b[31m" } }), /control characters/);
+  await assert.rejects(store.updateProject("sample", { tracker: { team: "-ENG" } }), /starts with a letter or number/);
+  await assert.rejects(store.updateProject("sample", { tracker: { kind: "af", clearLabel: true } }), /require --tracker linear/);
+});
+
+test("reading a project saved before trackers existed yields the AF tracker shape", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-tracker-read-"));
+  const store = createStore(root);
+  await store.init();
+  await writeFile(path.join(root, "projects", "legacy.json"), JSON.stringify({ schemaVersion: 2, revision: 1, id: "legacy", label: "Legacy", repoPath: root, baseBranch: "main" }));
+  assert.deepEqual((await store.project("legacy")).tracker, { kind: "af" });
+  assert.deepEqual((await store.projects())[0].tracker, { kind: "af" });
+  assert.equal(JSON.parse(await readFile(path.join(root, "projects", "legacy.json"), "utf8")).tracker, undefined, "reads do not rewrite the record");
 });

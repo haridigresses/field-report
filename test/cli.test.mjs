@@ -1,3 +1,4 @@
+import "./support/seats.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -254,7 +255,7 @@ test("a completed envelope occupies the job; fail and shopping are not escapes",
   const file = path.join(repo, "review.json");
   await writeFile(file, JSON.stringify(review));
   await run(["review", "record", "outcome", "--file", file], repo, state);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "shop for GO"], repo, state), /occupied by Grok NO_GO/);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "shop for GO"], repo, state), /occupied by grok-4.6 NO_GO/);
   await assert.rejects(run(["gate", "open", "outcome"], repo, state), /not a finding-free GO/);
   const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
   assert.match(status, /BLOCKED/);
@@ -281,7 +282,7 @@ test("attested substitution fills the job and prints on status", async () => {
   await run(["review", "record", "outcome", "--file", file], repo, state);
   const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
   assert.match(status, /READY/);
-  assert.match(status, /structural-challenge: GO via Astra; intended Grok was substituted: cursor-agent not on PATH/);
+  assert.match(status, /structural-challenge: GO via gpt-6-astra; intended grok-4.6 was substituted: cursor-agent not on PATH/);
   assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
 });
 
@@ -310,7 +311,7 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /Do not add `kind=trr`/);
   assert.match(shared, /Do not commission MRR because the user asked for TRR/);
   assert.match(shared, /do not infer them from the repo/);
-  assert.match(shared, /Those questions never go to Astra or Grok/);
+  assert.match(shared, /Those questions never go to a reviewer model/);
   assert.match(shared, /Do not dispatch a worker to settle a product or domain question/);
 
   assert.match(shared, /fr review waive/);
@@ -497,5 +498,21 @@ test("context and identity print the project's todo tracker", async () => {
   await run(["project", "update", "sample", "--tracker", "linear", "--linear-team", "ENG", "--linear-label", "agent-todo"], repo, state);
   assert.match(await run(["context", "outcome"], repo, state), /Todos: Linear team ENG, label agent-todo/);
   assert.equal(JSON.parse(await run(["identity", "--role", "owner"], repo, state)).todos, "Linear team ENG, label agent-todo");
-  assert.match(await run(["project", "list"], repo, state), /\tlinear\n$/);
+  assert.match(await run(["project", "list"], repo, state), /\tlinear:ENG\/agent-todo\n$/);
+  await assert.rejects(run(["project", "update", "sample", "--clear-linear-label", "yes"], repo, state), /takes no value/);
+  await run(["project", "update", "sample", "--clear-linear-label"], repo, state);
+  assert.match(await run(["context", "outcome"], repo, state), /Todos: Linear team ENG\n/);
+  assert.match(await run(["project", "list"], repo, state), /\tlinear:ENG\n$/);
+  await run(["project", "update", "sample", "--linear-label", "agent-todo"], repo, state);
+  await run(["project", "update", "sample", "--linear-team", "OPS"], repo, state);
+  assert.match(await run(["project", "list"], repo, state), /\tlinear:OPS\n$/, "a team change drops the old label");
+});
+
+test("project add accepts a Linear tracker", async () => {
+  const { repo, state } = await fixture();
+  const other = await mkdtemp(path.join(os.tmpdir(), "fr-cli-add-"));
+  await run(["project", "add", "linear-sample", "--label", "Linear", "--repo", other, "--tracker", "linear", "--linear-team", "ENG", "--linear-label", "agent-todo"], repo, state);
+  assert.match(await run(["project", "list"], repo, state), /^linear-sample\tmain\t.*\tlinear:ENG\/agent-todo$/m);
+  assert.match(await run(["project", "list"], repo, state), /^sample\tmain\t.*\taf$/m);
+  await assert.rejects(run(["project", "add", "broken", "--label", "Broken", "--repo", other, "--tracker", "linear"], repo, state), /needs --linear-team/);
 });

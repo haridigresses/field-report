@@ -1,6 +1,7 @@
+import "./support/seats.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { lstat, mkdir, mkdtemp, readlink, symlink } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readlink, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -51,4 +52,18 @@ test("installer writes launchers and skill links under HOME", async () => {
   assert.match(stdout, new RegExp(`${home}/.claude/skills/field-report`));
   assert.match(stdout, new RegExp(`${home}/.cursor/skills/field-report`));
   assert.equal(await readlink(path.join(home, ".cursor", "skills", "field-report")), path.join(repoRoot, "skills", "field-report"));
+});
+
+test("installer seeds the config file from the example once and never overwrites it", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "fr-install-seats-"));
+  const state = path.join(home, "state");
+  const env = { ...process.env, HOME: home, FIELD_REPORT_STATE_ROOT: state };
+  delete env.FIELD_REPORT_CONFIG;
+  delete env.XDG_CONFIG_HOME;
+  const seats = path.join(home, ".config", "field-report", "config.json");
+  assert.match((await exec(process.execPath, [installer], { env })).stdout, new RegExp(`Config created from config/config.example.json: ${seats}`));
+  assert.equal(await readFile(seats, "utf8"), await readFile(path.join(repoRoot, "config", "config.example.json"), "utf8"));
+  await writeFile(seats, "{\"edited\": true}\n");
+  assert.match((await exec(process.execPath, [installer], { env })).stdout, new RegExp(`Config kept: ${seats}`));
+  assert.equal(await readFile(seats, "utf8"), "{\"edited\": true}\n");
 });

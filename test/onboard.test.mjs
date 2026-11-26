@@ -1,3 +1,4 @@
+import "./support/seats.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";

@@ -1,11 +1,9 @@
 import path from "node:path";
 import { quote } from "./hooks.mjs";
-import { canonicalReviewModel, modelFamily, REVIEW_MODELS } from "./policy.mjs";
+import { launchEntry, modelsLaunchedBy } from "./seats.mjs";
 
 export const LOGIN_SHELL = "zsh";
-export const ASTRA_MODEL = REVIEW_MODELS.astra;
-export const FABLE_MODEL = REVIEW_MODELS.opus;
-export const FABLE_ROUTE = "claude";
+export const HOST_LAUNCHERS = ["codex", "claude"];
 const SHA = /^[0-9a-f]{40}$/i;
 
 export function doubleQuote(value) {
@@ -28,17 +26,23 @@ function resolveMaybe(value) {
   return path.resolve(text);
 }
 
-function invokeModel(model, family, fallback) {
-  const selected = canonicalReviewModel(model || fallback);
-  if (modelFamily(selected) !== family) {
-    throw new Error(family === "codex" ? "Invoke model must be a Codex model" : "Invoke model must be an Anthropic model");
+// The CLI model id for a launcher: the requested model, or the first seated
+// model that launcher runs. The config file decides which launcher a model uses.
+export function launcherModel(launcher, model = null) {
+  if (model) {
+    const entry = launchEntry(model);
+    if (!entry) throw new Error(`Model ${model} has no launcher in config.json: no seat lists a model from its provider`);
+    if (entry.launch !== launcher) throw new Error(`Model ${entry.id} launches with ${entry.launch} in config.json, not ${launcher}`);
+    return entry.cliModel;
   }
-  return selected;
+  const first = modelsLaunchedBy(launcher)[0];
+  if (!first) throw new Error(`No seated model launches with ${launcher} in config.json`);
+  return first.cliModel;
 }
 
-export function astraInvokeInner({ promptFile, cwd, kind = "review", lastMessageFile = null, model = ASTRA_MODEL }) {
-  if (!["review", "work"].includes(kind)) throw new Error("Astra invoke kind must be review or work");
-  const selected = invokeModel(model, "codex", ASTRA_MODEL);
+export function codexInvokeInner({ promptFile, cwd, kind = "review", lastMessageFile = null, model = null }) {
+  if (!["review", "work"].includes(kind)) throw new Error("Codex invoke kind must be review or work");
+  const selected = launcherModel("codex", model);
   const sandbox = kind === "work" ? "workspace-write" : "read-only";
   const repo = resolveMaybe(cwd);
   const prompt = resolveMaybe(promptFile);
@@ -46,12 +50,12 @@ export function astraInvokeInner({ promptFile, cwd, kind = "review", lastMessage
   return `cd ${doubleQuote(repo)} && codex exec -m ${selected} -s ${sandbox} --ignore-user-config --json --color never -o ${doubleQuote(lastMessage)} -C ${doubleQuote(repo)} - < ${doubleQuote(prompt)}`;
 }
 
-export function astraInvokeCommand(options, shell = LOGIN_SHELL) {
-  return loginShellCommand(astraInvokeInner(options), shell);
+export function codexInvokeCommand(options, shell = LOGIN_SHELL) {
+  return loginShellCommand(codexInvokeInner(options), shell);
 }
 
-function fableCli({ promptFile, cwd, baseSha, headSha, model = FABLE_MODEL }) {
-  const selected = invokeModel(model, "anthropic", FABLE_MODEL);
+function claudeCli({ promptFile, cwd, baseSha, headSha, model = null }) {
+  const selected = launcherModel("claude", model);
   const diff = `git diff --no-ext-diff --no-textconv ${baseSha} ${headSha} --`;
   const repo = resolveMaybe(cwd);
   const prompt = resolveMaybe(promptFile);
@@ -60,8 +64,8 @@ function fableCli({ promptFile, cwd, baseSha, headSha, model = FABLE_MODEL }) {
   return `cd ${doubleQuote(repo)} && ${headCheck}${claude}`;
 }
 
-export function fableInvokeInner({ promptFile, cwd, baseSha, headSha, model = FABLE_MODEL }) {
-  return fableCli({
+export function claudeInvokeInner({ promptFile, cwd, baseSha, headSha, model = null }) {
+  return claudeCli({
     promptFile,
     cwd,
     model,
@@ -70,6 +74,27 @@ export function fableInvokeInner({ promptFile, cwd, baseSha, headSha, model = FA
   });
 }
 
-export function fableInvokeCommand(options, shell = LOGIN_SHELL) {
-  return loginShellCommand(fableInvokeInner(options), shell);
+export function claudeInvokeCommand(options, shell = LOGIN_SHELL) {
+  return loginShellCommand(claudeInvokeInner(options), shell);
+}
+
+// Devin and Antigravity (agy) recipes follow each CLI's documented headless
+// flags and have not been run end to end. Neither CLI documents a per-run way
+// to turn off MCP servers, so these launches do not isolate MCP.
+export function devinReviewCommand({ promptFile = "<prompt>", cwd = "<repo>", model }) {
+  const selected = launcherModel("devin", model);
+  return `cd ${doubleQuote(resolveMaybe(cwd))} && devin --model ${selected} --permission-mode normal --respect-workspace-trust false --prompt-file ${doubleQuote(resolveMaybe(promptFile))} --print`;
+}
+
+export function agyReviewCommand({ promptFile = "<prompt>", cwd = "<repo>", model }) {
+  const selected = launcherModel("agy", model);
+  return `cd ${doubleQuote(resolveMaybe(cwd))} && agy --model ${selected} --mode plan --sandbox --output-format stream-json --input-format text --print < ${doubleQuote(resolveMaybe(promptFile))}`;
+}
+
+// Cursor-hosted reviewers run through the MCP-isolating wrapper. The brief goes
+// on stdin: some hosts kill processes given an argument over about 1,000
+// characters.
+export function cursorReviewCommand({ promptFile = "<prompt>", model }) {
+  const selected = launcherModel("cursor", model);
+  return `fr-cursor-review --model ${selected} --print --output-format stream-json --sandbox enabled --trust < ${promptFile.includes("<") ? promptFile : doubleQuote(promptFile)}`;
 }

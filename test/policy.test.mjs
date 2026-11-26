@@ -1,7 +1,8 @@
+import "./support/seats.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, modelFamily, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, providerForModel, seatingFor, satisfiesIntended, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, providerForModel, seatingFor, satisfiesIntended, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { normalizeReview } from "../src/envelope.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
@@ -94,7 +95,7 @@ test("provider is derived from the seated model and a supplied label does not fa
   assert.equal("provider" in validateReview(crrOmitted, crr), false);
 });
 
-test("canonical models accept Cursor Grok aliases and reject unknown ids", () => {
+test("canonical models strip Cursor prefixes and effort variants and need a configured provider", () => {
   assert.equal(canonicalReviewModel("cursor-grok-4.6-high"), "grok-4.6");
   assert.equal(canonicalReviewModel("grok-4.6"), "grok-4.6");
   assert.equal(canonicalReviewModel("gpt-6-astra"), "gpt-6-astra");
@@ -106,20 +107,28 @@ test("canonical models accept Cursor Grok aliases and reject unknown ids", () =>
   assert.equal(canonicalReviewModel("gpt-5.6-sol-medium"), "gpt-5.6-sol");
   assert.equal(canonicalReviewModel("gpt-5.6-terra"), "gpt-5.6-terra");
   assert.equal(canonicalReviewModel("codex-auto-review"), "codex-auto-review");
-  assert.equal(modelFamily("claude-sonnet-5"), "anthropic");
-  assert.equal(modelFamily("gpt-5.5"), "codex");
+  assert.equal(providerForModel("claude-sonnet-5"), "anthropic");
+  assert.equal(providerForModel("gpt-5.5"), "openai");
+  assert.equal(canonicalReviewModel("cursor-grok-4.6-high-fast"), "grok-4.6");
+  assert.equal(canonicalReviewModel("grok-4.7-xhigh"), "grok-4.7");
+  assert.equal(canonicalReviewModel("gemini-4-neon-high"), "gemini-4-neon");
+  assert.equal(providerForModel("gemini-4-neon-high"), "google");
+  assert.equal(canonicalReviewModel("gpt-5.5-high-fast"), "gpt-5.5");
   assert.equal(canonicalReviewModel("anthropic.claude-fable-5"), null);
   assert.equal(canonicalReviewModel("composer-2"), null);
-  assert.equal(canonicalReviewModel("grok-4.65"), null);
+  assert.equal(canonicalReviewModel("muse-spark-1.3"), null);
 });
 
-test("crr seating accepts local models; mrr seating is Astra/Grok/Fable", () => {
+test("crr seating accepts local models; mrr seating follows the config file", () => {
   assert.equal(seatingFor(CRR_ROLE).model, "local");
   assert.equal(seatingFor(CRR_ROLE, "composer-2").model, "composer-2");
   assert.equal(seatingFor("deep-code-review").model, "gpt-6-astra");
   assert.equal(seatingFor("structural-challenge").model, "grok-4.6");
   assert.equal(seatingFor("fable-challenge").model, "claude-opus-5-5");
   assert.equal(seatingFor("fable-challenge").intended, "claude-opus-5-5");
+  assert.equal(seatingFor("fable-challenge").intendedProvider, "anthropic");
+  assert.equal(seatingFor("structural-challenge", "grok-4.7-high").substituted, false);
+  assert.equal(seatingFor("structural-challenge", "gemini-4-neon-high").substituted, true);
   assert.throws(() => seatingFor("fable-challenge", "anthropic.claude-fable-5"), /Unknown review model/);
   const sameFamily = seatingFor("fable-challenge", "claude-fable-5");
   assert.equal(sameFamily.model, "claude-fable-5");
@@ -197,7 +206,7 @@ test("a substituted mrr GO fills its job and does not require a provider failure
   ];
   const ready = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
   assert.equal(ready.ready, true);
-  assert.match(ready.notes.join(" "), /structural-challenge: GO via Astra; intended Grok was substituted: cursor-agent not on PATH/);
+  assert.match(ready.notes.join(" "), /structural-challenge: GO via gpt-6-astra; intended grok-4.6 was substituted: cursor-agent not on PATH/);
   const unattested = { ...mrrComplete("structural-challenge", "grok-run"), model: "gpt-6-astra", provider: "openai" };
   const blocked = evaluateGate({
     kind: "mrr",
