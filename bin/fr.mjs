@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore, describeTracker, trackerFor, trackerTarget } from "../src/store.mjs";
-import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, intendedModelFor, intendedProviderFor, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, fitsSeat, seatingFor, substitutionLine, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, seatingFor, seatModelsFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 import { claudeInvokeCommand, codexInvokeCommand, cursorReviewCommand, HOST_LAUNCHERS } from "../src/machines.mjs";
@@ -25,10 +25,10 @@ function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = 
   // Launch the model as requested, keeping a Cursor effort suffix.
   const model = seated.requested || seated.model;
   const launch = launchEntry(model)?.launch;
+  if (!launch) throw new Error(`${seated.model} has no launcher in ${configSource()}. List it in a seat's models there, or use --route native.`);
   if (launch === "codex") return codexInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review", model });
   if (launch === "claude") return claudeInvokeCommand({ promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA", model });
-  if (launch === "cursor") return cursorReviewCommand({ promptFile, model });
-  return `Launch ${seated.model} without MCP servers or AF. Prefer local; cloud only if needed.`;
+  return cursorReviewCommand({ promptFile, model });
 }
 
 function usage() {
@@ -45,7 +45,7 @@ fr list [--project <id>]
 fr show <id> [--json]
 fr context [id]
 fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
-fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli] [--substitution-reason <text>]
+fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review record <id> --file <review.json> [--delegation <uuid>]
 fr review adjudicate <id> --role deep-code-review|structural-challenge|fable-challenge --model <id> [--route native|cli]
@@ -146,7 +146,7 @@ function reviewPrompt(stream, delegation, inventory) {
       : delegation.role === "structural-challenge"
         ? "Inspect necessity, simplicity, authority boundaries, scope, maintainability, and whether you would select the mechanism from scratch."
         : delegation.role === COURT_ROLE
-          ? "Court is evidence-only. You cannot fill a persona job or substitute a model. Adjudicate only the delivered occupying packet. Use rejected when the finding is inapplicable to this claim and target; still_present when it remains. Do not resolve. Do not add findings or unresolved items. Do not invent product or design decisions."
+          ? "Court is evidence-only. You cannot fill a persona job. Adjudicate only the delivered occupying packet. Use rejected when the finding is inapplicable to this claim and target; still_present when it remains. Do not resolve. Do not add findings or unresolved items. Do not invent product or design decisions."
           : "Inspect the candidate as the independent challenge lane.";
   const productBasis = delegation.role === COURT_ROLE
     ? ""
@@ -182,8 +182,6 @@ function evidenceLines(gate) {
     if (review.findings?.length) lines.push(`  Findings: ${review.findings.join(" | ")}`);
     if (review.unresolved?.length) lines.push(`  Unresolved: ${review.unresolved.join(" | ")}`);
     if (review.reconciled?.length) lines.push(`  Reconciled: ${review.reconciled.map((entry) => `${entry.findingId} ${entry.disposition} — ${entry.rationale}`).join(" | ")}`);
-    const substitution = substitutionLine(review);
-    if (substitution) lines.splice(1, 0, `  ${substitution}`);
     return lines;
   });
 }
@@ -329,17 +327,13 @@ async function main() {
     const target = await targetFor(stream, kind);
     const reviews = kind === "mrr" ? await store.reviews(stream.id) : [];
     const delegations = kind === "mrr" ? await store.delegations(stream.id) : [];
-    let substitutionReason = String(flags["substitution-reason"] || "").trim();
     if (kind === "mrr") {
-      assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, substitutionReason, delegations, seating: seated });
+      assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, delegations });
       const occupant = occupyingReview(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision }, delegations);
       if (occupant) {
-        // An authorized same-model court rerun keeps the original job's seating.
+        // An authorized same-model court rerun keeps the original job's list.
         const source = delegations.find((item) => item.id === occupant.delegationId && item.event === "created") || occupant;
-        seated.intended = intendedModelFor(source);
-        seated.intendedProvider = intendedProviderFor(source);
-        seated.substituted = !fitsSeat(seated.model, source);
-        substitutionReason = occupant.substitutionReason || "";
+        seated.seatModels = seatModelsFor(source) || seated.seatModels;
       }
     }
     const outstanding = kind === "mrr" && role === "deep-code-review"
@@ -349,13 +343,12 @@ async function main() {
     const project = await store.project(stream.project);
     const delegation = await store.addDelegation(stream.id, {
       type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision,
-      ...(kind === "mrr" ? { intendedModel: seated.intended, intendedProvider: seated.intendedProvider } : {}),
+      ...(kind === "mrr" ? { seatModels: seated.seatModels } : {}),
       head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}),
       ...(outstanding.length ? { outstanding } : {}),
-      ...(substitutionReason && seated.substituted ? { substitutionReason } : {}),
       ownerTaskIdAtBrief: stream.ownerTaskId || null
     });
-    const execution = { ...REVIEW_EXECUTION, intended: seated.intended, substituted: seated.substituted, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
+    const execution = { ...REVIEW_EXECUTION, intended: seated.intended, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "bind") {
@@ -364,7 +357,7 @@ async function main() {
     return process.stdout.write(`Bound review ${event.id} to ${event.taskId}.\n`);
   }
   if (command === "review" && positional[0] === "fail") {
-    throw new Error("Field Report does not record provider failure. Repair or resume a started run. Substitute with --substitution-reason only before any envelope occupies the job, and only when the intended model cannot start (missing binary, authentication failure, or unavailable model).");
+    throw new Error("Field Report does not record provider failure. Repair or resume a started run. If a model cannot start before any envelope occupies the job, brief another model from the seat's valid list.");
   }
   if (command === "review" && positional[0] === "adjudicate") {
     const stream = await store.workstream(positional[1]);
@@ -385,7 +378,7 @@ async function main() {
       claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, outstanding,
       ownerTaskIdAtBrief: stream.ownerTaskId || null
     });
-    const execution = { ...REVIEW_EXECUTION, intended: null, substituted: false, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
+    const execution = { ...REVIEW_EXECUTION, intended: null, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "record") {
@@ -423,7 +416,7 @@ async function main() {
       if (validated.role === COURT_ROLE) {
         assertCourtJobAvailable(prior, { jobRole: delegation.jobRole, ...scope, model: validated.model, reviewerTaskId: validated.reviewerTaskId, ownerTaskId: stream.ownerTaskId });
       } else if (reviewKind(delegation.kind) === "mrr") {
-        assertPersonaJobAvailable(prior, { role: validated.role, ...scope, model: validated.model, substitutionReason: validated.substitutionReason, reviewerTaskId: validated.reviewerTaskId, delegations: delegationEvents, currentDelegation: delegation });
+        assertPersonaJobAvailable(prior, { role: validated.role, ...scope, model: validated.model, reviewerTaskId: validated.reviewerTaskId, delegations: delegationEvents, currentDelegation: delegation });
       }
     } });
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);
@@ -523,10 +516,10 @@ async function main() {
     const lines = [`Config: ${configSource()}`];
     for (const role of SEATS) {
       const seat = seatFor(role);
-      lines.push(`${role}: ${seat.provider}`);
-      seat.models.forEach((model, index) => lines.push(`  ${index === 0 ? "intended" : "next"}: ${model.id} via ${model.launch}${model.cliModel !== model.id ? ` (${model.cliModel})` : ""}`));
+      lines.push(`${role}:`);
+      seat.models.forEach((model, index) => lines.push(`  ${index === 0 ? "default" : "also valid"}: ${model.id} via ${model.launch}${model.cliModel !== model.id ? ` (${model.cliModel})` : ""}`));
     }
-    lines.push("Any model from a seat's provider fills it; another provider is a substitution. Edit the config file to change models; no code change is needed.");
+    lines.push("A seat accepts only the models listed for it; the first is the default. Edit the config file to change them; no code change is needed.");
     return process.stdout.write(`${lines.join("\n")}\n`);
   }
 

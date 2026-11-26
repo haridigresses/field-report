@@ -31,7 +31,7 @@ function resolveMaybe(value) {
 export function launcherModel(launcher, model = null) {
   if (model) {
     const entry = launchEntry(model);
-    if (!entry) throw new Error(`Model ${model} has no launcher in config.json: no seat lists a model from its provider`);
+    if (!entry) throw new Error(`Model ${model} has no launcher in config.json: no seat lists it`);
     if (entry.launch !== launcher) throw new Error(`Model ${entry.id} launches with ${entry.launch} in config.json, not ${launcher}`);
     return entry.cliModel;
   }

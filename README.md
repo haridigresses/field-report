@@ -1,6 +1,6 @@
 # Field Report
 
-Field Report is a thin control loop around a delivery unit. It binds repo, branch, claim, and owner session; records CRR and mixed-provider MRR; and gates readiness for CI bots. It does not launch reviewers, open pull requests, or merge.
+Field Report is a thin control loop around a delivery unit. It binds repo, branch, claim, and owner session; records CRR and three-seat MRR; and gates readiness for CI bots. It does not launch reviewers, open pull requests, or merge.
 
 Agent Fixes, when installed, owns sessions and names. Each project's tracker — AF issues or a Linear team — owns todos. Field Report stores only that pointer. Each target repository's `merge-ready-review.md` owns merge quality. Your config file chooses the reviewer models (see [Seats](#seats)). Cursor Cloud Agents reach the host `codex` and `claude` CLIs through My Machines when a worker for that checkout is online.
 
@@ -9,10 +9,10 @@ Agent Fixes, when installed, owns sessions and names. Each project's tracker —
 - When AF is installed, coordinators and owners name themselves (`fr identity`, then AF save); without AF they skip naming. The user does not name agents. Reviewers stay unnamed and off AF.
 - Before you run `git commit` on a commit you intend to keep, stop and run CRR (1–2 subagents, local models first, scores required). A green checkout hook is not CRR. WIP or amend is owner judgment. Findings are for the owner on that staged tree, not a durable ledger. CRR records still persist; they do not enter the SHA-by-SHA finding ledger. `fr context` always prints the latest scores and structural risk (higher = more risk), even when the gate is blocked.
 - Keep a one-line next action with `fr update <id> --next`. It is a sticky note, not a todo ledger.
-- MRR (three seats on three different providers, chosen in your config file; see [Seats](#seats)) before a PR is opened. Any model from a seat's provider fills it; another provider is a substitution. READY is exact head + exact base + three finding-free GOs. A completed envelope occupies the job; substitute only before that, with `--substitution-reason`. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR.
+- MRR (three seats whose valid models come from your config file; see [Seats](#seats)) before a PR is opened. READY is exact head + exact base + three finding-free GOs from distinct reviewers, each by a model its seat listed when briefed. A completed envelope occupies the job. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR.
 - Do not auto-open a PR. After `fr gate open`, the owner or the user may open one.
 - After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission. An empty GitHub check rollup keeps that gate blocked.
-- Borderline CI flake vs real: consult a seated model from another provider once. Not a hard gate.
+- Borderline CI flake vs real: consult one seated model (`fr seats`) once. Not a hard gate.
 - Field Report never merges.
 
 ## State
@@ -68,7 +68,7 @@ Do not wrap `git commit`, add `fr catchup` / heartbeat, collapse MRR into a fami
 
 ## Seats
 
-Field Report hardcodes no model names. Your config file decides which models fill the three MRR seats, which provider each model id belongs to, and how each model launches. The installer creates it from [`config/config.example.json`](config/config.example.json) at `~/.config/field-report/config.json` (override the path with `FIELD_REPORT_CONFIG`) and never overwrites it.
+Field Report hardcodes no model names. Your config file lists the models valid for each MRR seat and how each model launches. The installer creates it from [`config/config.example.json`](config/config.example.json) at `~/.config/field-report/config.json` (override the path with `FIELD_REPORT_CONFIG`) and never overwrites it.
 
 ```json
 "structural-challenge": {
@@ -76,13 +76,12 @@ Field Report hardcodes no model names. Your config file decides which models fil
 }
 ```
 
-- `providers` maps a provider name to model-id prefixes (`gpt-` → `openai`, `gemini-` → `google`, …). Every seated model must match one.
-- Each seat lists models in preference order. The first is the intended model.
-- Any model from the seat's provider fills it without a substitution. A model from another provider is a substitution (`--substitution-reason`).
+- Each seat lists its valid models. The first is the default; `--model` picks another listed one. A model not listed for a seat cannot review it; add it to the config first.
+- The shipped example seats three labs (OpenAI, xAI, Anthropic). That is a suggestion for diversity of thought, not a rule: one model may serve every seat.
+- Model ids match through a `cursor-` prefix and effort suffixes, so `cursor-grok-4.6-high` is `grok-4.6`. A model listed in two seats launches the same way in both.
 - `launch` is `codex`, `claude`, or `cursor` (through `fr-cursor-review`). `--route native` runs any seat as a native subagent instead. `cliModel` is the id that launcher expects, when it differs (Cursor ids carry effort suffixes).
-- The three seats must use three different providers.
 
-When a new model ships, edit the config. `fr seats` prints the resolved panel. Briefs pin the intended model and provider.
+When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Briefs made before this rule pinned no list and no longer count; rerun MRR on those workstreams.
 
 ## My Machines
 

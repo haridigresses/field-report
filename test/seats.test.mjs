@@ -17,44 +17,42 @@ const clone = () => structuredClone(example);
 const neon = { models: [{ id: "gemini-4-neon", launch: "cursor", cliModel: "gemini-4-neon-high" }] };
 const withNeon = () => ({ ...clone(), seats: { ...clone().seats, "structural-challenge": neon } });
 
-test("the example config seats the historical panel and passes validation", () => {
+test("the example config seats the three-lab default panel", () => {
   const config = parseSeatConfig(example);
-  assert.deepEqual(Object.fromEntries(Object.entries(config.seats).map(([role, seat]) => [role, [seat.provider, seat.models[0].id]])), {
-    "deep-code-review": ["openai", "gpt-6-astra"],
-    "structural-challenge": ["xai", "grok-4.6"],
-    "fable-challenge": ["anthropic", "claude-opus-5-5"]
+  assert.deepEqual(Object.fromEntries(Object.entries(config.seats).map(([role, seat]) => [role, seat.models.map((model) => model.id)])), {
+    "deep-code-review": ["gpt-6-astra", "gpt-5.6-sol"],
+    "structural-challenge": ["grok-4.6"],
+    "fable-challenge": ["claude-opus-5-5", "claude-fable-5-1", "claude-fable-5"]
   });
 });
 
-test("config file rejects ambiguous or single-provider panels", () => {
+test("config file rejects malformed seats", () => {
   const broken = (edit) => { const raw = clone(); edit(raw); return () => parseSeatConfig(raw); };
   assert.throws(broken((raw) => { raw.schemaVersion = 2; }), /schemaVersion must be 1/);
   assert.throws(broken((raw) => { delete raw.seats["fable-challenge"]; }), /missing seat fable-challenge/);
   assert.throws(broken((raw) => { raw.seats["cheap-review"] = neon; }), /unknown seat cheap-review/);
-  assert.throws(broken((raw) => { raw.seats["structural-challenge"] = { models: [{ id: "gpt-5.6-sol", launch: "codex" }] }; }), /three different providers \(got openai, openai, anthropic\)/);
-  assert.throws(broken((raw) => { raw.seats["structural-challenge"].models.push({ id: "gemini-4-neon", launch: "cursor" }); }), /mixes providers/);
-  assert.throws(broken((raw) => { raw.seats["structural-challenge"] = { models: [{ id: "muse-spark-1.3", launch: "cursor" }] }; }), /matches no configured provider prefix/);
+  assert.throws(broken((raw) => { raw.seats["structural-challenge"] = { models: [] }; }), /needs a non-empty models list/);
+  assert.throws(broken((raw) => { raw.seats["structural-challenge"].models.push({ id: "grok-4.6", launch: "cursor", cliModel: "cursor-grok-4.6-high" }); }), /lists a model twice/);
+  assert.throws(broken((raw) => { raw.seats["structural-challenge"] = { models: [{ id: "gpt-6-astra", launch: "cursor" }] }; }), /gpt-6-astra launches differently in two seats/);
   assert.throws(broken((raw) => { raw.seats["structural-challenge"] = { models: [{ id: "gemini-4-neon-high", launch: "cursor" }] }; }), /bare model id without a cursor- prefix or effort suffix/);
   assert.throws(broken((raw) => { raw.seats["structural-challenge"].models[0].launch = "ssh"; }), /launch must be one of codex, claude, cursor/);
-  assert.throws(broken((raw) => { raw.providers.openai.prefixes.push("claude-"); }), /overlaps/);
   assert.throws(broken((raw) => { raw.seats["structural-challenge"].accept = "listed"; }), /unknown key "accept"/);
   assert.throws(broken((raw) => { raw.seats["structural-challenge"].models[0].cliModel = "grok; rm -rf ~"; }), /cliModel must be one token/);
-  assert.throws(broken((raw) => { raw.accept = "provider"; }), /unknown key "accept"/);
+  assert.throws(broken((raw) => { raw.providers = {}; }), /unknown key "providers"/);
 });
 
-test("a configured Gemini seat needs no code change and makes Grok the substitution", () => {
+test("any model, from any lab, can fill any seat the config lists it in", () => {
+  const sameEverywhere = { schemaVersion: 1, seats: Object.fromEntries(["deep-code-review", "structural-challenge", "fable-challenge"].map((role) => [role, neon])) };
   try {
-    useSeatConfig(withNeon());
-    const seated = seatingFor("structural-challenge");
-    assert.deepEqual([seated.intended, seated.intendedProvider, seated.substituted], ["gemini-4-neon", "google", false]);
-    assert.equal(seatingFor("structural-challenge", "gemini-4-neon-xhigh").substituted, false);
-    assert.equal(seatingFor("structural-challenge", "grok-4.6").substituted, true);
+    useSeatConfig(sameEverywhere);
+    for (const role of ["deep-code-review", "structural-challenge", "fable-challenge"]) assert.equal(seatingFor(role, "gemini-4-neon-xhigh").model, "gemini-4-neon");
+    assert.throws(() => seatingFor("structural-challenge", "grok-4.6"), /not a valid structural-challenge model/);
   } finally { useSeatConfig(null); }
 });
 
-test("editing the config later does not reinterpret recorded seating", () => {
+test("editing the config later does not reinterpret recorded reviews", () => {
   const head = "a".repeat(40), baseHead = "b".repeat(40), claim = "Ship it";
-  const brief = (role, model, intendedModel, intendedProvider) => ({ id: crypto.randomUUID(), event: "created", type: "review", kind: "mrr", role, claim, claimRevision: 1, head, baseHead, model, route: "cli", ownerTaskIdAtBrief: "owner", intendedModel, intendedProvider });
+  const brief = (role) => ({ id: crypto.randomUUID(), event: "created", type: "review", kind: "mrr", role, claim, claimRevision: 1, head, baseHead, model: seatingFor(role).model, seatModels: seatingFor(role).seatModels, route: "cli", ownerTaskIdAtBrief: "owner" });
   const envelope = (delegation, reviewerTaskId) => validateReview({
     reviewComplete: true, independent: true, verdict: "GO", kind: "mrr", role: delegation.role, delegationId: delegation.id, claim, reviewerTaskId, head, baseHead, model: delegation.model, route: "cli",
     findings: [], unresolved: [], summary: "Clean.",
@@ -62,22 +60,15 @@ test("editing the config later does not reinterpret recorded seating", () => {
     scoreRationale: { mergeReadiness: "n", structuralRisk: "n", implementationQuality: "n", evidenceConfidence: "n", outcomeConfidence: "n" },
     necessity: "necessary", simplerPath: "None found.", scopeDrift: "none", contractIntegrity: "sound", evidenceQuality: "strong"
   }, delegation);
-  const delegations = [
-    brief("deep-code-review", "gpt-6-astra", "gpt-6-astra", "openai"),
-    brief("structural-challenge", "grok-4.6", "grok-4.6", "xai"),
-    brief("fable-challenge", "claude-opus-5-5", "claude-opus-5-5", "anthropic")
-  ];
+  const delegations = ["deep-code-review", "structural-challenge", "fable-challenge"].map(brief);
+  const pending = brief("structural-challenge");
   const reviews = delegations.map((delegation, index) => envelope(delegation, `run-${index}`));
   const args = { kind: "mrr", target: { head, baseHead }, workstream: { claim, claimRevision: 1, ownerTaskId: "owner" }, reviews, delegations };
   assert.equal(evaluateGate(args).ready, true);
   try {
     useSeatConfig(withNeon());
-    assert.equal(evaluateGate(args).ready, true, "a Grok GO briefed under the old config still fills its job");
-    assert.equal(evaluateGate(args).notes.length, 0);
-    const withoutXai = withNeon();
-    delete withoutXai.providers.xai;
-    useSeatConfig(withoutXai);
-    assert.equal(evaluateGate(args).ready, true, "removing the xai provider later does not unseat a recorded Grok GO");
+    assert.equal(evaluateGate(args).ready, true, "a Grok GO briefed before Grok left the config still counts");
+    assert.equal(envelope(pending, "late-grok").model, "grok-4.6", "a Grok brief issued before the edit still records");
   } finally { useSeatConfig(null); }
 });
 
@@ -112,11 +103,10 @@ test("fr seats prints the resolved panel, and briefs follow the config", async (
   await run(["create", "outcome", "--project", "sample", "--title", "Outcome", "--outcome", "Ship it", "--branch", "feature", "--owner-task", "owner-1"]);
   const machine = await run(["seats"]);
   assert.match(machine, new RegExp(`Config: ${seats}`));
-  assert.match(machine, /structural-challenge: xai\n  intended: grok-4\.6 via cursor \(cursor-grok-4\.6-high\)/);
-  assert.match(machine, /fable-challenge: anthropic\n  intended: claude-opus-5-5 via claude\n  next: claude-fable-5-1 via claude/);
+  assert.match(machine, /structural-challenge:\n  default: grok-4\.6 via cursor \(cursor-grok-4\.6-high\)/);
+  assert.match(machine, /fable-challenge:\n  default: claude-opus-5-5 via claude\n  also valid: claude-fable-5-1 via claude/);
   await writeFile(seats, JSON.stringify(withNeon()));
   const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"]));
-  assert.equal(brief.delegation.intendedModel, "gemini-4-neon");
-  assert.equal(brief.delegation.intendedProvider, "google");
+  assert.deepEqual([brief.delegation.model, brief.delegation.seatModels], ["gemini-4-neon", ["gemini-4-neon"]]);
   assert.equal(brief.execution.launch, "fr-cursor-review --model gemini-4-neon-high --print --output-format stream-json --sandbox enabled --trust < <prompt>");
 });

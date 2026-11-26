@@ -104,6 +104,7 @@ test("cursor-launched seats send the brief on stdin with the configured Cursor m
   const launch = cursorReviewCommand({ model: "grok-4.6" });
   assert.equal(launch, "fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust < <prompt>");
   assert.doesNotMatch(launch, /\$\(</);
-  assert.match(cursorReviewCommand({ promptFile: "/tmp/a b.txt", model: "grok-4.7-high" }), /--model grok-4.7-high .*< "\/tmp\/a b.txt"$/);
+  assert.match(cursorReviewCommand({ promptFile: "/tmp/a b.txt", model: "grok-4.6" }), /< "\/tmp\/a b.txt"$/);
+  assert.throws(() => cursorReviewCommand({ model: "grok-4.7-high" }), /no seat lists it/);
   assert.throws(() => cursorReviewCommand({ model: "gpt-6-astra" }), /launches with codex/);
 });

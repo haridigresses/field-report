@@ -2,11 +2,10 @@ import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-// Field Report knows no model names. Which models fill each MRR seat, which
-// provider each model id belongs to, and how each model launches live in the
-// user's config file. Any model from a seat's provider fills it; a model from
-// another provider is a substitution. A new model is a config edit, not a code
-// change.
+// Field Report knows no model names. The user's config file lists the models
+// valid for each MRR seat (the first is the default) and how each launches.
+// The shipped example seats three labs; that is a suggestion, not a rule. A
+// model may serve several seats.
 
 export const REVIEW_ROLES = ["deep-code-review", "structural-challenge", "fable-challenge"];
 // Each launcher runs reviewers without MCP servers.
@@ -38,8 +37,8 @@ function onlyKeys(value, allowed, label) {
   if (extra) fail(`${label} has unknown key ${JSON.stringify(extra)}; allowed keys are ${allowed.join(", ")}`);
 }
 
-// Syntax only, independent of the config: recorded reviews keep their identity
-// after a provider leaves the config.
+// Syntax only, independent of the config, so recorded reviews keep their
+// identity after the config changes.
 export function normalizeId(model) {
   let text = String(model || "").trim().toLowerCase();
   if (text.startsWith("cursor-")) text = text.slice("cursor-".length);
@@ -49,17 +48,10 @@ export function normalizeId(model) {
   return NAME.test(text) ? text : null;
 }
 
-function providerOf(providers, id) {
-  if (!id) return null;
-  for (const [name, provider] of Object.entries(providers)) if (provider.prefixes.some((prefix) => id.startsWith(prefix))) return name;
-  return null;
-}
-
-function parseModel(entry, label, providers) {
+function parseModel(entry, label) {
   onlyKeys(object(entry, label), ["id", "launch", "cliModel"], label);
   const id = normalizeId(entry.id);
   if (!id || id !== String(entry.id).trim().toLowerCase()) fail(`${label}.id must be a bare model id without a cursor- prefix or effort suffix (got ${JSON.stringify(entry.id)})`);
-  if (!providerOf(providers, id)) fail(`${label}.id ${id} matches no configured provider prefix`);
   if (!LAUNCHERS.includes(entry.launch)) fail(`${label}.launch must be one of ${LAUNCHERS.join(", ")}`);
   if (entry.cliModel != null && (typeof entry.cliModel !== "string" || !CLI_MODEL.test(entry.cliModel.trim()))) fail(`${label}.cliModel must be one token of letters, numbers, dots, colons, slashes, underscores, and hyphens`);
   return { id, launch: entry.launch, cliModel: entry.cliModel?.trim() || id };
@@ -68,38 +60,29 @@ function parseModel(entry, label, providers) {
 export function parseSeatConfig(raw) {
   object(raw, "the config");
   if (raw.schemaVersion !== 1) fail("schemaVersion must be 1");
-  onlyKeys(raw, ["schemaVersion", "providers", "seats"], "the config");
-  const providers = {};
-  const seen = new Map();
-  for (const [name, provider] of Object.entries(object(raw.providers, "providers"))) {
-    if (!NAME.test(name)) fail(`provider name ${JSON.stringify(name)} uses lowercase letters, numbers, dots, and hyphens`);
-    onlyKeys(object(provider, `providers.${name}`), ["prefixes"], `providers.${name}`);
-    const { prefixes } = provider;
-    if (!Array.isArray(prefixes) || !prefixes.length || !prefixes.every((item) => typeof item === "string" && item.trim())) fail(`providers.${name}.prefixes must be a non-empty string array`);
-    const clean = prefixes.map((item) => item.trim().toLowerCase());
-    for (const prefix of clean) {
-      for (const [other, owner] of seen) if (prefix.startsWith(other) || other.startsWith(prefix)) fail(`prefix ${prefix} (${name}) overlaps ${other} (${owner})`);
-      seen.set(prefix, name);
-    }
-    providers[name] = { prefixes: clean };
-  }
+  onlyKeys(raw, ["schemaVersion", "seats"], "the config");
   const rawSeats = object(raw.seats, "seats");
   const unknown = Object.keys(rawSeats).find((role) => !REVIEW_ROLES.includes(role));
   if (unknown) fail(`seats has unknown seat ${unknown}; seats are ${REVIEW_ROLES.join(", ")}`);
   const seats = {};
+  const launches = new Map();
   for (const role of REVIEW_ROLES) {
     const seat = rawSeats[role];
     if (!seat) fail(`seats is missing seat ${role}`);
     onlyKeys(object(seat, `seats.${role}`), ["models"], `seats.${role}`);
     if (!Array.isArray(seat.models) || !seat.models.length) fail(`seats.${role} needs a non-empty models list`);
-    const models = seat.models.map((entry, index) => parseModel(entry, `seats.${role}.models[${index}]`, providers));
-    const provider = providerOf(providers, models[0].id);
-    for (const model of models) if (providerOf(providers, model.id) !== provider) fail(`seats.${role} mixes providers; one seat is one provider (${model.id} is not ${provider})`);
-    seats[role] = { role, provider, models };
+    const models = seat.models.map((entry, index) => parseModel(entry, `seats.${role}.models[${index}]`));
+    const ids = models.map((model) => model.id);
+    if (new Set(ids).size !== ids.length) fail(`seats.${role} lists a model twice`);
+    // One model launches one way, whichever seat it serves.
+    for (const model of models) {
+      const seen = launches.get(model.id);
+      if (seen && (seen.launch !== model.launch || seen.cliModel !== model.cliModel)) fail(`${model.id} launches differently in two seats; give it one launch and cliModel`);
+      launches.set(model.id, model);
+    }
+    seats[role] = { role, models };
   }
-  const used = REVIEW_ROLES.map((role) => seats[role].provider);
-  if (new Set(used).size !== used.length) fail(`seats must use three different providers (got ${used.join(", ")})`);
-  return { providers, seats };
+  return { seats };
 }
 
 // Tests can inject a parsed config; the CLI reads the file once per process.
@@ -111,7 +94,7 @@ export function seatConfig() {
   let text;
   try { text = readFileSync(file, "utf8"); }
   catch (error) {
-    if (error.code === "ENOENT") throw new Error(`No Field Report config at ${file}. Copy config/config.example.json from the Field Report checkout there (node scripts/install.mjs does this), then edit it to choose the model for each seat.`);
+    if (error.code === "ENOENT") throw new Error(`No Field Report config at ${file}. Copy config/config.example.json from the Field Report checkout there (node scripts/install.mjs does this), then edit it to choose the models for each seat.`);
     throw error;
   }
   let raw;
@@ -122,33 +105,15 @@ export function seatConfig() {
 
 export function configSource() { seatConfig(); return active.source; }
 
-export function canonicalModel(model) {
-  const id = normalizeId(model);
-  return providerOf(seatConfig().providers, id) ? id : null;
-}
-
-export function providerForModel(model) { return providerOf(seatConfig().providers, normalizeId(model)); }
-
-export function providerNames() { return Object.keys(seatConfig().providers); }
-
 export function seatFor(role) {
   if (!REVIEW_ROLES.includes(role)) throw new Error("Unknown review role");
   return seatConfig().seats[role];
 }
 
-// How to launch a model: its own seat entry, else the first seated model of
-// the same provider. A Cursor sibling keeps the requested effort suffix.
+// How to launch a model: its config entry from any seat, or null.
 export function launchEntry(model) {
-  const config = seatConfig();
   const id = normalizeId(model);
-  const entries = REVIEW_ROLES.flatMap((role) => config.seats[role].models);
-  const exact = entries.find((entry) => entry.id === id);
-  if (exact) return exact;
-  const provider = providerOf(config.providers, id);
-  const sibling = provider && entries.find((entry) => providerOf(config.providers, entry.id) === provider);
-  if (!sibling) return null;
-  const raw = String(model).trim();
-  return { id, launch: sibling.launch, cliModel: sibling.launch === "cursor" && CLI_MODEL.test(raw) ? raw : id };
+  return REVIEW_ROLES.flatMap((role) => seatConfig().seats[role].models).find((entry) => entry.id === id) || null;
 }
 
 export function modelsLaunchedBy(launch) {

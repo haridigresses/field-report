@@ -1,42 +1,22 @@
 {
   "schemaVersion": 1,
-  "providers": {
-    "openai": {
-      "prefixes": [
-        "gpt-",
-        "codex-"
-      ]
-    },
-    "anthropic": {
-      "prefixes": [
-        "claude-"
-      ]
-    },
-    "xai": {
-      "prefixes": [
-        "grok-"
-      ]
-    },
-    "google": {
-      "prefixes": [
-        "gemini-"
-      ]
-    }
-  },
   "seats": {
     "deep-code-review": {
       "models": [
-        { "id": "gpt-6-astra",
+        {
+          "id": "gpt-6-astra",
           "launch": "codex"
         },
-        { "id": "gpt-5.6-sol",
+        {
+          "id": "gpt-5.6-sol",
           "launch": "codex"
         }
       ]
     },
     "structural-challenge": {
       "models": [
-        { "id": "grok-4.6",
+        {
+          "id": "grok-4.6",
           "launch": "cursor",
           "cliModel": "cursor-grok-4.6-high"
         }
@@ -44,13 +24,16 @@
     },
     "fable-challenge": {
       "models": [
-        { "id": "claude-opus-5-5",
+        {
+          "id": "claude-opus-5-5",
           "launch": "claude"
         },
-        { "id": "claude-fable-5-1",
+        {
+          "id": "claude-fable-5-1",
           "launch": "claude"
         },
-        { "id": "claude-fable-5",
+        {
+          "id": "claude-fable-5",
           "launch": "claude"
         }
       ]
