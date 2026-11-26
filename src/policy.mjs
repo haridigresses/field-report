@@ -68,7 +68,7 @@ export function identityKey(projectId, role) {
   return { key: `${project}/${role}`, fallback: `${project}/${role}-2` };
 }
 
-export function seatingFor(role, model = null, route = null) {
+export function seatingFor(role, model = null, route = null, pinned = null) {
   if (role === CRR_ROLE) {
     const selected = String(model || "local").trim();
     if (!selected) throw new Error("crr requires a model id");
@@ -79,7 +79,7 @@ export function seatingFor(role, model = null, route = null) {
     if (!selected) throw new Error("Court requires --model <id>");
     return { role: COURT_ROLE, intended: null, model: selected, route: route || "cli" };
   }
-  const seatModels = seatFor(role).models.map((entry) => entry.id);
+  const seatModels = pinned || seatFor(role).models.map((entry) => entry.id);
   const selected = model ? normalizeId(model) : seatModels[0];
   if (!seatModels.includes(selected)) throw new Error(`${model} is not a valid ${role} model (valid: ${seatModels.join(", ")}). Add it to seats.${role}.models in ${configSource()} to use it.`);
   return { role, intended: seatModels[0], seatModels, model: selected, route: route || "cli" };
@@ -280,8 +280,11 @@ const acceptedCrr = (review) => reviewKind(review?.kind) === "crr" && review?.ro
 
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
 
+// A persona review whose brief pinned no seat list predates seat lists: it
+// neither counts nor occupies its job, so MRR reruns on that head. Its
+// findings stay in the ledger until a later review reconciles them.
 export function personaJobReviews(reviews, { role, target, claim, claimRevision }) {
-  return (reviews || []).filter((review) => isPersonaReview(review) && jobScope(review, { role, target, claim, claimRevision }));
+  return (reviews || []).filter((review) => isPersonaReview(review) && Array.isArray(review.seatModels) && jobScope(review, { role, target, claim, claimRevision }));
 }
 
 export function jobCourts(reviews, { jobRole, target, claim, claimRevision }) {

@@ -158,12 +158,16 @@ test("a review counts only when its model is on the list its brief pinned", () =
   assert.throws(() => validateReview(mrrEnvelope(grokBrief, "swap", { model: "gpt-6-astra" }), grokBrief), /Review model must match its exact delegation/);
   const offList = { ...grokBrief, model: "gpt-6-astra" };
   assert.throws(() => validateReview(mrrEnvelope(offList, "off-list"), offList), /structural-challenge review model gpt-6-astra is not on its brief's valid list/);
-  // A review whose brief pinned no list never counts.
-  const forged = { ...recorded, seatModels: undefined };
-  const unpinned = { ...neon, seatModels: undefined };
-  const blocked = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [others[0], forged, others[1]], delegations: [unpinned] });
+  // A review whose brief pinned no list predates seat lists: it neither counts nor occupies.
+  const unpinned = { ...recorded, seatModels: undefined };
+  const blocked = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [others[0], unpinned, others[1]], delegations: [{ ...neon, seatModels: undefined }] });
   assert.equal(blocked.ready, false);
-  assert.match(blocked.reasons.join(" "), /structural-challenge is not a finding-free GO/);
+  assert.match(blocked.reasons.join(" "), /missing structural-challenge review/);
+  assert.equal(occupyingReview([unpinned], { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 }), null);
+  // Its open findings stay until a later review reconciles them, and IDs never shift.
+  const oldNoGo = { ...mrrComplete("structural-challenge", "old-grok", { verdict: "NO_GO", findings: ["Old finding"] }), seatModels: undefined };
+  const pinnedNoGo = mrrComplete("fable-challenge", "new-fable", { verdict: "NO_GO", findings: ["New finding"] });
+  assert.deepEqual(outstandingFindings([oldNoGo, pinnedNoGo], claim).map((item) => [item.id, item.text]), [["F1", "Old finding"], ["F2", "New finding"]]);
 });
 
 test("one model may fill every seat when the config lists it there", () => {

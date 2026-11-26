@@ -22,7 +22,7 @@ function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = 
     return `Launch a fresh ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes. Prefer a local model; use cloud only if local cannot produce an envelope. Do not pass the owner conversation.`;
   }
   if (seated.route === "native") return `Launch a fresh native ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes; do not pass the owner conversation.`;
-  // Launch the model as requested, keeping a Cursor effort suffix.
+  // The config's cliModel decides the exact launch id.
   const model = seated.requested || seated.model;
   const launch = launchEntry(model)?.launch;
   if (!launch) throw new Error(`${seated.model} has no launcher in ${configSource()}. List it in a seat's models there, or use --route native.`);
@@ -323,19 +323,16 @@ async function main() {
     if (kind === "mrr" && !REVIEW_ROLES.includes(role)) throw new Error("MRR briefs use a persona role");
     if (flags.reconcile) throw new Error("Exact-head packets go through fr review adjudicate; do not attach them to a persona brief");
     if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");
-    const seated = { ...seatingFor(role, flags.model, flags.route), requested: flags.model || null };
     const target = await targetFor(stream, kind);
     const reviews = kind === "mrr" ? await store.reviews(stream.id) : [];
     const delegations = kind === "mrr" ? await store.delegations(stream.id) : [];
-    if (kind === "mrr") {
-      assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, delegations });
-      const occupant = occupyingReview(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision }, delegations);
-      if (occupant) {
-        // An authorized same-model court rerun keeps the original job's list.
-        const source = delegations.find((item) => item.id === occupant.delegationId && item.event === "created") || occupant;
-        seated.seatModels = seatModelsFor(source) || seated.seatModels;
-      }
-    }
+    // An authorized court rerun is the same job: it keeps the list its
+    // occupant's brief pinned, whatever the config says now.
+    const occupant = kind === "mrr" ? occupyingReview(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision }, delegations) : null;
+    const pinned = occupant ? seatModelsFor(delegations.find((item) => item.id === occupant.delegationId && item.event === "created") || occupant) : null;
+    const seated = { ...seatingFor(role, flags.model, flags.route, pinned), requested: flags.model || null };
+    if (kind === "mrr") assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, delegations });
+    const launch = launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head });
     const outstanding = kind === "mrr" && role === "deep-code-review"
       ? outstandingForDeep(reviews, stream.claim, target, stream.claimRevision).map(({ id, category, text }) => ({ id, category, text }))
       : [];
@@ -348,7 +345,7 @@ async function main() {
       ...(outstanding.length ? { outstanding } : {}),
       ownerTaskIdAtBrief: stream.ownerTaskId || null
     });
-    const execution = { ...REVIEW_EXECUTION, intended: seated.intended, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
+    const execution = { ...REVIEW_EXECUTION, intended: seated.intended, model: seated.model, route: seated.route, launch };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "bind") {
@@ -371,6 +368,7 @@ async function main() {
     const occupant = occupyingReview(reviews, { role: jobRole, target, claim: stream.claim, claimRevision: stream.claimRevision });
     const outstanding = outstandingOccupantPacket(reviews, occupant, stream.claim).map(({ id, category, text }) => ({ id, category, text }));
     if (!outstanding.length) throw new Error(`${jobRole} occupying NO_GO has no outstanding packet to adjudicate`);
+    const launch = launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head });
     const inventory = await diffInventory(target);
     const project = await store.project(stream.project);
     const delegation = await store.addDelegation(stream.id, {
@@ -378,7 +376,7 @@ async function main() {
       claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, outstanding,
       ownerTaskIdAtBrief: stream.ownerTaskId || null
     });
-    const execution = { ...REVIEW_EXECUTION, intended: null, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
+    const execution = { ...REVIEW_EXECUTION, intended: null, model: seated.model, route: seated.route, launch };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "record") {

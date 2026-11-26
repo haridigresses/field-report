@@ -9,6 +9,7 @@ import test from "node:test";
 import { EXAMPLE_SEATS } from "./support/seats.mjs";
 import { evaluateGate, seatingFor, validateReview } from "../src/policy.mjs";
 import { parseSeatConfig, seatConfig, seatFor, useSeatConfig } from "../src/seats.mjs";
+import { createStore } from "../src/store.mjs";
 
 const exec = promisify(execFile);
 const cli = path.resolve("bin/fr.mjs");
@@ -69,6 +70,7 @@ test("editing the config later does not reinterpret recorded reviews", () => {
     useSeatConfig(withNeon());
     assert.equal(evaluateGate(args).ready, true, "a Grok GO briefed before Grok left the config still counts");
     assert.equal(envelope(pending, "late-grok").model, "grok-4.6", "a Grok brief issued before the edit still records");
+    assert.equal(seatingFor("structural-challenge", "grok-4.6", null, pending.seatModels).model, "grok-4.6", "a court rerun follows the list its occupant pinned");
   } finally { useSeatConfig(null); }
 });
 
@@ -109,4 +111,9 @@ test("fr seats prints the resolved panel, and briefs follow the config", async (
   const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"]));
   assert.deepEqual([brief.delegation.model, brief.delegation.seatModels], ["gemini-4-neon", ["gemini-4-neon"]]);
   assert.equal(brief.execution.launch, "fr-cursor-review --model gemini-4-neon-high --print --output-format stream-json --sandbox enabled --trust < <prompt>");
+  await writeFile(path.join(repo, "README.md"), "staged\n");
+  await exec("git", ["add", "README.md"], { cwd: repo });
+  const before = (await createStore(state).delegations("outcome")).length;
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "crr", "--role", "crr", "--model", "unlisted-model", "--route", "cli"]), /unlisted-model has no launcher in .*config\.json\. List it in a seat's models there, or use --route native/);
+  assert.equal((await createStore(state).delegations("outcome")).length, before, "a launch that cannot resolve writes no brief");
 });
