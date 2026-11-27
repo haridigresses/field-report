@@ -48,7 +48,7 @@ fr list [--project <id>]
 fr show <id> [--json]
 fr context [id]
 fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
-fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli]
+fr review brief <id> --kind crr|mrr --role crr|correctness|design|intent [--model <id>] [--route native|cli]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review record <id> --file <review.json> [--delegation <uuid>]
 fr review accept <id> --finding <F-id> --reason <text> --actor <who>
@@ -144,11 +144,11 @@ function reviewPrompt(stream, delegation, inventory) {
     : `base ${delegation.baseHead} and exact MRR head ${delegation.head}`;
   const rubric = kind === "crr"
     ? "CRR: is this commit competent, and are there any gaps the owner should fix before keeping it? Stay short."
-    : delegation.role === "deep-code-review"
+    : delegation.role === "correctness"
       ? "Inspect correctness, security, data integrity, error paths, regressions, and test adequacy."
-      : delegation.role === "structural-challenge"
-        ? "Inspect necessity, simplicity, authority boundaries, scope, maintainability, and whether you would select the mechanism from scratch."
-        : "Inspect the candidate as the independent challenge lane.";
+      : delegation.role === "design"
+        ? "Inspect how the change is built: necessity, simplicity, authority boundaries, maintainability, and whether you would select the mechanism from scratch."
+        : "Inspect what the change does: whether it does what the stated outcome, claim, and user decisions ask, and only that. Look for assumptions about requirements they do not state, scope drift beyond the claim, and behavior a user would not expect. Return unsettled product choices as questions, not findings.";
   const decisions = (stream.decisions || []).length
     ? `\n\nUser decisions. These are settled product choices; do not re-litigate them:\n${stream.decisions.map((text) => `- ${text}`).join("\n")}`
     : "";
@@ -341,7 +341,7 @@ async function main() {
     const stream = await store.workstream(positional[1]);
     const kind = reviewKind(requireValue(flags.kind, "Specify --kind crr|mrr"));
     if (!kind) throw new Error("Review kind must be crr or mrr");
-    const role = requireValue(flags.role, kind === "crr" ? "Specify --role crr" : "Specify --role deep-code-review|structural-challenge|fable-challenge");
+    const role = requireValue(flags.role, kind === "crr" ? "Specify --role crr" : "Specify --role correctness|design|intent");
     if (kind === "crr" && role !== CRR_ROLE) throw new Error("CRR briefs use --role crr");
     if (kind === "mrr" && !REVIEW_ROLES.includes(role)) throw new Error("MRR briefs use a persona role");
     if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");

@@ -92,7 +92,7 @@ Do not wrap `git commit`, add `fr catchup` / heartbeat, collapse MRR into a fami
 Field Report hardcodes no model names. Your config file lists the models valid for each MRR seat and how each model launches. The installer creates it from [`config/config.example.json`](config/config.example.json) at `~/.config/field-report/config.json` (override the path with `FIELD_REPORT_CONFIG`) and never overwrites it.
 
 ```json
-"structural-challenge": {
+"design": {
   "models": [{ "id": "gemini-4-neon", "launch": "cursor", "cliModel": "gemini-4-neon-high" }]
 }
 ```
@@ -114,6 +114,12 @@ To edit seats and the plan home in a browser instead, run `fr ui` and open `http
 
 - `home` is `repo`, `linear`, `notion`, or `ref`. `reference` is optional free text naming the team, page, or parent document; it does not apply to `repo`.
 - Field Report only prints it, on the `Plans:` line of `fr seats` and `fr context`. The agent reads and writes the plan through its host's MCP connector for that service, and asks the user if it has none.
+
+### Seat names
+
+The seats are `correctness` (bugs, security, data integrity, error paths, tests), `design` (how it is built: whether it is needed, simplicity, boundaries), and `intent` (what it does: whether it matches the stated outcome, claim, and user decisions, and only that).
+
+They were renamed from `deep-code-review`, `structural-challenge`, and `fable-challenge` as a hard cut. Rename those keys in your config file. Reviews recorded under the old names are ignored, not deleted; rerun MRR on open workstreams.
 
 ## My Machines
 
@@ -139,9 +145,9 @@ fr workflow workstream
 fr review brief aon-example --kind crr --role crr
 fr gate crr aon-example
 
-fr review brief aon-example --kind mrr --role deep-code-review
-fr review brief aon-example --kind mrr --role structural-challenge
-fr review brief aon-example --kind mrr --role fable-challenge
+fr review brief aon-example --kind mrr --role correctness
+fr review brief aon-example --kind mrr --role design
+fr review brief aon-example --kind mrr --role intent
 fr gate open aon-example
 # Owner or user may now open a pull request. Field Report does not.
 # Feature work and bot cycles use CRR. Do not re-run MRR because HEAD moved.

@@ -108,7 +108,7 @@ test("normalization cannot erase malformed findings or promote pass into GO", ()
 
 test("normalizeReview drops a supplied legacy flag", () => {
   const persona = normalizeReview({ legacy: true, findings: [], unresolved: [] }, {
-    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
+    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "design",
     claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "grok-4.6", route: "cli"
   });
   assert.equal("legacy" in persona, false);
@@ -116,7 +116,7 @@ test("normalizeReview drops a supplied legacy flag", () => {
 
 test("normalizeReview preserves a supplied MRR tree for validation to reject", () => {
   const normalized = normalizeReview({ tree: "c".repeat(40), findings: [], unresolved: [] }, {
-    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
+    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "design",
     claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "grok-4.6", route: "cli"
   });
   assert.equal(normalized.kind, "mrr");
