@@ -1,7 +1,7 @@
 import "./support/seats.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -26,6 +26,7 @@ async function installedHome() {
   const home = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-"));
   await mkdir(path.join(home, ".local", "bin"), { recursive: true });
   await writeFile(path.join(home, ".local", "bin", "fr"), "#!/bin/sh\n");
+  await writeFile(path.join(home, ".local", "bin", "fr-cursor-review"), "#!/bin/sh\n");
   for (const host of skillHostDirs(home)) {
     await mkdir(host, { recursive: true });
     for (const name of SKILL_NAMES) await symlink(path.join(runtimeRoot, "skills", name), path.join(host, name));
@@ -51,7 +52,8 @@ const allCommands = {
   "claude --version": { code: 0, stdout: "claude 2.0\n" },
   "cursor-agent --version": { code: 0, stdout: "2026.11.22\n" },
   "cursor-agent --list-models": { code: 0, stdout: "Available models\n\ncursor-grok-x-high - Grok X High\nneon-x-high - Neon X\n" },
-  "gh auth status": { code: 0, stdout: "" }
+  "gh auth status": { code: 0, stdout: "" },
+  "zsh --version": { code: 0, stdout: "zsh 5.9\n" }
 };
 
 const byLabel = (results, label) => results.find((item) => item.label === label);
@@ -103,6 +105,9 @@ test("doctor warns when a hook manager owns a tracked pre-commit hook", async ()
   assert.match(byLabel(results, "project plain").detail, /fr hook install plain/);
   assert.equal(byLabel(results, "project gone").level, "warn");
   await writeFile(path.join(repo, ".husky", "pre-commit"), "npm test\nfr gate checkout\n");
+  const unexecutable = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, projects, probe: probeWith(allCommands) });
+  assert.match(byLabel(unexecutable, "project husky").detail, /not executable/);
+  await chmod(path.join(repo, ".husky", "pre-commit"), 0o755);
   const again = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, projects, probe: probeWith(allCommands) });
   assert.equal(byLabel(again, "project husky").level, "ok");
 });
@@ -128,4 +133,20 @@ test("doctor treats core.hooksPath at git's own hooks folder as no manager, and 
   assert.match(byLabel(results, "project default").detail, /checkout hook not installed; run fr hook install default/);
   assert.match(byLabel(results, "project older").detail, /older Field Report hook/);
   assert.match(formatDoctor(results), /^Ready with/m);
+});
+
+test("doctor reads project files itself, fails an unreadable one, and checks the Cursor wrapper and zsh", async () => {
+  const { home, stateRoot } = await installedHome();
+  await mkdir(path.join(stateRoot, "projects"));
+  await writeFile(path.join(stateRoot, "projects", "good.json"), JSON.stringify({ id: "good", repoPath: path.join(home, "gone") }));
+  await writeFile(path.join(stateRoot, "projects", "bad.json"), "{not json");
+  await writeFile(path.join(home, ".local", "bin", "fr-cursor-review"), "");
+  const { rm } = await import("node:fs/promises");
+  await rm(path.join(home, ".local", "bin", "fr-cursor-review"));
+  const commands = { ...allCommands, "zsh --version": { code: "ENOENT", stdout: "" } };
+  const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, probe: probeWith(commands) });
+  assert.equal(byLabel(results, "project file bad.json").level, "fail");
+  assert.equal(byLabel(results, "project good").level, "warn");
+  assert.equal(byLabel(results, "fr-cursor-review").level, "fail");
+  assert.equal(byLabel(results, "zsh").level, "fail");
 });

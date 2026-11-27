@@ -256,11 +256,7 @@ async function main() {
     return process.stdout.write(`Field Report ${version}\nRuntime source: ${runtimeRoot}\nGit revision: ${revision}\n`);
   }
   if (command === "doctor") {
-    // store.projects() initializes state, so only list projects once state exists; doctor stays read-only.
-    const stateRoot = path.resolve(defaultStateRoot());
-    let projects = [];
-    try { await access(path.join(stateRoot, "config.json")); projects = await store.projects(); } catch {}
-    const results = await doctor({ runtimeRoot, stateRoot, loadConfig: seatConfig, projects });
+    const results = await doctor({ runtimeRoot, stateRoot: path.resolve(defaultStateRoot()), loadConfig: seatConfig });
     process.stdout.write(`${formatDoctor(results)}\n`);
     if (results.some((item) => item.level === "fail")) process.exitCode = 1;
     return;

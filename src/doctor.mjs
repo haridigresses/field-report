@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, readFile, readlink } from "node:fs/promises";
+import { access, constants, readdir, readFile, readlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { skillHostDirs, SKILL_NAMES } from "./install.mjs";
@@ -19,7 +19,9 @@ export function defaultProbe() {
     }),
     exists: async (file) => { try { await access(file); return true; } catch { return false; } },
     readlink: async (file) => { try { return await readlink(file); } catch { return null; } },
-    read: async (file) => { try { return await readFile(file, "utf8"); } catch { return null; } }
+    read: async (file) => { try { return await readFile(file, "utf8"); } catch { return null; } },
+    executable: async (file) => { try { await access(file, constants.X_OK); return true; } catch { return false; } },
+    list: async (dir) => { try { return await readdir(dir); } catch { return null; } }
   };
 }
 
@@ -28,7 +30,7 @@ export function cursorModelIds(text) {
   return new Set(String(text).split("\n").map((line) => line.split(" - ")[0].trim()).filter((id) => /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(id)));
 }
 
-export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env = process.env, nodeVersion = process.versions.node, loadConfig, projects = [], probe = defaultProbe() }) {
+export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env = process.env, nodeVersion = process.versions.node, loadConfig, projects = null, probe = defaultProbe() }) {
   const results = [];
   const add = (level, label, detail) => results.push({ level, label, detail });
 
@@ -57,8 +59,20 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
     else add("ok", `skills ${host}`, "linked to this checkout");
   }
 
-  if (await probe.exists(path.join(stateRoot, "config.json"))) add("ok", "state", stateRoot);
+  const initialized = await probe.exists(path.join(stateRoot, "config.json"));
+  if (initialized) add("ok", "state", stateRoot);
   else add("fail", "state", `${stateRoot} is not initialized; run fr init`);
+  // Read project files directly: the store would initialize missing folders.
+  if (projects == null) {
+    projects = [];
+    for (const file of initialized ? ((await probe.list(path.join(stateRoot, "projects"))) || []).filter((name) => name.endsWith(".json")).sort() : []) {
+      try {
+        const project = JSON.parse(await probe.read(path.join(stateRoot, "projects", file)));
+        if (!project?.id || !project?.repoPath) throw new Error("missing id or repoPath");
+        projects.push(project);
+      } catch (error) { add("fail", `project file ${file}`, `unreadable: ${error.message}`); }
+    }
+  }
 
   let config = null;
   try { config = loadConfig(); add("ok", "seat config", "parsed"); }
@@ -77,6 +91,16 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
       const needed = models.some((model) => model.launch === launch && model.isDefault);
       if (available[launch]) add("ok", `${binary} CLI`, result.stdout.trim().split("\n")[0] || "found");
       else add(needed ? "fail" : "warn", `${binary} CLI`, `not found or not runnable; needed for ${models.filter((model) => model.launch === launch).map((model) => `${model.role}: ${model.id}`).join(", ")}`);
+    }
+    if (launches.includes("cursor")) {
+      const wrapper = path.join(binDir, "fr-cursor-review");
+      if (await probe.exists(wrapper)) add("ok", "fr-cursor-review", wrapper);
+      else add("fail", "fr-cursor-review", `missing ${wrapper}; Cursor seats launch through it. Run node scripts/install.mjs`);
+    }
+    // Codex and Claude launch commands run through zsh -ic.
+    if (launches.some((launch) => launch === "codex" || launch === "claude")) {
+      if ((await probe.run("zsh", ["--version"])).code === 0) add("ok", "zsh", "found (codex and claude launches use zsh -ic)");
+      else add("fail", "zsh", "not found; codex and claude launch commands run through zsh -ic");
     }
     let cursorIds = null;
     if (available.cursor) {
@@ -110,7 +134,8 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
     const managedBy = await hookManager(probe, project.repoPath, hook);
     const tracked = (await probe.run("git", ["ls-files", "--error-unmatch", "--", hook], { cwd: project.repoPath })).code === 0;
     const state = hookState(await probe.read(hook));
-    if (state === "installed" || state === "gate") add("ok", label, `checkout gate runs from ${hook}`);
+    if ((state === "installed" || state === "gate") && !(await probe.executable(hook))) add("warn", label, `${hook} runs the gate but is not executable, so git skips it; chmod +x it`);
+    else if (state === "installed" || state === "gate") add("ok", label, `checkout gate runs from ${hook}`);
     else if (state === "outdated") add("warn", label, `an older Field Report hook is at ${hook}; rerun fr hook install ${project.id}`);
     else if (tracked) add("warn", label, `pre-commit hook ${hook} is a tracked file; fr hook install refuses it. Add \`fr gate checkout\` to that hook instead`);
     else if (managedBy) add("warn", label, `core.hooksPath=${managedBy} (a hook manager such as husky or lefthook); fr hook install refuses it. Add \`fr gate checkout\` to that manager's pre-commit hook`);
