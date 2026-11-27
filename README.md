@@ -92,7 +92,7 @@ Do not wrap `git commit`, add `fr catchup` / heartbeat, collapse MRR into a fami
 Field Report hardcodes no model names. Your config file lists the models valid for each MRR seat and how each model launches. The installer creates it from [`config/config.example.json`](config/config.example.json) at `~/.config/field-report/config.json` (override the path with `FIELD_REPORT_CONFIG`) and never overwrites it.
 
 ```json
-"structural-challenge": {
+"design": {
   "models": [{ "id": "gemini-4-neon", "launch": "cursor", "cliModel": "gemini-4-neon-high" }]
 }
 ```
@@ -102,17 +102,24 @@ Field Report hardcodes no model names. Your config file lists the models valid f
 - Model ids match through a `cursor-` prefix and effort suffixes, so `cursor-grok-4.6-high` is `grok-4.6`. A model listed in two seats launches the same way in both.
 - `launch` is `codex`, `claude`, or `cursor` (through `fr-cursor-review`). `--route native` runs any seat as a native subagent instead. `cliModel` is the id that launcher expects, when it differs (Cursor ids carry effort suffixes).
 
-When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
+To edit seats and the plan home in a browser instead, run `fr ui` and open `http://127.0.0.1:4177/settings`. The page is local only, checks the config with the same rules as `fr`, and refuses to save an invalid one. When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
 
 ### Plan home
 
-`plans` in the same config file says where build-ready review (BRR) plans live, as one line of free text. Leave it out to keep plans in `docs/plans/` in each repository.
+`plans` in the same config file says where build-ready review (BRR) plans live. Leave it out to keep plans in `docs/plans/` in each repository.
 
 ```json
-"plans": "ref: Engineering plans"
+"plans": { "home": "ref", "reference": "Engineering plans" }
 ```
 
-Field Report only prints it, on the `Plans:` line of `fr seats` and `fr context`. The agent reads and writes the plan through its host's MCP connector for that service (Linear, Notion, Ref, or another), and asks the user if it has none.
+- `home` is `repo`, `linear`, `notion`, or `ref`. `reference` is optional free text naming the team, page, or parent document; it does not apply to `repo`.
+- Field Report only prints it, on the `Plans:` line of `fr seats` and `fr context`. The agent reads and writes the plan through its host's MCP connector for that service, and asks the user if it has none.
+
+### Seat names
+
+The seats are `correctness` (bugs, security, data integrity, error paths, tests), `design` (how it is built: whether it is needed, simplicity, boundaries), and `intent` (what it does: whether it matches the stated outcome, claim, and user decisions, and only that).
+
+They were renamed from `deep-code-review`, `structural-challenge`, and `fable-challenge` as a hard cut. Rename those keys in your config file. Reviews recorded under the old names are ignored, not deleted; rerun MRR on open workstreams.
 
 ## My Machines
 
@@ -138,9 +145,9 @@ fr workflow workstream
 fr review brief aon-example --kind crr --role crr
 fr gate crr aon-example
 
-fr review brief aon-example --kind mrr --role deep-code-review
-fr review brief aon-example --kind mrr --role structural-challenge
-fr review brief aon-example --kind mrr --role fable-challenge
+fr review brief aon-example --kind mrr --role correctness
+fr review brief aon-example --kind mrr --role design
+fr review brief aon-example --kind mrr --role intent
 fr gate open aon-example
 # Owner or user may now open a pull request. Field Report does not.
 # Feature work and bot cycles use CRR. Do not re-run MRR because HEAD moved.

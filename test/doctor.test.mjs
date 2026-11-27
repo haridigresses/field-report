@@ -16,9 +16,9 @@ const runtimeRoot = path.resolve(".");
 const config = parseSeatConfig({
   schemaVersion: 1,
   seats: {
-    "deep-code-review": { models: [{ id: "gpt-x", launch: "codex" }] },
-    "structural-challenge": { models: [{ id: "grok-x", launch: "cursor", cliModel: "cursor-grok-x-high" }, { id: "neon-x", launch: "cursor", cliModel: "neon-x-high" }] },
-    "fable-challenge": { models: [{ id: "claude-x", launch: "claude" }] }
+    "correctness": { models: [{ id: "gpt-x", launch: "codex" }] },
+    "design": { models: [{ id: "grok-x", launch: "cursor", cliModel: "cursor-grok-x-high" }, { id: "neon-x", launch: "cursor", cliModel: "neon-x-high" }] },
+    "intent": { models: [{ id: "claude-x", launch: "claude" }] }
   }
 });
 
@@ -74,8 +74,8 @@ test("doctor fails a missing default launcher and a missing default cursor model
   const commands = { ...allCommands, "claude --version": { code: "ENOENT", stdout: "" }, "cursor-agent --list-models": { code: 0, stdout: "neon-x-medium - Neon X\n" } };
   const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, probe: probeWith(commands) });
   assert.equal(byLabel(results, "claude CLI").level, "fail");
-  assert.equal(byLabel(results, "structural-challenge default grok-x").level, "fail");
-  assert.equal(byLabel(results, "structural-challenge fallback neon-x").level, "warn");
+  assert.equal(byLabel(results, "design default grok-x").level, "fail");
+  assert.equal(byLabel(results, "design fallback neon-x").level, "warn");
   assert.match(formatDoctor(results), /problem\(s\) to fix/);
 });
 

@@ -12,9 +12,9 @@ const workstream = { claim, claimRevision: 1, ownerTaskId: "owner" };
 const crrTarget = { head, baseHead, tree };
 const mrrTarget = { head, baseHead };
 const models = {
-  "deep-code-review": { model: "gpt-6-astra", provider: "openai" },
-  "structural-challenge": { model: "grok-4.6", provider: "cursor" },
-  "fable-challenge": { model: "claude-fable-5", provider: "anthropic" }
+  "correctness": { model: "gpt-6-astra", provider: "openai" },
+  "design": { model: "grok-4.6", provider: "cursor" },
+  "intent": { model: "claude-fable-5", provider: "anthropic" }
 };
 
 const mrrDelegation = (role, id = randomUUID(), extras = {}) => ({
@@ -64,7 +64,7 @@ const crrComplete = (id, extras = {}) => {
 };
 
 test("a supplied provider label neither fails nor gets recorded", () => {
-  const astra = mrrDelegation("deep-code-review");
+  const astra = mrrDelegation("correctness");
   const recorded = validateReview(mrrEnvelope(astra, "astra-label", { provider: "OpenAI" }), astra);
   assert.equal(recorded.verdict, "GO");
   assert.equal("provider" in recorded, false);
@@ -88,13 +88,13 @@ test("model ids strip Cursor prefixes and effort variants", () => {
 test("crr seating accepts local models; mrr seating takes only the seat's listed models", () => {
   assert.equal(seatingFor(CRR_ROLE).model, "local");
   assert.equal(seatingFor(CRR_ROLE, "composer-2").model, "composer-2");
-  assert.equal(seatingFor("deep-code-review").model, "gpt-6-astra");
-  assert.deepEqual(seatingFor("deep-code-review").seatModels, ["gpt-6-astra", "gpt-5.6-sol"]);
-  assert.equal(seatingFor("structural-challenge", "cursor-grok-4.6-high").model, "grok-4.6");
-  const fable = seatingFor("fable-challenge", "claude-fable-5");
+  assert.equal(seatingFor("correctness").model, "gpt-6-astra");
+  assert.deepEqual(seatingFor("correctness").seatModels, ["gpt-6-astra", "gpt-5.6-sol"]);
+  assert.equal(seatingFor("design", "cursor-grok-4.6-high").model, "grok-4.6");
+  const fable = seatingFor("intent", "claude-fable-5");
   assert.deepEqual([fable.model, fable.intended], ["claude-fable-5", "claude-opus-5-5"]);
-  assert.throws(() => seatingFor("fable-challenge", "claude-sonnet-5"), /claude-sonnet-5 is not a valid fable-challenge model \(valid: claude-opus-5-5, claude-fable-5-1, claude-fable-5\)\. Add it to seats\.fable-challenge\.models/);
-  assert.throws(() => seatingFor("fable-challenge", "gpt-6-astra"), /not a valid fable-challenge model/);
+  assert.throws(() => seatingFor("intent", "claude-sonnet-5"), /claude-sonnet-5 is not a valid intent model \(valid: claude-opus-5-5, claude-fable-5-1, claude-fable-5\)\. Add it to seats\.intent\.models/);
+  assert.throws(() => seatingFor("intent", "gpt-6-astra"), /not a valid intent model/);
   assert.throws(() => seatingFor("cheap-review"), /Unknown review role/);
 });
 
@@ -119,33 +119,33 @@ test("crr gate needs one finding-free GO, not three personas", () => {
 
 test("crr findings do not enter the MRR finding ledger", () => {
   const crr = crrComplete("crr-1", { verdict: "NO_GO", findings: ["Gap in tests"] });
-  const mrr = mrrComplete("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Authority boundary is unsound"] });
-  assert.deepEqual(findingLedger([crr, mrr]).map((item) => [item.id, item.role]), [["F1", "structural-challenge"]]);
+  const mrr = mrrComplete("design", "grok-run", { verdict: "NO_GO", findings: ["Authority boundary is unsound"] });
+  assert.deepEqual(findingLedger([crr, mrr]).map((item) => [item.id, item.role]), [["F1", "design"]]);
 });
 
 test("mrr gate requires a review from every seat", () => {
   const reviews = [
-    mrrComplete("deep-code-review", "sol-run"),
-    mrrComplete("structural-challenge", "grok-run"),
-    mrrComplete("fable-challenge", "fable-run")
+    mrrComplete("correctness", "sol-run"),
+    mrrComplete("design", "grok-run"),
+    mrrComplete("intent", "fable-run")
   ];
   assert.equal(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews }).ready, true);
   const missing = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: reviews.slice(0, 2) });
   assert.equal(missing.ready, false);
-  assert.match(missing.reasons.join(" "), /missing fable-challenge review/);
+  assert.match(missing.reasons.join(" "), /missing intent review/);
   assert.throws(() => evaluateGate({ kind: "coverage", target: mrrTarget, workstream, reviews }), /crr or mrr/);
 });
 
 test("a review counts only when its model is on the list its brief pinned", () => {
-  const neon = mrrDelegation("structural-challenge", undefined, { model: "gemini-4-neon", seatModels: ["gemini-4-neon"] });
+  const neon = mrrDelegation("design", undefined, { model: "gemini-4-neon", seatModels: ["gemini-4-neon"] });
   const recorded = validateReview(mrrEnvelope(neon, "neon-run", { model: "gemini-4-neon-high" }), neon);
   assert.deepEqual([recorded.model, recorded.seatModels], ["gemini-4-neon", ["gemini-4-neon"]]);
-  const others = [mrrComplete("deep-code-review", "astra-run"), mrrComplete("fable-challenge", "fable-run")];
+  const others = [mrrComplete("correctness", "astra-run"), mrrComplete("intent", "fable-run")];
   assert.equal(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [others[0], recorded, others[1]] }).ready, true);
-  const grokBrief = mrrDelegation("structural-challenge");
+  const grokBrief = mrrDelegation("design");
   assert.throws(() => validateReview(mrrEnvelope(grokBrief, "swap", { model: "gpt-6-astra" }), grokBrief), /Review model must match its exact delegation/);
   const offList = { ...grokBrief, model: "gpt-6-astra" };
-  assert.throws(() => validateReview(mrrEnvelope(offList, "off-list"), offList), /structural-challenge review model gpt-6-astra is not on its brief's valid list/);
+  assert.throws(() => validateReview(mrrEnvelope(offList, "off-list"), offList), /design review model gpt-6-astra is not on its brief's valid list/);
 });
 
 test("one model may fill every seat when the config lists it there", () => {
@@ -165,72 +165,72 @@ test("a seat's review of an earlier head carries forward, and the gate prints th
   const carried = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews, ancestors: new Map([[head, 0], [older, 1]]) });
   assert.equal(carried.ready, true);
   assert.equal(carried.notes.length, 3);
-  assert.match(carried.notes[0], /deep-code-review: GO at dddddddddddd carried; dddddddddddd\.\.aaaaaaaaaaaa not reviewed by this seat/);
+  assert.match(carried.notes[0], /correctness: GO at dddddddddddd carried; dddddddddddd\.\.aaaaaaaaaaaa not reviewed by this seat/);
   const unrelated = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews, ancestors: new Map([[head, 0]]) });
-  assert.match(unrelated.reasons.join(" "), /missing deep-code-review review/);
+  assert.match(unrelated.reasons.join(" "), /missing correctness review/);
 });
 
 test("after a fix only the failing seat reruns", () => {
   const before = [
-    at(mrrComplete("deep-code-review", "sol-run"), older),
-    at(mrrComplete("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] }), older),
-    at(mrrComplete("fable-challenge", "fable-run"), older)
+    at(mrrComplete("correctness", "sol-run"), older),
+    at(mrrComplete("design", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] }), older),
+    at(mrrComplete("intent", "fable-run"), older)
   ];
   const ancestors = new Map([[head, 0], [older, 1]]);
   const pending = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: before, ancestors });
   assert.equal(pending.ready, false);
-  assert.match(pending.reasons.join(" "), /structural-challenge NO_GO at dddddddddddd; rerun this seat after the fix: F1: Unsound boundary/);
-  const rerun = [...before, mrrComplete("structural-challenge", "grok-rerun")];
+  assert.match(pending.reasons.join(" "), /design NO_GO at dddddddddddd; rerun this seat after the fix: F1: Unsound boundary/);
+  const rerun = [...before, mrrComplete("design", "grok-rerun")];
   const ready = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: rerun, ancestors });
   assert.equal(ready.ready, true);
-  assert.deepEqual(ready.notes.map((note) => note.split(":")[0]), ["deep-code-review", "fable-challenge"]);
+  assert.deepEqual(ready.notes.map((note) => note.split(":")[0]), ["correctness", "intent"]);
 });
 
 test("the reviewed commit nearest HEAD decides a seat, whatever order reviews were recorded in", () => {
   const middle = "e".repeat(40);
   const reviews = [
-    mrrComplete("deep-code-review", "sol-run"),
-    at(mrrComplete("structural-challenge", "grok-new", { verdict: "NO_GO", findings: ["Newer defect"] }), middle),
-    at(mrrComplete("structural-challenge", "grok-late"), older),
-    mrrComplete("fable-challenge", "fable-run")
+    mrrComplete("correctness", "sol-run"),
+    at(mrrComplete("design", "grok-new", { verdict: "NO_GO", findings: ["Newer defect"] }), middle),
+    at(mrrComplete("design", "grok-late"), older),
+    mrrComplete("intent", "fable-run")
   ];
   const gate = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews, ancestors: new Map([[head, 0], [middle, 1], [older, 2]]) });
   assert.equal(gate.ready, false);
-  assert.match(gate.reasons.join(" "), /structural-challenge NO_GO at eeeeeeeeeeee; rerun this seat after the fix: F1: Newer defect/);
+  assert.match(gate.reasons.join(" "), /design NO_GO at eeeeeeeeeeee; rerun this seat after the fix: F1: Newer defect/);
 });
 
 test("READY lists reviewers' open questions for the user", () => {
   const reviews = [
-    mrrComplete("deep-code-review", "sol-run", { questions: ["Should old reviews be discarded?"] }),
-    mrrComplete("structural-challenge", "grok-run"),
-    mrrComplete("fable-challenge", "fable-run")
+    mrrComplete("correctness", "sol-run", { questions: ["Should old reviews be discarded?"] }),
+    mrrComplete("design", "grok-run"),
+    mrrComplete("intent", "fable-run")
   ];
   const gate = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
   assert.equal(gate.ready, true);
-  assert.deepEqual(gate.notes, ["deep-code-review asks the user: Should old reviews be discarded?"]);
+  assert.deepEqual(gate.notes, ["correctness asks the user: Should old reviews be discarded?"]);
 });
 
 test("a NO_GO on the exact head cannot be shopped away by another review of that head", () => {
   const reviews = [
-    mrrComplete("deep-code-review", "sol-run"),
-    mrrComplete("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] }),
-    mrrComplete("structural-challenge", "grok-again"),
-    mrrComplete("fable-challenge", "fable-run")
+    mrrComplete("correctness", "sol-run"),
+    mrrComplete("design", "grok-run", { verdict: "NO_GO", findings: ["Unsound boundary"] }),
+    mrrComplete("design", "grok-again"),
+    mrrComplete("intent", "fable-run")
   ];
   const gate = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
   assert.equal(gate.ready, false);
-  assert.match(gate.reasons.join(" "), /structural-challenge NO_GO on this head; fix on a new head and rerun this seat, or record the user's acceptance/);
+  assert.match(gate.reasons.join(" "), /design NO_GO on this head; fix on a new head and rerun this seat, or record the user's acceptance/);
   const scope = { target: mrrTarget, claim, claimRevision: 1 };
-  assert.throws(() => assertSeatOpen(reviews, { role: "structural-challenge", ...scope }), /already reviewed this head \(NO_GO\); fix on a new head to rerun it, or record the user's acceptance/);
-  assert.throws(() => assertSeatOpen(reviews, { role: "deep-code-review", ...scope }), /already reviewed this head \(GO\); fix on a new head to rerun it$/);
-  assert.doesNotThrow(() => assertSeatOpen([], { role: "deep-code-review", ...scope }));
+  assert.throws(() => assertSeatOpen(reviews, { role: "design", ...scope }), /already reviewed this head \(NO_GO\); fix on a new head to rerun it, or record the user's acceptance/);
+  assert.throws(() => assertSeatOpen(reviews, { role: "correctness", ...scope }), /already reviewed this head \(GO\); fix on a new head to rerun it$/);
+  assert.doesNotThrow(() => assertSeatOpen([], { role: "correctness", ...scope }));
 });
 
 test("the user's acceptance clears a finding, and READY says so", () => {
   const reviews = [
-    mrrComplete("deep-code-review", "sol-run"),
-    mrrComplete("structural-challenge", "grok-run", { verdict: "NO_GO", findings: ["Unlikely edge", "Real bug"] }),
-    mrrComplete("fable-challenge", "fable-run")
+    mrrComplete("correctness", "sol-run"),
+    mrrComplete("design", "grok-run", { verdict: "NO_GO", findings: ["Unlikely edge", "Real bug"] }),
+    mrrComplete("intent", "fable-run")
   ];
   const accept = (findingId) => ({ findingId, actor: "user", reason: "Fails safe; not worth a fix" });
   const partial = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews, dispositions: [accept("F1")] });
@@ -239,7 +239,7 @@ test("the user's acceptance clears a finding, and READY says so", () => {
   assert.doesNotMatch(partial.reasons.join(" "), /F1/);
   const ready = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews, dispositions: [accept("F1"), accept("F2")] });
   assert.equal(ready.ready, true);
-  assert.deepEqual(ready.notes, ["structural-challenge F1 accepted by user: Fails safe; not worth a fix", "structural-challenge F2 accepted by user: Fails safe; not worth a fix"]);
+  assert.deepEqual(ready.notes, ["design F1 accepted by user: Fails safe; not worth a fix", "design F2 accepted by user: Fails safe; not worth a fix"]);
 });
 
 test("editing the config later does not reinterpret recorded reviews", () => {
@@ -253,7 +253,7 @@ test("reviews of an earlier claim do not count for a revised claim", () => {
   const reviews = REVIEW_ROLES.map((role, i) => mrrComplete(role, `run-${i}`));
   const revised = evaluateGate({ kind: "mrr", target: mrrTarget, workstream: { ...workstream, claim: "Revised claim", claimRevision: 2 }, reviews });
   assert.equal(revised.ready, false);
-  assert.match(revised.reasons.join(" "), /missing deep-code-review review/);
+  assert.match(revised.reasons.join(" "), /missing correctness review/);
 });
 
 test("bots gate rejects branch, base, and unsuccessful checks without draft ceremony", () => {
@@ -312,25 +312,25 @@ test("bots gate blocks duplicate PR ownership", () => {
 test("mrr reviewer task IDs are distinct", () => {
   const duplicate = evaluateGate({
     kind: "mrr", target: mrrTarget, workstream,
-    reviews: [mrrComplete("deep-code-review", "same"), mrrComplete("structural-challenge", "same"), mrrComplete("fable-challenge", "fable-run")]
+    reviews: [mrrComplete("correctness", "same"), mrrComplete("design", "same"), mrrComplete("intent", "fable-run")]
   });
   assert.match(duplicate.reasons.join(" "), /distinct reviewer task IDs/);
 });
 
 test("latestClaimReviews keeps the latest seat on the claim even when HEAD moved", () => {
-  const stale = { ...mrrComplete("structural-challenge", "grok-old"), head: "d".repeat(40) };
+  const stale = { ...mrrComplete("design", "grok-old"), head: "d".repeat(40) };
   const latest = latestClaimReviews([
     stale,
-    mrrComplete("structural-challenge", "grok-new", { verdict: "NO_GO", findings: ["Later defect"] }),
+    mrrComplete("design", "grok-new", { verdict: "NO_GO", findings: ["Later defect"] }),
     crrComplete("crr-1")
   ], workstream);
-  assert.equal(latest["structural-challenge"].reviewerTaskId, "grok-new");
+  assert.equal(latest["design"].reviewerTaskId, "grok-new");
   assert.equal(latest.crr.reviewerTaskId, "crr-1");
-  assert.equal(latest["deep-code-review"], null);
+  assert.equal(latest["correctness"], null);
 });
 
 test("a verdict must match its findings; questions are recorded and reconciliations are not", () => {
-  const d = mrrDelegation("deep-code-review");
+  const d = mrrDelegation("correctness");
   assert.throws(() => validateReview(mrrEnvelope(d, "sol-empty", { verdict: "NO_GO" }), d), /NO_GO requires at least one finding or unresolved item/);
   assert.throws(() => validateReview(mrrEnvelope(d, "sol-go", { findings: ["Bug"] }), d), /GO cannot carry findings/);
   const recorded = validateReview({ ...mrrEnvelope(d, "sol-q", { questions: ["Should old reviews be discarded?"] }), reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "x" }] }, d);

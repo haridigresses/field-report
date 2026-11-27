@@ -1,13 +1,23 @@
 import { readFileSync } from "node:fs";
+import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Field Report knows no model names. The user's config file lists the models
 // valid for each MRR seat (the first is the default) and how each launches.
 // The shipped example seats three labs; that is a suggestion, not a rule. A
 // model may serve several seats.
 
-export const REVIEW_ROLES = ["deep-code-review", "structural-challenge", "fable-challenge"];
+export const REVIEW_ROLES = ["correctness", "design", "intent"];
+// What each seat checks; shown on the settings page.
+export const SEAT_PURPOSES = {
+  correctness: "Bugs, security, data integrity, error paths, and whether the tests cover them.",
+  design: "How it is built: whether it is needed, whether it is the simplest mechanism, and whether it respects boundaries.",
+  intent: "What it does: whether it matches the stated outcome, claim, and your decisions, and nothing more."
+};
+// Only for the error message after the rename; old keys are never accepted.
+const RENAMED_SEATS = { "deep-code-review": "correctness", "structural-challenge": "design", "fable-challenge": "intent" };
 // Each launcher runs reviewers without MCP servers.
 export const LAUNCHERS = ["codex", "claude", "cursor"];
 const NAME = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
@@ -50,6 +60,7 @@ export function normalizeId(model) {
 
 function parseModel(entry, label) {
   onlyKeys(object(entry, label), ["id", "launch", "cliModel"], label);
+  if (typeof entry.id !== "string" || !entry.id.trim()) fail(`${label}.id is missing; give each model an id`);
   const id = normalizeId(entry.id);
   if (!id || id !== String(entry.id).trim().toLowerCase()) fail(`${label}.id must be a bare model id without a cursor- prefix or effort suffix (got ${JSON.stringify(entry.id)})`);
   if (!LAUNCHERS.includes(entry.launch)) fail(`${label}.launch must be one of ${LAUNCHERS.join(", ")}`);
@@ -57,13 +68,20 @@ function parseModel(entry, label) {
   return { id, launch: entry.launch, cliModel: entry.cliModel?.trim() || id };
 }
 
-// Where BRR plans live, as free text the agent reads (for example
-// "ref: Engineering plans"). Field Report only prints it; the agent reads and
-// writes the plan through its host's MCP connector for that service.
+// Where BRR plans live: a service, plus an optional free-text reference
+// (team, page, parent document). Field Report only prints it; the agent reads
+// and writes the plan through its host's MCP connector for that service.
+export const PLAN_HOMES = ["repo", "linear", "notion", "ref"];
+const PLAN_HOME_NAMES = { repo: "this repository", linear: "Linear", notion: "Notion", ref: "Ref" };
+
 function parsePlans(raw) {
   if (raw == null) return null;
-  if (typeof raw !== "string" || !raw.trim() || /[\u0000-\u001f\u007f]/.test(raw)) fail("plans must be a single line of text, such as \"ref: Engineering plans\"");
-  return raw.trim();
+  onlyKeys(object(raw, "plans"), ["home", "reference"], "plans");
+  if (!PLAN_HOMES.includes(raw.home)) fail(`plans.home must be one of ${PLAN_HOMES.join(", ")}`);
+  if (raw.reference == null) return { home: raw.home, reference: null };
+  if (raw.home === "repo") fail("plans.reference does not apply to repo; repo plans go in docs/plans/");
+  if (typeof raw.reference !== "string" || !raw.reference.trim() || /[\u0000-\u001f\u007f]/.test(raw.reference)) fail("plans.reference must be a single line of text");
+  return { home: raw.home, reference: raw.reference.trim() };
 }
 
 export function parseSeatConfig(raw) {
@@ -72,6 +90,7 @@ export function parseSeatConfig(raw) {
   onlyKeys(raw, ["schemaVersion", "seats", "plans"], "the config");
   const rawSeats = object(raw.seats, "seats");
   const unknown = Object.keys(rawSeats).find((role) => !REVIEW_ROLES.includes(role));
+  if (unknown && RENAMED_SEATS[unknown]) fail(`seats were renamed (${Object.entries(RENAMED_SEATS).map(([old, now]) => `${old} → ${now}`).join(", ")}); rename the keys in ${configPath()}`);
   if (unknown) fail(`seats has unknown seat ${unknown}; seats are ${REVIEW_ROLES.join(", ")}`);
   const seats = {};
   const launches = new Map();
@@ -130,5 +149,38 @@ export function modelsLaunchedBy(launch) {
 }
 
 export function describePlans() {
-  return seatConfig().plans || "docs/plans/ in this repository";
+  const plans = seatConfig().plans;
+  if (!plans || plans.home === "repo") return "docs/plans/ in this repository";
+  const name = PLAN_HOME_NAMES[plans.home];
+  return `${name}${plans.reference ? `: ${plans.reference}` : ""}, through this host's ${name} MCP connector`;
+}
+
+// For the settings page: the file as written (or the shipped example when
+// there is none yet), plus any parse error, without throwing.
+export async function readRawConfig(file = configPath()) {
+  let text;
+  try { text = await readFile(file, "utf8"); }
+  catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    const example = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "config", "config.example.json");
+    return { path: file, exists: false, raw: JSON.parse(await readFile(example, "utf8")), error: null };
+  }
+  let raw;
+  try { raw = JSON.parse(text); } catch (error) { return { path: file, exists: true, raw: null, error: `${file} is not valid JSON: ${error.message}` }; }
+  try { parseSeatConfig(raw); return { path: file, exists: true, raw, error: null }; }
+  catch (error) { return { path: file, exists: true, raw, error: error.message }; }
+}
+
+// Validate with the same parser the CLI uses, then replace the file atomically.
+export async function saveSeatConfig(raw, file = configPath()) {
+  const config = parseSeatConfig(raw);
+  await mkdir(path.dirname(file), { recursive: true });
+  // Write through a symlink (a dotfiles repo, say) instead of replacing it.
+  let target = file;
+  try { target = await realpath(file); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  const temporary = `${target}.${process.pid}.next`;
+  await writeFile(temporary, `${JSON.stringify(raw, null, 2)}\n`);
+  await rename(temporary, target);
+  active = { source: file, config };
+  return config;
 }
