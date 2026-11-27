@@ -81,7 +81,7 @@ fr project update aon --todos linear --todos-reference "ENG, label agent-todo"
 
 `--todos` is `github`, `linear`, `notion`, or `ref`. The reference is free text: a repo and label for GitHub, a team and label for Linear, a database or page for Notion, a parent ref for Ref. Changing the service drops the old reference unless you give a new one; `--clear-todos-reference` removes it. `fr context` prints it on its `Todos:` line and `fr project list` shows it. Owners need that service's CLI or MCP connector authorized; reviewers never file todos.
 
-Agents may self-register an unbound branch with `fr create`, or bind the correct existing outcome with `fr update --branch <current> --owner-task <current-task>`. The checkout hook only checks that the branch is bound. It does not run a review panel and must not grow one.
+Every feature branch of a registered project is a workstream: the first `fr` command or commit on it registers one, named `<project>-<branch>` and owned by the current Codex or Claude Code session when FR can tell which one. It starts without an outcome; CRR reviews the change on its own merits, and MRR refuses until `fr update <id> --outcome <text>` sets one. The base branch and a detached HEAD are never registered. Set the outcome before CRR when you know it: setting it changes the claim, so CRR recorded before then no longer counts. To put an existing outcome on this branch instead, run `fr update <id> --branch <current>`; it takes the branch from a workstream registered for it automatically, as long as that one has no outcome. The checkout hook only binds or registers the branch. It does not run a review panel and must not grow one.
 
 Repo `.cursor/permissions.json` is Auto-review classifier steering so review CLI launches are not treated as sensitive egress. It is not a Cursor IDE executable allowlist; that remains Settings → Agents → Approvals & Execution. Reviews never require permission.
 
@@ -137,27 +137,28 @@ Start that worker for this checkout only. Route a Cloud Agent from the environme
 
 ```bash
 fr identity --role owner
-fr create aon-example --project aon --title "Example" --outcome "Deliver the bounded outcome" --branch cursor/example
-fr context aon-example
-fr update aon-example --next "CRR the staged tree, then commit"
+git switch -c cursor/example
+fr context                          # registers aon-cursor-example
+fr update aon-cursor-example --outcome "Deliver the bounded outcome"
+fr update aon-cursor-example --next "CRR the staged tree, then commit"
 fr workflow workstream
 
 # Before git commit on a commit you intend to keep:
-fr review brief aon-example --kind crr --role crr
-fr gate crr aon-example
+fr review brief aon-cursor-example --kind crr --role crr
+fr gate crr aon-cursor-example
 
-fr review brief aon-example --kind mrr --role correctness
-fr review brief aon-example --kind mrr --role design
-fr review brief aon-example --kind mrr --role intent
-fr gate open aon-example
+fr review brief aon-cursor-example --kind mrr --role correctness
+fr review brief aon-cursor-example --kind mrr --role design
+fr review brief aon-cursor-example --kind mrr --role intent
+fr gate open aon-cursor-example
 # Owner or user may now open a pull request. Field Report does not.
 # Feature work and bot cycles use CRR. Do not re-run MRR because HEAD moved.
 
 # Earlier seat reviews carry forward. When the user asks for final MRR, rerun the seats on the current HEAD.
 # Only when the user explicitly accepts a finding:
-# fr review accept aon-example --finding F3 --reason "<the user's reason>" --actor user
+# fr review accept aon-cursor-example --finding F3 --reason "<the user's reason>" --actor user
 
-fr gate bots aon-example
+fr gate bots aon-cursor-example
 ```
 
 ## License

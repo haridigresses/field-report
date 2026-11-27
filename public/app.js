@@ -52,7 +52,7 @@ function row(stream) {
   const scoreBit = scores ? `Readiness ${scores.mergeReadiness}% · risk ${scores.structuralRisk}%` : "";
   const attention = [signals.length ? signals.join(" · ") : "", scoreBit].filter(Boolean).join(" · ") || "No active signal";
   return `<button class="row" data-id="${escape(stream.id)}">
-    <span><strong>${escape(stream.title)}</strong><small>${escape(stream.next || stream.summary)}</small></span>
+    <span><strong>${escape(stream.title)}</strong><small>${escape(stream.next || stream.summary || "")}</small></span>
     <span>${escape(stream.status)}</span>
     <span>${escape(prLabel(stream))}</span>
     <span class="${tone}">${escape(attention)}</span>
@@ -69,7 +69,7 @@ function open(stream) {
   const reviews = stream.reviews.slice().reverse();
   const score = (review) => review.scores ? `<br><small>Readiness ${review.scores.mergeReadiness}% · Structural risk ${review.scores.structuralRisk}% · Implementation quality ${review.scores.implementationQuality}% · Evidence confidence ${review.scores.evidenceConfidence}% · Outcome confidence ${review.scores.outcomeConfidence}%</small><br><small>${escape(Object.values(review.scoreRationale || {}).join(" · "))}</small>` : "";
   const signals = (review) => review.necessity ? `<br><small>Necessity ${escape(review.necessity)} · Scope drift ${escape(review.scopeDrift)} · Contract integrity ${escape(review.contractIntegrity)} · Evidence quality ${escape(review.evidenceQuality)}</small><br><small>Simpler path: ${escape(review.simplerPath)}</small>` : "";
-  detailBody.innerHTML = `<p class="eyebrow">${escape(stream.project)} · ${escape(stream.id)}</p><h2>${escape(stream.title)}</h2><p>${escape(stream.summary)}</p>
+  detailBody.innerHTML = `<p class="eyebrow">${escape(stream.project)} · ${escape(stream.id)}</p><h2>${escape(stream.title)}</h2><p>${escape(stream.summary || "No outcome set yet.")}</p>
     <dl><div><dt>Status</dt><dd>${escape(stream.status)}</dd></div><div><dt>Branch</dt><dd>${escape(stream.branch || "None")}</dd></div><div><dt>Owner session</dt><dd>${escape(stream.ownerTaskId || "Unassigned")}</dd></div></dl>
     <h3>Claim</h3><p>${escape(stream.claim || "Not recorded")}</p>
     <h3>Next</h3><p>${escape(stream.next || "Not recorded")}</p>

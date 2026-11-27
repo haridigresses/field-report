@@ -6,6 +6,8 @@ import path from "node:path";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const DEFAULT_ROOT = path.join(os.homedir(), ".local", "state", "field-report");
 
+export const NO_OUTCOME_CLAIM = "No outcome set yet; review the change on its own merits.";
+
 function requiredString(value, label, max = 1200) {
   const text = String(value || "").trim();
   if (!text || text.length > max || /[\0]/.test(text)) throw new Error(`${label} must be between 1 and ${max} characters`);
@@ -181,7 +183,9 @@ export function createStore(root = defaultStateRoot()) {
   // One-time v2 claim migration: records saved before the dedicated delivery
   // claim existed used summary as the implicit claim; preserve that reading
   // until the record is next saved.
-  function withClaim(value) { return value ? { ...value, claim: value.claim ?? value.summary, claimRevision: value.claimRevision ?? 1 } : value; }
+  // A branch registered automatically has no outcome until someone sets one;
+  // CRR still reviews its change on its own merits, and MRR waits for the outcome.
+  function withClaim(value) { return value ? { ...value, claim: value.claim ?? value.summary ?? NO_OUTCOME_CLAIM, claimRevision: value.claimRevision ?? 1 } : value; }
 
   async function workstreams() {
     await init();
@@ -205,16 +209,17 @@ export function createStore(root = defaultStateRoot()) {
       const status = value.status || previous.status || "planned";
       if (!["planned", "active", "blocked", "complete"].includes(status)) throw new Error("Status must be planned, active, blocked, or complete");
       const previousClaim = previous.claim ?? previous.summary ?? null;
-      const claim = requiredString(value.claim ?? previousClaim ?? value.summary ?? value.outcome ?? previous.outcome, "Delivery claim");
+      const given = value.claim === NO_OUTCOME_CLAIM ? null : value.claim;
+      const claim = optionalString(given ?? previousClaim ?? value.summary ?? value.outcome ?? previous.outcome, "Delivery claim");
       const record = {
       schemaVersion: 2,
       revision: (previous.revision || 0) + 1,
       id: id(value.id, "Workstream ID"),
       project: id(value.project, "Project ID"),
       title: requiredString(value.title || previous.title, "Title", 200),
-      outcome: requiredString(value.outcome || previous.outcome || value.summary || previous.summary, "Outcome"),
+      outcome: optionalString(value.outcome || previous.outcome || value.summary || previous.summary, "Outcome"),
       status,
-      summary: requiredString(value.summary || previous.summary || value.outcome || previous.outcome, "Summary"),
+      summary: optionalString(value.summary || previous.summary || value.outcome || previous.outcome, "Summary"),
       claim,
       claimRevision: previous.id ? (previous.claimRevision ?? 1) + (claim === previousClaim ? 0 : 1) : 1,
       next: optionalString(value.next ?? previous.next, "Next action", 400),

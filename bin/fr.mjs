@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
-import { createStore, defaultStateRoot, describePlans, describeTodos, destinationTarget, plansFor, todosFor } from "../src/store.mjs";
+import { createStore, defaultStateRoot, NO_OUTCOME_CLAIM, describePlans, describeTodos, destinationTarget, plansFor, todosFor } from "../src/store.mjs";
 import { assertSeatOpen, botsReasons, CRR_ROLE, evaluateGate, findingLedger, identityKey, latestClaimReviews, openReasons, reviewKind, REVIEW_ROLES, seatingFor, seatStatus, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { ancestorHeads, checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookManagerPath, hookState, hookText, isManagedHook, quote, shouldRunPreserved } from "../src/hooks.mjs";
@@ -51,7 +51,7 @@ fr create <id> --project <id> --title <title> --outcome <text> [--branch <branch
 fr list [--project <id>]
 fr show <id> [--json]
 fr context [id]
-fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
+fr update <id> [--status planned|active|blocked|complete] [--outcome <text>] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
 fr review brief <id> --kind crr|mrr --role crr|correctness|design|intent [--model <id>] [--route native|cli]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review record <id> --file <review.json> [--delegation <uuid>]
@@ -107,6 +107,19 @@ async function projectForCheckout() {
   throw new Error("No Field Report project matches this checkout");
 }
 
+// The session acting, when the host says which one it is.
+const sessionId = () => process.env.CODEX_THREAD_ID || process.env.CLAUDE_CODE_SESSION_ID || null;
+
+// A workstream id for a branch: the project, then the branch as a slug.
+function branchStreamId(projectId, branch, taken) {
+  const slug = `${projectId}-${branch}`.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/-+/g, "-").replace(/^[-_]+|[-_]+$/g, "").slice(0, 90).replace(/[-_]+$/, "");
+  let candidate = slug;
+  for (let n = 2; taken.has(candidate); n += 1) candidate = `${slug}-${n}`;
+  return candidate;
+}
+
+// Any feature branch of a registered project is a workstream: the first fr
+// command on it registers one. The base branch and a detached HEAD are not.
 async function streamForCheckout(explicit = null) {
   const [project, state] = await Promise.all([projectForCheckout(), checkout()]);
   if (explicit) {
@@ -116,14 +129,24 @@ async function streamForCheckout(explicit = null) {
     }
     return stream;
   }
-  const streams = await store.workstreams();
-  const matches = streams.filter((stream) => stream.project === project.id && stream.branch === state.branch);
-  if (matches.length !== 1) {
-    if (matches.length) throw new Error(`Multiple workstreams match ${state.branch}; keep one branch binding and move the others with fr update <id> --branch <branch>`);
-    const owner = process.env.CODEX_THREAD_ID || "<your-task-id>";
-    throw new Error(`No workstream matches ${project.id}/${state.branch}. Self-register without coordinator approval: fr create ${quote("<id>")} --project ${project.id} --title ${quote("<title>")} --outcome ${quote("<outcome>")} --branch ${quote(state.branch)} --owner-task ${quote(owner)}. To self-bind an existing outcome: fr update ${quote("<id>")} --branch ${quote(state.branch)} --owner-task ${quote(owner)}`);
+  const bound = async () => (await store.workstreams()).filter((stream) => stream.project === project.id && stream.branch === state.branch);
+  const matches = await bound();
+  if (matches.length > 1) throw new Error(`Multiple workstreams match ${state.branch}; keep one branch binding and move the others with fr update <id> --branch <branch>`);
+  if (matches.length) return matches[0];
+  if (!state.branch || state.branch === "HEAD") throw new Error("Field Report needs a branch; this checkout has a detached HEAD");
+  if (state.branch === project.baseBranch) throw new Error(`${state.branch} is ${project.id}'s base branch; work on a feature branch`);
+  const taken = new Set((await store.workstreams()).map((stream) => stream.id));
+  const owner = sessionId();
+  try {
+    const created = await store.saveWorkstream({ id: branchStreamId(project.id, state.branch, taken), project: project.id, title: state.branch, branch: state.branch, ownerTaskId: owner }, { type: "created", text: `Registered branch ${state.branch}`, actor: owner });
+    process.stderr.write(`Field Report registered ${created.id} for ${state.branch}. Before MRR, set its outcome: fr update ${created.id} --outcome "<what this branch delivers>"\n`);
+    return store.workstream(created.id);
+  } catch (error) {
+    // Another fr command registered this branch first.
+    const again = await bound();
+    if (again.length === 1) return again[0];
+    throw error;
   }
-  return matches[0];
 }
 
 async function targetFor(stream, kind) {
@@ -167,7 +190,7 @@ function reviewPrompt(stream, delegation, inventory) {
   const mrr = kind === "mrr"
     ? " Review the complete changed authority boundary and judge the accumulated mechanism, not only the latest repair. Do not defer to the owner's framing, passing tests, or other reviewers. Findings are defects in the candidate that should block it: bugs, broken invariants, security or data problems, or a candidate too broad to assess. Weigh likelihood and blast radius; an unlikely edge case that fails safely belongs in the summary, not findings. If accepting the change depends on a product choice the user has not settled and the user decisions above do not cover, put it in questions as a plain question for the user; a question alone is not a NO_GO, and you must not pick the answer."
     : "";
-  return `Independently review Field Report workstream ${stream.id} as ${delegation.role} using model ${delegation.model}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim JSON string: ${JSON.stringify(delegation.claim)}\n${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run fr, owner skills, or MCP servers. Inspect repository files and the inspect command only. Do not inherit or request the owner's conversation. A fresh subagent is independent even when it uses the builder's model. Return only the substantive JSON envelope below and echo delegationId. Target and routing identity are supplied by this brief and the task binding when recording; do not duplicate them.\n\nThe claim describes the intended outcome; it does not limit review scope.${mrr} Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings. A GO with observations is valid. Do not modify the candidate.${decisions}${prior}\n\n${envelope}`;
+  return `Independently review Field Report workstream ${stream.id} as ${delegation.role} using model ${delegation.model}. Target ${target}. Stated outcome: ${stream.outcome || "not set yet"}. Current claim JSON string: ${JSON.stringify(delegation.claim)}\n${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run fr, owner skills, or MCP servers. Inspect repository files and the inspect command only. Do not inherit or request the owner's conversation. A fresh subagent is independent even when it uses the builder's model. Return only the substantive JSON envelope below and echo delegationId. Target and routing identity are supplied by this brief and the task binding when recording; do not duplicate them.\n\nThe claim describes the intended outcome; it does not limit review scope.${mrr} Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings. A GO with observations is valid. Do not modify the candidate.${decisions}${prior}\n\n${envelope}`;
 }
 
 async function gateFor(stream, kind) {
@@ -305,7 +328,7 @@ async function main() {
   }
 
   if (command === "create") {
-    const record = await store.saveWorkstream({ id: positional[0], project: flags.project, title: flags.title, outcome: flags.outcome, summary: flags.outcome, branch: flags.branch, ownerTaskId: flags["owner-task"] }, { type: "created", text: `Created outcome: ${flags.outcome}`, actor: process.env.CODEX_THREAD_ID });
+    const record = await store.saveWorkstream({ id: positional[0], project: flags.project, title: flags.title, outcome: flags.outcome, summary: flags.outcome, branch: flags.branch, ownerTaskId: flags["owner-task"] }, { type: "created", text: `Created outcome: ${flags.outcome}`, actor: sessionId() });
     return process.stdout.write(`Created ${record.id}.\n`);
   }
   if (command === "list") {
@@ -315,7 +338,7 @@ async function main() {
   if (command === "show") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
     if (flags.json) return process.stdout.write(`${JSON.stringify({ ...stream, reviews: await store.reviews(stream.id), delegations: await store.delegations(stream.id) }, null, 2)}\n`);
-    return process.stdout.write(`${stream.id}\n${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\n${stream.summary}\nNext: ${stream.next || "not recorded"}\nBranch: ${stream.branch || "not assigned"}\n`);
+    return process.stdout.write(`${stream.id}\n${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\n${stream.summary || "No outcome set yet."}\nNext: ${stream.next || "not recorded"}\nBranch: ${stream.branch || "not assigned"}\n`);
   }
   if (command === "context") {
     const stream = await streamForCheckout(positional[0]);
@@ -331,16 +354,28 @@ async function main() {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
     if (flags.next === true) throw new Error("Specify --next <text>");
     const pullRequests = flags.prs ? flags.prs.split(",").map(Number) : stream.pullRequests;
-    const eventText = flags.claim ? `Delivery claim set to ${flags.claim}` : flags.next ? `Next action: ${flags.next}` : flags.summary || (flags.status ? `Status set to ${flags.status}` : flags.prs ? `Linked PRs ${flags.prs}` : flags.branch ? `Branch set to ${flags.branch}` : flags["owner-task"] ? `Owner task set to ${flags["owner-task"]}` : "Updated workstream metadata");
-    const next = await store.saveWorkstream({ ...stream, status: flags.status || stream.status, summary: flags.summary || stream.summary, claim: flags.claim ?? stream.claim, next: flags.next === undefined ? stream.next : flags.next, branch: flags.branch ?? stream.branch, ownerTaskId: flags["owner-task"] ?? stream.ownerTaskId, pullRequests }, { type: "status", text: eventText, actor: process.env.CODEX_THREAD_ID });
-    if (flags.claim && flags.claim !== stream.claim) process.stdout.write("Delivery claim changed; prior MRR evidence for the old claim is stale.\n");
+    if (flags.outcome === true) throw new Error("Specify --outcome <text>");
+    // Setting the outcome of a branch registered without one also sets its claim.
+    const unset = stream.claim === NO_OUTCOME_CLAIM;
+    const claim = flags.claim ?? (unset && flags.outcome ? flags.outcome : stream.claim);
+    const eventText = flags.outcome ? `Outcome set to ${flags.outcome}` : flags.claim ? `Delivery claim set to ${flags.claim}` : flags.next ? `Next action: ${flags.next}` : flags.summary || (flags.status ? `Status set to ${flags.status}` : flags.prs ? `Linked PRs ${flags.prs}` : flags.branch ? `Branch set to ${flags.branch}` : flags["owner-task"] ? `Owner task set to ${flags["owner-task"]}` : "Updated workstream metadata");
+    if (flags.branch && flags.branch !== stream.branch) {
+      // Binding an existing outcome takes the branch from a workstream that was
+      // registered for it automatically and has no outcome yet.
+      const others = (await store.workstreams()).filter((other) => other.id !== stream.id && other.project === stream.project && other.branch === flags.branch);
+      const kept = others.find((other) => other.outcome);
+      if (kept) throw new Error(`${kept.id} is already bound to ${flags.branch} with its own outcome; move it first with fr update ${kept.id} --branch <branch>`);
+      for (const other of others) await store.saveWorkstream({ ...other, branch: "" }, { type: "status", text: `Branch ${flags.branch} handed to ${stream.id}`, actor: sessionId() });
+    }
+    const next = await store.saveWorkstream({ ...stream, outcome: flags.outcome || stream.outcome, status: flags.status || stream.status, summary: flags.summary || stream.summary || flags.outcome, claim, next: flags.next === undefined ? stream.next : flags.next, branch: flags.branch ?? stream.branch, ownerTaskId: flags["owner-task"] ?? stream.ownerTaskId, pullRequests }, { type: "status", text: eventText, actor: sessionId() });
+    if (!unset && flags.claim && flags.claim !== stream.claim) process.stdout.write("Delivery claim changed; prior MRR evidence for the old claim is stale.\n");
     return process.stdout.write(`Updated ${next.id}.\n`);
   }
 
   if (command === "decide") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
     const text = requireValue(positional.slice(1).join(" ").trim(), "Specify the decision text");
-    const next = await store.saveWorkstream({ ...stream, decisions: [...(stream.decisions || []), text] }, { type: "decision", text: `User decision: ${text}`, actor: process.env.CODEX_THREAD_ID });
+    const next = await store.saveWorkstream({ ...stream, decisions: [...(stream.decisions || []), text] }, { type: "decision", text: `User decision: ${text}`, actor: sessionId() });
     return process.stdout.write(`Recorded decision ${next.decisions.length} on ${next.id}. Review briefs now carry it as settled.\n`);
   }
 
@@ -353,6 +388,7 @@ async function main() {
     if (kind === "mrr" && !REVIEW_ROLES.includes(role)) throw new Error("MRR briefs use a persona role");
     if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");
     const seated = { ...seatingFor(role, flags.model, flags.route), requested: flags.model || null };
+    if (kind === "mrr" && !stream.outcome) throw new Error(`${stream.id} has no outcome yet; MRR reviews against it. Ask the user what this branch delivers if it is not clear, then: fr update ${stream.id} --outcome "<what this branch delivers>"`);
     const target = await targetFor(stream, kind);
     let prior = [];
     if (kind === "mrr") {

@@ -50,13 +50,51 @@ function scores(verdict = "GO") {
   };
 }
 
-test("checkout gate prints a self-register command for an unbound branch", async () => {
+test("the first fr command on a feature branch registers it; MRR waits for an outcome", async () => {
   const { repo, state } = await fixture();
   assert.match(await run(["gate", "checkout", "outcome"], repo, state), /bound to this checkout/);
   assert.match(await run(["gate", "commit", "outcome"], repo, state), /bound to this checkout/);
-  await exec("git", ["branch", "-m", "unsafe'quote"], { cwd: repo });
+  await exec("git", ["checkout", "-q", "-b", "Feature/Unsafe'Quote"], { cwd: repo });
   await assert.rejects(run(["gate", "checkout", "outcome"], repo, state), /not bound to this checkout/);
-  await assert.rejects(run(["gate", "crr"], repo, state), (error) => /Self-register without coordinator approval/.test(error.stderr || "") && (error.stderr || "").includes(`--branch 'unsafe'"'"'quote'`));
+  const { stdout, stderr } = await exec(process.execPath, [cli, "context"], { cwd: repo, env: { ...testEnv(state), CODEX_THREAD_ID: "", CLAUDE_CODE_SESSION_ID: "session-9" } });
+  assert.match(stdout, /Workstream: sample-feature-unsafe-quote — Feature\/Unsafe'Quote/);
+  assert.match(stdout, /Claim: No outcome set yet; review the change on its own merits\./);
+  assert.match(stderr, /registered sample-feature-unsafe-quote for Feature\/Unsafe'Quote\. Before MRR, set its outcome: fr update sample-feature-unsafe-quote --outcome/);
+  const stream = JSON.parse(await run(["show", "sample-feature-unsafe-quote", "--json"], repo, state));
+  assert.equal(stream.branch, "Feature/Unsafe'Quote");
+  assert.equal(stream.ownerTaskId, "session-9");
+  assert.equal(stream.outcome, null);
+  // A second command finds the same workstream instead of registering another.
+  assert.match(await run(["gate", "checkout"], repo, state), /^sample-feature-unsafe-quote is bound/);
+  await writeFile(path.join(repo, "change.txt"), "x\n");
+  await exec("git", ["add", "change.txt"], { cwd: repo });
+  const crr = JSON.parse(await run(["review", "brief", "sample-feature-unsafe-quote", "--kind", "crr", "--role", "crr", "--route", "native"], repo, state));
+  assert.equal(crr.delegation.claim, "No outcome set yet; review the change on its own merits.");
+  await exec("git", ["commit", "-qm", "change"], { cwd: repo });
+  await assert.rejects(run(["review", "brief", "sample-feature-unsafe-quote", "--kind", "mrr", "--role", "correctness"], repo, state), /has no outcome yet; MRR reviews against it/);
+  assert.doesNotMatch(await run(["update", "sample-feature-unsafe-quote", "--outcome", "Ship the change"], repo, state), /stale/);
+  const set = JSON.parse(await run(["show", "sample-feature-unsafe-quote", "--json"], repo, state));
+  assert.deepEqual([set.outcome, set.claim, set.summary], ["Ship the change", "Ship the change", "Ship the change"]);
+  assert.match(await run(["review", "brief", "sample-feature-unsafe-quote", "--kind", "mrr", "--role", "correctness", "--route", "native"], repo, state), /Stated outcome: Ship the change/);
+});
+
+test("binding an existing outcome takes the branch from an auto-registered workstream only", async () => {
+  const { repo, state } = await fixture();
+  await exec("git", ["checkout", "-q", "-b", "work"], { cwd: repo });
+  await run(["context"], repo, state);
+  assert.match(await run(["update", "outcome", "--branch", "work"], repo, state), /Updated outcome/);
+  assert.match(await run(["gate", "checkout"], repo, state), /^outcome is bound to this checkout/);
+  assert.equal(JSON.parse(await run(["show", "sample-work", "--json"], repo, state)).branch, null);
+  await run(["create", "other", "--project", "sample", "--title", "Other", "--outcome", "Other outcome", "--branch", "spare"], repo, state);
+  await assert.rejects(run(["update", "outcome", "--branch", "spare"], repo, state), /other is already bound to spare with its own outcome/);
+});
+
+test("the base branch and a detached HEAD are not registered", async () => {
+  const { repo, state } = await fixture();
+  await run(["update", "outcome", "--branch", "elsewhere"], repo, state);
+  await assert.rejects(run(["gate", "checkout"], repo, state), /main is sample's base branch; work on a feature branch/);
+  await exec("git", ["checkout", "-q", "--detach"], { cwd: repo });
+  await assert.rejects(run(["gate", "checkout"], repo, state), /detached HEAD/);
 });
 
 test("identity names the coordinator into the project namespace", async () => {
