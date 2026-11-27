@@ -1,5 +1,5 @@
 ---
-name: grill-me
+name: fr-grill-me
 description: Interview the user relentlessly about a plan or design, one question at a time with a recommended answer each, until you share an understanding. Use when the user says "grill me", asks to stress-test a plan, or a BRR reaches its directional sign-off.
 ---
 

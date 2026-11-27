@@ -42,15 +42,11 @@ test("config file rejects malformed seats", () => {
   assert.throws(broken((raw) => { raw.providers = {}; }), /unknown key "providers"/);
 });
 
-test("plans default to the repository and accept a Linear, Notion, or Ref home", () => {
-  assert.deepEqual(parseSeatConfig(clone()).plans, { home: "repo", where: null });
-  assert.deepEqual(parseSeatConfig({ ...clone(), plans: { home: "ref", where: " Engineering plans " } }).plans, { home: "ref", where: "Engineering plans" });
-  assert.deepEqual(parseSeatConfig({ ...clone(), plans: { home: "linear" } }).plans, { home: "linear", where: null });
-  const broken = (plans) => () => parseSeatConfig({ ...clone(), plans });
-  assert.throws(broken({ home: "jira" }), /plans.home must be one of repo, linear, notion, ref/);
-  assert.throws(broken({ home: "repo", where: "x" }), /does not apply to repo/);
-  assert.throws(broken({ home: "notion", where: "a\nb" }), /single line/);
-  assert.throws(broken({ home: "notion", url: "x" }), /unknown key "url"/);
+test("plans default to the repository and accept one line of free text", () => {
+  assert.equal(parseSeatConfig(clone()).plans, null);
+  assert.equal(parseSeatConfig({ ...clone(), plans: " ref: Engineering plans " }).plans, "ref: Engineering plans");
+  assert.throws(() => parseSeatConfig({ ...clone(), plans: { home: "ref" } }), /plans must be a single line of text/);
+  assert.throws(() => parseSeatConfig({ ...clone(), plans: "a\nb" }), /plans must be a single line of text/);
 });
 
 test("any model, from any lab, can fill any seat the config lists it in", () => {

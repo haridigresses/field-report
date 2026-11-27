@@ -1,6 +1,6 @@
 ---
-name: ask-questions-if-underspecified
-description: Before starting a task, decide whether it is underspecified; if so, ask the smallest set of must-have multiple-choice questions, wait for answers, confirm the interpretation, then proceed.
+name: fr-ask-questions
+description: Ask the smallest set of must-have multiple-choice questions, wait for answers, and confirm the interpretation before starting. Use in BRR step 1, or when the user asks you to clarify a request before starting. Not for every task.
 ---
 
 <!-- Adapted from the ask-questions-if-underspecified skill published by Trail of Bits (https://github.com/trailofbits/skills), originally by @thsottiaux. Modified: reworded and condensed for Field Report. Licensed CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/); this file stays under that license. -->

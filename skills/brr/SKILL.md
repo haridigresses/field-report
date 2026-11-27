@@ -11,7 +11,7 @@ The user's sign-off is the only gate. BRR has no seats, no verdict, and nothing 
 
 ## 1. Clarify
 
-Run `ask-questions-if-underspecified` on the request: the outcome, what done looks like for the whole build, and what is out of scope. Ask only what reading the repo cannot answer.
+Run `fr-ask-questions` on the request: the outcome, what done looks like for the whole build, and what is out of scope. Ask only what reading the repo cannot answer.
 
 ## 2. Look before proposing
 
@@ -41,18 +41,15 @@ List every assumption the plan rests on, including ones implied earlier in the c
 
 ## 6. Settle the directional calls
 
-Use `grill-me` on the open directional choices, one question at a time with a recommended answer. Write each answer in the plan's Decisions section. When a PR's workstream is created later, record the decisions that bind it with `fr decide`, because reviewers read their brief, not the plan.
+Use `fr-grill-me` on the open directional choices, one question at a time with a recommended answer. Write each answer in the plan's Decisions section. When a PR's workstream is created later, record the decisions that bind it with `fr decide`, because reviewers read their brief, not the plan.
 
 ## 7. Write the plan and get sign-off
 
-Write the plan as plain markdown in the plan home that `fr seats` prints on its `Plans:` line:
-
-- **repo:** `docs/plans/<build>.md` in the target repository.
-- **linear, notion, or ref:** a document there, written and read back through this host's MCP connector for that service. If the host has no connector for it, say so and ask the user where to put the plan; do not silently write it somewhere else.
+Write the plan as plain markdown in the plan home that `fr seats` prints on its `Plans:` line. If that is `docs/plans/`, write `docs/plans/<build>.md` in the target repository. If it names a service (Linear, Notion, Ref, or another), write and read the plan there through this host's MCP connector for it. If the host has no connector for it, say so and ask the user where to put the plan; do not silently write it somewhere else.
 
 Keep one copy. The plan home holds the plan and the user's comments; do not keep a second copy in the repo that can drift.
 
-Use this outline: outcome; non-goals; approaches and the recommendation; arcs (first arc as PRs); landmines and spikes; assumptions; decisions. Then stop and wait for the user's sign-off. Build nothing before it.
+Use this outline: outcome; non-goals; the recommended approach; arcs (first arc as PRs); landmines and spikes; assumptions; decisions. Then stop and wait for the user's sign-off. Build nothing before it.
 
 ## Later arcs
 

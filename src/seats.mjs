@@ -57,17 +57,13 @@ function parseModel(entry, label) {
   return { id, launch: entry.launch, cliModel: entry.cliModel?.trim() || id };
 }
 
-// Where BRR plans live. Field Report stores only this pointer; the agent reads
-// and writes the plan there through its host's MCP connector.
-export const PLAN_HOMES = ["repo", "linear", "notion", "ref"];
-
+// Where BRR plans live, as free text the agent reads (for example
+// "ref: Engineering plans"). Field Report only prints it; the agent reads and
+// writes the plan through its host's MCP connector for that service.
 function parsePlans(raw) {
-  if (raw == null) return { home: "repo", where: null };
-  onlyKeys(object(raw, "plans"), ["home", "where"], "plans");
-  if (!PLAN_HOMES.includes(raw.home)) fail(`plans.home must be one of ${PLAN_HOMES.join(", ")}`);
-  if (raw.where != null && (typeof raw.where !== "string" || !raw.where.trim() || /[\u0000-\u001f\u007f]/.test(raw.where))) fail("plans.where must be a single line of text");
-  if (raw.home === "repo" && raw.where != null) fail("plans.where does not apply to repo; plans go in docs/plans/");
-  return { home: raw.home, where: raw.where?.trim() || null };
+  if (raw == null) return null;
+  if (typeof raw !== "string" || !raw.trim() || /[\u0000-\u001f\u007f]/.test(raw)) fail("plans must be a single line of text, such as \"ref: Engineering plans\"");
+  return raw.trim();
 }
 
 export function parseSeatConfig(raw) {
@@ -134,8 +130,5 @@ export function modelsLaunchedBy(launch) {
 }
 
 export function describePlans() {
-  const { home, where } = seatConfig().plans;
-  if (home === "repo") return "docs/plans/ in this repository";
-  const name = { linear: "Linear", notion: "Notion", ref: "Ref" }[home];
-  return `${name}${where ? ` (${where})` : ""}, through this host's ${name} MCP connector`;
+  return seatConfig().plans || "docs/plans/ in this repository";
 }

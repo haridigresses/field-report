@@ -40,7 +40,7 @@ node scripts/install.mjs
 fr init
 ```
 
-The installer writes `~/.local/bin/fr` and links the same canonical skill sources into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. The skills are `field-report`, `repo-coordinator`, `workstream-orchestrator`, `brr`, `grill-me`, and `ask-questions-if-underspecified`. It refuses to replace a real directory at any of those paths and links nothing until you move it aside; that includes your own earlier copies of `grill-me` or `ask-questions-if-underspecified`.
+The installer writes `~/.local/bin/fr` and links the same canonical skill sources into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. The skills are `field-report`, `repo-coordinator`, `workstream-orchestrator`, `brr`, `fr-grill-me`, and `fr-ask-questions`; the last two are adapted from published skills, with attribution in each file, and carry an `fr-` prefix so they never collide with your own copies. It refuses to replace a real directory at any of those paths.
 
 Run `fr version` to see the running package version, runtime source directory, and that source checkout's Git revision. This identifies which checkout an installed launcher uses, regardless of the current working directory. A runtime without Git metadata reports the revision as unavailable.
 
@@ -85,14 +85,13 @@ When a new model ships, edit the config. `fr seats` prints the resolved panel. E
 
 ### Plan home
 
-`plans` in the same config file says where build-ready review (BRR) plans live. Leave it out to keep plans in `docs/plans/` in each repository.
+`plans` in the same config file says where build-ready review (BRR) plans live, as one line of free text. Leave it out to keep plans in `docs/plans/` in each repository.
 
 ```json
-"plans": { "home": "ref", "where": "Engineering plans" }
+"plans": "ref: Engineering plans"
 ```
 
-- `home` is `repo`, `linear`, `notion`, or `ref`. `where` is optional free text naming the team, page, or parent document; it does not apply to `repo`.
-- Field Report stores only this pointer and prints it on the `Plans:` line of `fr seats` and `fr context`. The agent reads and writes the plan through its host's MCP connector for that service, and asks the user if it has none.
+Field Report only prints it, on the `Plans:` line of `fr seats` and `fr context`. The agent reads and writes the plan through its host's MCP connector for that service (Linear, Notion, Ref, or another), and asks the user if it has none.
 
 ## My Machines
 
@@ -131,3 +130,7 @@ fr gate open aon-example
 
 fr gate bots aon-example
 ```
+
+## License
+
+MIT; see [LICENSE](LICENSE). Two adapted skills keep their own licenses: `skills/fr-grill-me` (MIT, Matt Pocock) and `skills/fr-ask-questions` (CC BY-SA 4.0, Trail of Bits).
