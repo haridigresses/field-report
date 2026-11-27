@@ -3,7 +3,7 @@ import { access, readFile, readlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { skillHostDirs, SKILL_NAMES } from "./install.mjs";
-import { marker } from "./hooks.mjs";
+import { hookManagerPath, hookState } from "./hooks.mjs";
 import { REVIEW_ROLES } from "./seats.mjs";
 
 // fr doctor checks that this machine can run the loop: launchers, skills,
@@ -103,22 +103,27 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
 
   for (const project of projects) {
     const label = `project ${project.id}`;
-    if (!(await probe.exists(project.repoPath))) { add("fail", label, `repo path ${project.repoPath} does not exist; fix it with fr project update ${project.id} --repo <path>`); continue; }
+    if (!(await probe.exists(project.repoPath))) { add("warn", label, `repo path ${project.repoPath} does not exist; fix it with fr project update ${project.id} --repo <path>`); continue; }
     const hookResult = await probe.run("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: project.repoPath });
-    if (hookResult.code !== 0) { add("fail", label, `${project.repoPath} is not a git repository`); continue; }
+    if (hookResult.code !== 0) { add("warn", label, `${project.repoPath} is not a git repository`); continue; }
     const hook = hookResult.stdout.trim();
-    const hooksPath = (await probe.run("git", ["config", "--get", "core.hooksPath"], { cwd: project.repoPath })).stdout.trim();
+    const managedBy = await hookManager(probe, project.repoPath, hook);
     const tracked = (await probe.run("git", ["ls-files", "--error-unmatch", "--", hook], { cwd: project.repoPath })).code === 0;
-    const text = (await probe.read(hook)) || "";
-    // A hook manager's file counts once it runs the gate, with or without our marker.
-    const installed = text.includes(marker) || /\bfr\b.*\bgate checkout\b/.test(text);
-    if (installed) add("ok", label, `checkout gate runs from ${hook}`);
-    else if (tracked) add("warn", label, `pre-commit hook ${hook} is a tracked file (core.hooksPath=${hooksPath}); fr hook install would overwrite it. Add \`fr gate checkout\` to that hook manager instead`);
-    else if (hooksPath) add("warn", label, `core.hooksPath=${hooksPath} (a hook manager such as husky or lefthook); it may regenerate ${hook}. Prefer adding \`fr gate checkout\` to that manager over fr hook install`);
+    const state = hookState(await probe.read(hook));
+    if (state === "installed" || state === "gate") add("ok", label, `checkout gate runs from ${hook}`);
+    else if (state === "outdated") add("warn", label, `an older Field Report hook is at ${hook}; rerun fr hook install ${project.id}`);
+    else if (tracked) add("warn", label, `pre-commit hook ${hook} is a tracked file; fr hook install refuses it. Add \`fr gate checkout\` to that hook instead`);
+    else if (managedBy) add("warn", label, `core.hooksPath=${managedBy} (a hook manager such as husky or lefthook); fr hook install refuses it. Add \`fr gate checkout\` to that manager's pre-commit hook`);
     else add("warn", label, `checkout hook not installed; run fr hook install ${project.id}`);
   }
 
   return results;
+}
+
+async function hookManager(probe, repoPath, hook) {
+  const hooksPath = (await probe.run("git", ["config", "--get", "core.hooksPath"], { cwd: repoPath })).stdout.trim();
+  const commonDir = hooksPath ? (await probe.run("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: repoPath })).stdout.trim() : "";
+  return hookManagerPath({ hook, hooksPath, commonDir });
 }
 
 export function formatDoctor(results) {

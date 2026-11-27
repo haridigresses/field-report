@@ -43,7 +43,7 @@ cd ~/field-report && node scripts/install.mjs && fr init
 fr doctor
 ```
 
-Keep the clone where it is: the launchers and skill links point into it, and `git pull` updates Field Report. `fr doctor` only reads. It checks Node, git, the `fr` launcher and `PATH`, the skill links, the state root, the seat config, the CLI for each configured model (and, for Cursor, that each model id is in `cursor-agent --list-models`; `codex` and `claude` cannot list models, so those are checked at first launch), `gh`, and each registered project's hook. It exits nonzero while anything is FAIL. Rerun it after editing the config or adding a project.
+Keep the clone where it is: the launchers and skill links point into it, and `git pull` updates Field Report. `fr doctor` only reads. It checks Node, git, the `fr` launcher and `PATH`, the skill links, the state root, the seat config, the CLI for each configured model (and, for Cursor, that each model id is in `cursor-agent --list-models`; for `codex` and `claude` it checks only that the CLI runs, not that you are signed in or have credits, so those surface at first launch), `gh`, and each registered project's hook. It exits nonzero while anything is FAIL. Rerun it after editing the config or adding a project.
 
 ### Install with your agent
 
@@ -71,7 +71,7 @@ fr hook install aon
 fr hook status aon
 ```
 
-If the repository uses a hook manager (`core.hooksPath`, as husky and lefthook set), `fr doctor` warns instead of suggesting `fr hook install`, because that would write into the manager's hook file. Add `fr gate checkout` to the manager's pre-commit hook instead.
+If the repository uses a hook manager (`core.hooksPath`, as husky and lefthook set) or tracks its pre-commit hook in git, `fr hook install` refuses rather than overwrite that file, and `fr doctor` warns. Add `fr gate checkout` to the manager's pre-commit hook instead; `fr hook status` and `fr doctor` then report it as installed.
 
 Todos default to AF issues in the project namespace. To file them in Linear instead (no AF required):
 

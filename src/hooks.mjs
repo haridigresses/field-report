@@ -1,9 +1,28 @@
+import path from "node:path";
+
 export const marker = "# field-report-commit-gate:v4";
 
 export function quote(value) { return `'${String(value).replaceAll("'", "'\"'\"'")}'`; }
 
 export function isManagedHook(text) {
   return Boolean(text) && /field-report-(?:commit-gate|managed-pre-commit):/.test(text);
+}
+
+// One reading of a pre-commit hook for fr hook status and fr doctor: our current
+// hook, an older Field Report hook, a hook manager's file that runs the gate, or none.
+export function hookState(text) {
+  if (!text) return "missing";
+  if (text.includes(marker)) return "installed";
+  if (isManagedHook(text)) return "outdated";
+  if (/\bfr\b.*\bgate checkout\b/.test(text)) return "gate";
+  return "missing";
+}
+
+// core.hooksPath names a hook manager (husky, lefthook) unless it is git's own
+// hooks folder. Returns the managing path or null.
+export function hookManagerPath({ hook, hooksPath, commonDir }) {
+  if (!hooksPath) return null;
+  return commonDir && path.resolve(path.dirname(hook)) === path.resolve(commonDir, "hooks") ? null : hooksPath;
 }
 
 export function shouldRunPreserved(existing, preservedExists) {

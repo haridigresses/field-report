@@ -98,10 +98,10 @@ test("doctor warns when a hook manager owns a tracked pre-commit hook", async ()
   await exec("git", ["init", "-q"], { cwd: plain });
   const projects = [{ id: "husky", repoPath: repo }, { id: "plain", repoPath: plain }, { id: "gone", repoPath: path.join(home, "nope") }];
   const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, projects, probe: probeWith(allCommands) });
-  assert.match(byLabel(results, "project husky").detail, /tracked file .*would overwrite it/);
+  assert.match(byLabel(results, "project husky").detail, /tracked file; fr hook install refuses it/);
   assert.equal(byLabel(results, "project husky").level, "warn");
   assert.match(byLabel(results, "project plain").detail, /fr hook install plain/);
-  assert.equal(byLabel(results, "project gone").level, "fail");
+  assert.equal(byLabel(results, "project gone").level, "warn");
   await writeFile(path.join(repo, ".husky", "pre-commit"), "npm test\nfr gate checkout\n");
   const again = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, projects, probe: probeWith(allCommands) });
   assert.equal(byLabel(again, "project husky").level, "ok");
@@ -112,4 +112,20 @@ test("fr doctor does not create state on an uninitialized machine", async () => 
   const stateRoot = path.join(home, "state");
   await exec(process.execPath, [path.resolve("bin/fr.mjs"), "doctor"], { env: { ...process.env, HOME: home, FIELD_REPORT_STATE_ROOT: stateRoot } }).catch((error) => assert.match(error.stdout, /FAIL state/));
   await assert.rejects(access(stateRoot));
+});
+
+test("doctor treats core.hooksPath at git's own hooks folder as no manager, and flags older Field Report hooks", async () => {
+  const { home, stateRoot } = await installedHome();
+  const repo = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-default-"));
+  await exec("git", ["init", "-q"], { cwd: repo });
+  await exec("git", ["config", "core.hooksPath", ".git/hooks"], { cwd: repo });
+  const older = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-v3-"));
+  await exec("git", ["init", "-q"], { cwd: older });
+  await mkdir(path.join(older, ".git", "hooks"), { recursive: true });
+  await writeFile(path.join(older, ".git", "hooks", "pre-commit"), "#!/bin/sh\n# field-report-commit-gate:v3\n");
+  const projects = [{ id: "default", repoPath: repo }, { id: "older", repoPath: older }];
+  const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, projects, probe: probeWith(allCommands) });
+  assert.match(byLabel(results, "project default").detail, /checkout hook not installed; run fr hook install default/);
+  assert.match(byLabel(results, "project older").detail, /older Field Report hook/);
+  assert.match(formatDoctor(results), /^Ready with/m);
 });
