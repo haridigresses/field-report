@@ -68,7 +68,7 @@ export function identityKey(projectId, role) {
   return { key: `${project}/${role}`, fallback: `${project}/${role}-2` };
 }
 
-export function seatingFor(role, model = null, route = null, pinned = null) {
+export function seatingFor(role, model = null, route = null) {
   if (role === CRR_ROLE) {
     const selected = String(model || "local").trim();
     if (!selected) throw new Error("crr requires a model id");
@@ -79,7 +79,7 @@ export function seatingFor(role, model = null, route = null, pinned = null) {
     if (!selected) throw new Error("Court requires --model <id>");
     return { role: COURT_ROLE, intended: null, model: selected, route: route || "cli" };
   }
-  const seatModels = pinned || seatFor(role).models.map((entry) => entry.id);
+  const seatModels = seatFor(role).models.map((entry) => entry.id);
   const selected = model ? normalizeId(model) : seatModels[0];
   if (!seatModels.includes(selected)) throw new Error(`${model} is not a valid ${role} model (valid: ${seatModels.join(", ")}). Add it to seats.${role}.models in ${configSource()} to use it.`);
   return { role, intended: seatModels[0], seatModels, model: selected, route: route || "cli" };
@@ -200,9 +200,7 @@ export function findingLedger(reviews) {
           baseHead: review.baseHead,
           delegationId: review.delegationId,
           reviewerTaskId: review.reviewerTaskId,
-          model: review.model,
-          // Briefed before seat lists existed, so it never occupies a job.
-          ...(REVIEW_ROLES.includes(review.role) && !Array.isArray(review.seatModels) ? { prePinned: true } : {})
+          model: review.model
         });
       }
     }
@@ -248,8 +246,7 @@ export function outstandingForDeep(reviews, claim, target, claimRevision = 1) {
   return outstandingFindings(reviews, claim, target, claimRevision).filter((finding) => {
     const sameTarget = Boolean(finding.head) && sameReviewTarget({ kind: "mrr", head: finding.head, baseHead: finding.baseHead }, "mrr", target);
     const sameUnit = (finding.claimRevision ?? 1) === claimRevision;
-    // A pre-list review cannot be courted, so deep carries its findings even on this target.
-    return !sameTarget || !sameUnit || finding.prePinned === true;
+    return !sameTarget || !sameUnit;
   });
 }
 
@@ -283,11 +280,8 @@ const acceptedCrr = (review) => reviewKind(review?.kind) === "crr" && review?.ro
 
 function latestFor(reviews, predicate) { return [...reviews].reverse().find(predicate) || null; }
 
-// A persona review whose brief pinned no seat list predates seat lists: it
-// neither counts nor occupies its job, so MRR reruns on that head. Its
-// findings stay in the ledger until a later review reconciles them.
 export function personaJobReviews(reviews, { role, target, claim, claimRevision }) {
-  return (reviews || []).filter((review) => isPersonaReview(review) && Array.isArray(review.seatModels) && jobScope(review, { role, target, claim, claimRevision }));
+  return (reviews || []).filter((review) => isPersonaReview(review) && jobScope(review, { role, target, claim, claimRevision }));
 }
 
 export function jobCourts(reviews, { jobRole, target, claim, claimRevision }) {

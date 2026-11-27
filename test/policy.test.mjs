@@ -2,7 +2,7 @@ import "./support/seats.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { normalizeReview } from "../src/envelope.mjs";
 import { normalizeId, seatFor } from "../src/seats.mjs";
 
@@ -158,21 +158,12 @@ test("a review counts only when its model is on the list its brief pinned", () =
   assert.throws(() => validateReview(mrrEnvelope(grokBrief, "swap", { model: "gpt-6-astra" }), grokBrief), /Review model must match its exact delegation/);
   const offList = { ...grokBrief, model: "gpt-6-astra" };
   assert.throws(() => validateReview(mrrEnvelope(offList, "off-list"), offList), /structural-challenge review model gpt-6-astra is not on its brief's valid list/);
-  // A review whose brief pinned no list predates seat lists: it neither counts nor occupies.
-  const unpinned = { ...recorded, seatModels: undefined };
-  const blocked = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [others[0], unpinned, others[1]], delegations: [{ ...neon, seatModels: undefined }] });
+  // A review whose brief pinned no list never counts.
+  const forged = { ...recorded, seatModels: undefined };
+  const unpinned = { ...neon, seatModels: undefined };
+  const blocked = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [others[0], forged, others[1]], delegations: [unpinned] });
   assert.equal(blocked.ready, false);
-  assert.match(blocked.reasons.join(" "), /missing structural-challenge review/);
-  assert.equal(occupyingReview([unpinned], { role: "structural-challenge", target: mrrTarget, claim, claimRevision: 1 }), null);
-  // Its open findings stay until a later review reconciles them, and IDs never shift.
-  const oldNoGo = { ...mrrComplete("structural-challenge", "old-grok", { verdict: "NO_GO", findings: ["Old finding"] }), seatModels: undefined };
-  const pinnedNoGo = mrrComplete("fable-challenge", "new-fable", { verdict: "NO_GO", findings: ["New finding"] });
-  assert.deepEqual(outstandingFindings([oldNoGo, pinnedNoGo], claim).map((item) => [item.id, item.text]), [["F1", "Old finding"], ["F2", "New finding"]]);
-  // The replacement deep review receives the old same-head finding so it can be reconciled.
-  assert.deepEqual(outstandingForDeep([oldNoGo, pinnedNoGo], claim, mrrTarget).map((item) => item.id), ["F1"]);
-  const deepBrief = { ...mrrDelegation("deep-code-review"), outstanding: [{ id: "F1", category: "finding", text: "Old finding" }] };
-  const deep = validateReview(mrrEnvelope(deepBrief, "deep-run", { reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed in this target." }] }), deepBrief);
-  assert.deepEqual(outstandingFindings([oldNoGo, deep], claim), []);
+  assert.match(blocked.reasons.join(" "), /structural-challenge is not a finding-free GO/);
 });
 
 test("one model may fill every seat when the config lists it there", () => {

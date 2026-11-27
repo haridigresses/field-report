@@ -70,7 +70,6 @@ test("editing the config later does not reinterpret recorded reviews", () => {
     useSeatConfig(withNeon());
     assert.equal(evaluateGate(args).ready, true, "a Grok GO briefed before Grok left the config still counts");
     assert.equal(envelope(pending, "late-grok").model, "grok-4.6", "a Grok brief issued before the edit still records");
-    assert.equal(seatingFor("structural-challenge", "grok-4.6", null, pending.seatModels).model, "grok-4.6", "a court rerun follows the list its occupant pinned");
   } finally { useSeatConfig(null); }
 });
 
