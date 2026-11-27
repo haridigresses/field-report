@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Field Report settings</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div><p class="eyebrow"><a href="/">Field Report</a></p><h1>Settings</h1></div>
+    <button class="primary save">Save</button>
+  </header>
+  <main>
+    <p id="source" class="quiet"></p>
+    <p id="status" role="status"></p>
+    <section>
+      <h2>Review seats</h2>
+      <p class="quiet">Each seat accepts only the models listed for it. The first is the default; the rest are fallbacks, tried in order.</p>
+      <div id="seats"></div>
+    </section>
+    <section>
+      <h2>Plan home</h2>
+      <p class="quiet">Where build-ready review plans live. The agent reaches Linear, Notion, or Ref through its own connector for that service.</p>
+      <div class="plans">
+        <label>Service <select id="plan-home" aria-label="Plan service"></select></label>
+        <label>Reference <input id="plan-reference" placeholder="team, page, or parent document (optional)" aria-label="Plan reference"></label>
+      </div>
+    </section>
+    <p><button class="primary save">Save</button></p>
+  </main>
+  <script type="module" src="/settings.js"></script>
+</body>
+</html>

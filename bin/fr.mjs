@@ -36,6 +36,7 @@ function usage() {
   return `Field Report control loop
 
 fr version
+fr ui [--port <n>]
 fr init
 fr doctor
 fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label]
@@ -249,6 +250,13 @@ async function main() {
   const command = process.argv[2] || "help";
   const { positional, flags } = parse(process.argv.slice(3));
   if (["help", "--help", "-h"].includes(command)) return process.stdout.write(`${usage()}\n`);
+  if (command === "ui") {
+    const port = flags.port == null ? Number(process.env.PORT || 4177) : typeof flags.port === "string" ? Number(flags.port) : NaN;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Specify --port <1-65535>");
+    const { startServer } = await import("../src/server.mjs");
+    startServer(port);
+    return;
+  }
   if (command === "version") {
     const { version } = JSON.parse(await readFile(path.join(runtimeRoot, "package.json"), "utf8"));
     let revision = "unavailable (runtime has no Git revision)";

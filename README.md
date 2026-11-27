@@ -102,17 +102,18 @@ Field Report hardcodes no model names. Your config file lists the models valid f
 - Model ids match through a `cursor-` prefix and effort suffixes, so `cursor-grok-4.6-high` is `grok-4.6`. A model listed in two seats launches the same way in both.
 - `launch` is `codex`, `claude`, or `cursor` (through `fr-cursor-review`). `--route native` runs any seat as a native subagent instead. `cliModel` is the id that launcher expects, when it differs (Cursor ids carry effort suffixes).
 
-When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
+To edit seats and the plan home in a browser instead, run `fr ui` and open `http://127.0.0.1:4177/settings`. The page is local only, checks the config with the same rules as `fr`, and refuses to save an invalid one. When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
 
 ### Plan home
 
-`plans` in the same config file says where build-ready review (BRR) plans live, as one line of free text. Leave it out to keep plans in `docs/plans/` in each repository.
+`plans` in the same config file says where build-ready review (BRR) plans live. Leave it out to keep plans in `docs/plans/` in each repository.
 
 ```json
-"plans": "ref: Engineering plans"
+"plans": { "home": "ref", "reference": "Engineering plans" }
 ```
 
-Field Report only prints it, on the `Plans:` line of `fr seats` and `fr context`. The agent reads and writes the plan through its host's MCP connector for that service (Linear, Notion, Ref, or another), and asks the user if it has none.
+- `home` is `repo`, `linear`, `notion`, or `ref`. `reference` is optional free text naming the team, page, or parent document; it does not apply to `repo`.
+- Field Report only prints it, on the `Plans:` line of `fr seats` and `fr context`. The agent reads and writes the plan through its host's MCP connector for that service, and asks the user if it has none.
 
 ## My Machines
 
