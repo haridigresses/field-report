@@ -5,12 +5,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
-import { createStore, describeTracker, trackerFor, trackerTarget } from "../src/store.mjs";
+import { createStore, defaultStateRoot, describeTracker, trackerFor, trackerTarget } from "../src/store.mjs";
 import { assertSeatOpen, botsReasons, CRR_ROLE, evaluateGate, findingLedger, identityKey, latestClaimReviews, openReasons, reviewKind, REVIEW_ROLES, seatingFor, seatStatus, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { ancestorHeads, checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
-import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
+import { hookManagerPath, hookState, hookText, isManagedHook, quote, shouldRunPreserved } from "../src/hooks.mjs";
 import { claudeInvokeCommand, codexInvokeCommand, cursorReviewCommand, HOST_LAUNCHERS } from "../src/machines.mjs";
-import { configSource, describePlans, launchEntry, REVIEW_ROLES as SEATS, seatFor } from "../src/seats.mjs";
+import { configSource, describePlans, launchEntry, REVIEW_ROLES as SEATS, seatConfig, seatFor } from "../src/seats.mjs";
+import { doctor, formatDoctor } from "../src/doctor.mjs";
 
 const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -36,6 +37,7 @@ function usage() {
 
 fr version
 fr init
+fr doctor
 fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label]
 fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label]
 fr project list
@@ -253,6 +255,12 @@ async function main() {
     try { revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: runtimeRoot, timeout: 10_000 })).stdout.trim(); } catch {}
     return process.stdout.write(`Field Report ${version}\nRuntime source: ${runtimeRoot}\nGit revision: ${revision}\n`);
   }
+  if (command === "doctor") {
+    const results = await doctor({ runtimeRoot, stateRoot: path.resolve(defaultStateRoot()), loadConfig: seatConfig });
+    process.stdout.write(`${formatDoctor(results)}\n`);
+    if (results.some((item) => item.level === "fail")) process.exitCode = 1;
+    return;
+  }
   if (command === "init") { const root = await store.init(); return process.stdout.write(`Initialized Field Report state at ${root}\n`); }
 
   if (command === "project" && positional[0] === "add") {
@@ -445,8 +453,21 @@ async function main() {
     const preserved = `${hook}.field-report-preserved`;
     let existing = null;
     try { existing = await readFile(hook, "utf8"); } catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (action === "status") return process.stdout.write(`${project.id}: ${existing?.includes(marker) ? "installed" : "missing"} at ${hook}\n`);
+    if (action === "status") {
+      const state = hookState(existing);
+      const label = { installed: "installed", outdated: "outdated (rerun fr hook install)", gate: "installed (runs fr gate checkout)", missing: "missing" }[state];
+      return process.stdout.write(`${project.id}: ${label} at ${hook}\n`);
+    }
     if (action === "install") {
+      // A tracked hook belongs to the repository or its hook manager; never rewrite it.
+      let tracked = false;
+      try { await exec("git", ["ls-files", "--error-unmatch", "--", hook], { cwd: project.repoPath }); tracked = true; } catch {}
+      if (tracked) throw new Error(`${hook} is tracked by the repository (a hook manager such as husky owns it). Add \`fr gate checkout\` to that hook instead of running fr hook install.`);
+      let hooksPath = "";
+      try { hooksPath = (await exec("git", ["config", "--get", "core.hooksPath"], { cwd: project.repoPath })).stdout.trim(); } catch {}
+      const commonDir = hooksPath ? (await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: project.repoPath })).stdout.trim() : "";
+      const manager = hookManagerPath({ hook, hooksPath, commonDir });
+      if (manager) throw new Error(`core.hooksPath=${manager}: a hook manager such as husky or lefthook owns ${hook} and may regenerate it. Add \`fr gate checkout\` to that manager's pre-commit hook instead of running fr hook install.`);
       await mkdir(path.dirname(hook), { recursive: true });
       let preservedExists = true;
       try { await access(preserved); } catch { preservedExists = false; }

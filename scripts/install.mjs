@@ -33,4 +33,4 @@ const seats = configPath();
 let seatsNote = `Config kept: ${seats}`;
 try { await mkdir(path.dirname(seats), { recursive: true }); await copyFile(path.join(root, "config", "config.example.json"), seats, constants.COPYFILE_EXCL); seatsNote = `Config created from config/config.example.json: ${seats} (edit it to choose models)`; }
 catch (error) { if (error.code !== "EEXIST") throw error; }
-process.stdout.write(`Installed Field Report launchers at ${bin}, ${cursorReview}, and ${afOnboardSafe}\nSkill links: ${skills.join(", ")}\nCanonical state: ${state}\n${seatsNote}\nRepository hooks are explicit: fr hook install <project-id>\nMy Machines: start a worker for the target checkout with Cursor's agent CLI\n`);
+process.stdout.write(`Installed Field Report launchers at ${bin}, ${cursorReview}, and ${afOnboardSafe}\nSkill links: ${skills.join(", ")}\nCanonical state: ${state}\n${seatsNote}\nRepository hooks are explicit: fr hook install <project-id>\nMy Machines: start a worker for the target checkout with Cursor's agent CLI\nNext: fr doctor\n`);

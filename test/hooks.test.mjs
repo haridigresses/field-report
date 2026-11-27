@@ -1,7 +1,7 @@
 import "./support/seats.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { hookText, isManagedHook, marker, shouldRunPreserved } from "../src/hooks.mjs";
+import { hookManagerPath, hookState, hookText, isManagedHook, marker, shouldRunPreserved } from "../src/hooks.mjs";
 
 test("managed hook is a small evidence query and preserves an existing hook", () => {
   const text = hookText("/opt/fr", "/repo/.git/hooks/pre-commit.field-report-preserved");
@@ -22,4 +22,18 @@ test("managed Field Report hooks are replaced; a user hook is preserved", () => 
   assert.equal(shouldRunPreserved("# field-report-managed-pre-commit:v2", false), false);
   assert.equal(shouldRunPreserved("#!/bin/sh\nnpm test", false), true);
   assert.equal(shouldRunPreserved(`${marker}\n'/repo/.git/hooks/pre-commit.field-report-preserved' || exit $?`, true), true);
+});
+
+test("hookState distinguishes current, older, manager-run, and absent hooks", () => {
+  assert.equal(hookState(hookText("/bin/fr")), "installed");
+  assert.equal(hookState("#!/bin/sh\n# field-report-commit-gate:v3\n"), "outdated");
+  assert.equal(hookState("npx lint-staged\nfr gate checkout\n"), "gate");
+  assert.equal(hookState("#!/bin/sh\nnpm test\n"), "missing");
+  assert.equal(hookState(null), "missing");
+});
+
+test("hookManagerPath ignores git's own hooks folder", () => {
+  assert.equal(hookManagerPath({ hook: "/r/.git/hooks/pre-commit", hooksPath: ".git/hooks", commonDir: "/r/.git" }), null);
+  assert.equal(hookManagerPath({ hook: "/r/.husky/_/pre-commit", hooksPath: ".husky/_", commonDir: "/r/.git" }), ".husky/_");
+  assert.equal(hookManagerPath({ hook: "/r/.git/hooks/pre-commit", hooksPath: "", commonDir: "/r/.git" }), null);
 });

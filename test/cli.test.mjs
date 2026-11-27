@@ -90,6 +90,27 @@ test("hook uninstall removes a v3 managed hook without a v4 reinstall", async ()
   await assert.rejects(run(["hook", "uninstall", "sample"], repo, state), /not installed/);
 });
 
+test("hook install refuses a tracked hook file and status reads any Field Report hook", async () => {
+  const { repo, state } = await fixture();
+  await mkdir(path.join(repo, ".githooks"));
+  await writeFile(path.join(repo, ".githooks", "pre-commit"), "#!/bin/sh\nnpm test\n", { mode: 0o755 });
+  await exec("git", ["add", ".githooks/pre-commit"], { cwd: repo });
+  await exec("git", ["config", "core.hooksPath", ".githooks"], { cwd: repo });
+  await assert.rejects(run(["hook", "install", "sample"], repo, state), /is tracked by the repository/);
+  assert.equal(await readFile(path.join(repo, ".githooks", "pre-commit"), "utf8"), "#!/bin/sh\nnpm test\n");
+  await writeFile(path.join(repo, ".githooks", "pre-commit"), "#!/bin/sh\nnpm test\nfr gate checkout\n");
+  assert.match(await run(["hook", "status", "sample"], repo, state), /installed \(runs fr gate checkout\)/);
+  await mkdir(path.join(repo, ".husky", "_"), { recursive: true });
+  await writeFile(path.join(repo, ".husky", "_", "pre-commit"), "#!/bin/sh\n. \"$(dirname \"$0\")/h\"\n", { mode: 0o755 });
+  await exec("git", ["config", "core.hooksPath", ".husky/_"], { cwd: repo });
+  await assert.rejects(run(["hook", "install", "sample"], repo, state), /hook manager such as husky/);
+  await exec("git", ["config", "--unset", "core.hooksPath"], { cwd: repo });
+  const hook = (await exec("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: repo })).stdout.trim();
+  await mkdir(path.dirname(hook), { recursive: true });
+  await writeFile(hook, "#!/bin/sh\n# field-report-commit-gate:v3\nexit 0\n", { mode: 0o755 });
+  assert.match(await run(["hook", "status", "sample"], repo, state), /outdated/);
+});
+
 test("crr briefs prefer a local native subagent", async () => {
   const { repo, state } = await fixture();
   await writeFile(path.join(repo, "README.md"), "review me\n");
