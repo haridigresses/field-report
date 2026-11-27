@@ -63,7 +63,23 @@ export async function pullRequest(project, workstream, cwd = process.cwd()) {
   if (!selector) throw new Error("Workstream has no linked pull request or branch");
   const args = ["pr", "view", String(selector), "--json", "number,state,isDraft,headRefName,headRefOid,baseRefName,statusCheckRollup"];
   if (project.githubRepo) args.push("--repo", project.githubRepo);
-  return JSON.parse(await run("gh", args, cwd));
+  const pr = JSON.parse(await run("gh", args, cwd));
+  return { ...pr, reviewThreads: await reviewThreads(project, pr.number, cwd) };
+}
+
+const THREADS_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){totalCount nodes{isResolved path line originalLine comments(first:1){nodes{author{login} body}}}}}}}`;
+
+// Review threads (bots and humans), which gh pr view does not expose.
+export async function reviewThreads(project, number, cwd = process.cwd()) {
+  const slug = project.githubRepo || (await run("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], cwd)).trim();
+  const [owner, name] = slug.split("/");
+  const data = JSON.parse(await run("gh", ["api", "graphql", "-f", `query=${THREADS_QUERY}`, "-F", `owner=${owner}`, "-F", `name=${name}`, "-F", `number=${number}`], cwd));
+  const threads = data.data.repository.pullRequest.reviewThreads;
+  if (threads.totalCount > threads.nodes.length) throw new Error(`PR #${number} has ${threads.totalCount} review threads; Field Report reads the first ${threads.nodes.length}`);
+  return threads.nodes.map((thread) => {
+    const first = thread.comments.nodes[0] || {};
+    return { resolved: thread.isResolved, path: thread.path, line: thread.line ?? thread.originalLine ?? null, author: first.author?.login || "unknown", body: first.body || "" };
+  });
 }
 
 // Recorded heads that are ancestors of (or equal to) head, mapped to how many

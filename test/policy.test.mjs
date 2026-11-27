@@ -338,3 +338,15 @@ test("a verdict must match its findings; questions are recorded and reconciliati
   assert.equal("reconciled" in recorded, false);
   assert.throws(() => validateReview(mrrEnvelope(d, "sol-bad-q", { questions: [""] }), d), /questions must be a nonblank string array/);
 });
+
+test("bots gate blocks unresolved review threads from bots and humans", () => {
+  const pr = { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [{ conclusion: "SUCCESS", status: "COMPLETED" }] };
+  const base = { project: { baseBranch: "main" }, checkout: { dirty: false, head }, target: { head, branch: "feature" } };
+  const reasons = botsReasons({ ...base, pr: { ...pr, reviewThreads: [
+    { resolved: false, path: "src/doctor.mjs", line: 43, author: "chatgpt-codex-connector", body: "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow)</sub></sub>  Check the wrapper**\n\nDetails" },
+    { resolved: true, path: "README.md", line: 5, author: "hari", body: "done" }
+  ] } });
+  assert.equal(reasons.length, 1);
+  assert.match(reasons[0], /^1 unresolved review thread; fix each or reply why not, then resolve it: src\/doctor.mjs:43 \(chatgpt-codex-connector\) Check the wrapper$/);
+  assert.deepEqual(botsReasons({ ...base, pr: { ...pr, reviewThreads: [{ resolved: true, path: "a", line: 1, author: "x", body: "y" }] } }), []);
+});
