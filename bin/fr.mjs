@@ -42,6 +42,7 @@ fr doctor
 fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label]
 fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label]
 fr project list
+fr project remove <id> [--with-workstreams]
 fr identity --role coordinator|owner
 fr create <id> --project <id> --title <title> --outcome <text> [--branch <branch>] [--owner-task <id>]
 fr list [--project <id>]
@@ -278,6 +279,10 @@ async function main() {
   if (command === "project" && positional[0] === "update") {
     const record = await store.updateProject(positional[1], { label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base, tracker: trackerFlags(flags) });
     return process.stdout.write(`Updated project ${record.id}.\n`);
+  }
+  if (command === "project" && positional[0] === "remove") {
+    const removed = await store.removeProject(requireValue(positional[1], "Specify a project ID"), { withWorkstreams: flags["with-workstreams"] === true });
+    return process.stdout.write(`Removed project ${removed.project}${removed.workstreams.length ? ` and its workstreams: ${removed.workstreams.join(", ")}` : ""}.\n`);
   }
   if (command === "project" && positional[0] === "list") return process.stdout.write(`${(await store.projects()).map((project) => `${project.id}\t${project.baseBranch}\t${project.repoPath}\t${trackerTarget(trackerFor(project))}`).join("\n")}\n`);
 
