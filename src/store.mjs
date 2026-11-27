@@ -3,7 +3,6 @@ import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "nod
 import os from "node:os";
 import path from "node:path";
 
-const SHA = /^[0-9a-f]{40}$/i;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const DEFAULT_ROOT = path.join(os.homedir(), ".local", "state", "field-report");
 
@@ -85,7 +84,7 @@ export function createStore(root = defaultStateRoot()) {
   const lock = path.join(root, ".write-lock");
 
   async function init() {
-    await Promise.all(["projects", "workstreams", "reviews", "delegations", "events", "waivers"].map((entry) => mkdir(path.join(root, entry), { recursive: true })));
+    await Promise.all(["projects", "workstreams", "reviews", "delegations", "events", "dispositions"].map((entry) => mkdir(path.join(root, entry), { recursive: true })));
     const configFile = path.join(root, "config.json");
     try { await readFile(configFile); }
     catch (error) { if (error.code !== "ENOENT") throw error; await writeJson(configFile, { schemaVersion: 2, createdAt: new Date().toISOString() }); }
@@ -212,6 +211,8 @@ export function createStore(root = defaultStateRoot()) {
       claim,
       claimRevision: previous.id ? (previous.claimRevision ?? 1) + (claim === previousClaim ? 0 : 1) : 1,
       next: optionalString(value.next ?? previous.next, "Next action", 400),
+      // User product decisions; every review brief carries them as settled.
+      decisions: (Array.isArray(value.decisions) ? value.decisions : previous.decisions || []).map((text) => requiredString(text, "Decision", 1000)),
       ownerTaskId: optionalString(value.ownerTaskId ?? previous.ownerTaskId, "Owner task ID", 200),
       branch: optionalString(value.branch ?? previous.branch, "Branch", 300),
       pullRequests: Array.isArray(value.pullRequests) ? [...new Set(value.pullRequests.map(Number).filter(Number.isInteger))] : previous.pullRequests || [],
@@ -274,25 +275,21 @@ export function createStore(root = defaultStateRoot()) {
     });
   }
 
-  async function addWaiver(workstreamId, value) {
+  // The user's acceptance of one MRR finding. It never expires: the finding
+  // lives on one recorded review, so the acceptance cannot drift to new code.
+  async function addDisposition(workstreamId, value) {
     const stream = await workstream(workstreamId);
-    const waiver = {
+    const disposition = {
       id: randomUUID(),
       workstreamId: stream.id,
-      event: "waived",
-      head: requiredString(value.head, "Waiver head", 40),
-      baseHead: requiredString(value.baseHead, "Waiver baseHead", 40),
-      claim: requiredString(value.claim, "Waiver claim", 4000),
-      claimRevision: Number.isInteger(value.claimRevision) ? value.claimRevision : 1,
-      priorHead: requiredString(value.priorHead, "Waiver priorHead", 40),
-      reason: requiredString(value.reason, "Waiver reason", 4000),
-      actor: requiredString(value.actor, "Waiver actor", 200),
+      findingId: requiredString(value.findingId, "Finding ID", 20),
+      reason: requiredString(value.reason, "Disposition reason", 4000),
+      actor: requiredString(value.actor, "Disposition actor", 200),
       createdAt: new Date().toISOString()
     };
-    if (!SHA.test(waiver.head) || !SHA.test(waiver.baseHead) || !SHA.test(waiver.priorHead)) throw new Error("Waiver requires exact head, baseHead, and priorHead SHAs");
-    await locked(() => append("waivers", stream.id, waiver));
-    return waiver;
+    await locked(() => append("dispositions", stream.id, disposition));
+    return disposition;
   }
 
-  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), waivers: (id) => lines("waivers", id), addDelegation, addDelegationEvent, addReview, addWaiver };
+  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), dispositions: (id) => lines("dispositions", id), addDelegation, addDelegationEvent, addReview, addDisposition };
 }

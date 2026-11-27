@@ -65,3 +65,17 @@ export async function pullRequest(project, workstream, cwd = process.cwd()) {
   if (project.githubRepo) args.push("--repo", project.githubRepo);
   return JSON.parse(await run("gh", args, cwd));
 }
+
+// Recorded heads that are ancestors of (or equal to) head, mapped to how many
+// commits behind head they are. A seat's review of an earlier commit carries
+// forward; the nearest reviewed commit decides the seat.
+export async function ancestorHeads(repoRoot, heads, head) {
+  const result = new Map([[head, 0]]);
+  await Promise.all([...new Set(heads)].filter((item) => item && item !== head).map(async (item) => {
+    try {
+      await exec("git", ["merge-base", "--is-ancestor", item, head], { cwd: repoRoot, timeout: 10_000 });
+      result.set(item, Number(await run("git", ["rev-list", "--count", `${item}..${head}`], repoRoot)));
+    } catch {}
+  }));
+  return result;
+}

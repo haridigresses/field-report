@@ -75,7 +75,7 @@ const delegation = {
 test("normalizeReview fills omitted identity without changing substantive evidence", () => {
   const input = { reviewComplete: true, independent: true, verdict: "NO_GO",
     findings: [{ text: "Real defect" }], unresolved: ["Could not inspect diff"],
-    summary: "Limited evidence", reconciled: [{ id: "F9", disposition: "still_present", rationale: "Not fixed." }] };
+    summary: "Limited evidence", questions: [{ text: "Keep old reviews?" }] };
   const normalized = normalizeReview(input, delegation);
   assert.equal(normalized.delegationId, delegation.id);
   assert.equal(normalized.head, delegation.head);
@@ -84,7 +84,7 @@ test("normalizeReview fills omitted identity without changing substantive eviden
   assert.deepEqual(normalized.unresolved, input.unresolved);
   assert.equal(normalized.verdict, "NO_GO");
   assert.equal(normalized.summary, input.summary);
-  assert.equal(normalized.reconciled[0].findingId, "F9");
+  assert.deepEqual(normalized.questions, ["Keep old reviews?"]);
 });
 
 test("normalizeReview rejects conflicting supplied identity instead of retargeting evidence", () => {
@@ -106,23 +106,12 @@ test("normalization cannot erase malformed findings or promote pass into GO", ()
   assert.notEqual(normalized.reviewComplete, true);
 });
 
-test("normalizeReview takes occupancy flags from the brief, not the envelope", () => {
-  const persona = normalizeReview({
-    reconciliationOnly: true, jobRole: "deep-code-review", legacy: true, staleAtRecord: true, findings: [], unresolved: []
-  }, {
+test("normalizeReview drops a supplied legacy flag", () => {
+  const persona = normalizeReview({ legacy: true, findings: [], unresolved: [] }, {
     id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
     claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "grok-4.6", route: "cli"
   });
-  assert.equal("reconciliationOnly" in persona, false);
-  assert.equal("jobRole" in persona, false);
   assert.equal("legacy" in persona, false);
-  assert.equal("staleAtRecord" in persona, false);
-  const court = normalizeReview({ findings: [], unresolved: [] }, {
-    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "reconciliation", reconciliationOnly: true, jobRole: "structural-challenge",
-    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-6-astra", route: "cli"
-  });
-  assert.equal(court.reconciliationOnly, true);
-  assert.equal(court.jobRole, "structural-challenge");
 });
 
 test("normalizeReview preserves a supplied MRR tree for validation to reject", () => {

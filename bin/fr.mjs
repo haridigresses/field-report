@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
 import { createStore, describeTracker, trackerFor, trackerTarget } from "../src/store.mjs";
-import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, seatingFor, seatModelsFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
-import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
+import { assertSeatOpen, botsReasons, CRR_ROLE, evaluateGate, findingLedger, identityKey, latestClaimReviews, openReasons, reviewKind, REVIEW_ROLES, seatingFor, seatStatus, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { ancestorHeads, checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 import { claudeInvokeCommand, codexInvokeCommand, cursorReviewCommand, HOST_LAUNCHERS } from "../src/machines.mjs";
 import { configSource, launchEntry, REVIEW_ROLES as SEATS, seatFor } from "../src/seats.mjs";
@@ -48,8 +48,8 @@ fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--
 fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review record <id> --file <review.json> [--delegation <uuid>]
-fr review adjudicate <id> --role deep-code-review|structural-challenge|fable-challenge --model <id> [--route native|cli]
-fr review waive <id> --reason <text> [--actor <id>]
+fr review accept <id> --finding <F-id> --reason <text> [--actor <id>]
+fr decide <id> <decision text>
 fr review status <id> --kind crr|mrr
 fr gate checkout [id]
 fr gate crr [id]
@@ -140,35 +140,35 @@ function reviewPrompt(stream, delegation, inventory) {
     ? `base HEAD ${delegation.baseHead} and staged tree ${delegation.tree}`
     : `base ${delegation.baseHead} and exact MRR head ${delegation.head}`;
   const rubric = kind === "crr"
-    ? "CRR: is this commit competent, and are there any gaps the owner should fix before keeping it? Stay short. Do not invent product or design decisions."
+    ? "CRR: is this commit competent, and are there any gaps the owner should fix before keeping it? Stay short."
     : delegation.role === "deep-code-review"
       ? "Inspect correctness, security, data integrity, error paths, regressions, and test adequacy."
       : delegation.role === "structural-challenge"
         ? "Inspect necessity, simplicity, authority boundaries, scope, maintainability, and whether you would select the mechanism from scratch."
-        : delegation.role === COURT_ROLE
-          ? "Court is evidence-only. You cannot fill a persona job. Adjudicate only the delivered occupying packet. Use rejected when the finding is inapplicable to this claim and target; still_present when it remains. Do not resolve. Do not add findings or unresolved items. Do not invent product or design decisions."
-          : "Inspect the candidate as the independent challenge lane.";
-  const productBasis = delegation.role === COURT_ROLE
-    ? ""
-    : " For behavior-changing fixes, describe in the summary one concrete scenario: what happens today, what should happen afterward, and what user instruction or previously approved product rule establishes that outcome. Existing code, tests, schema, agent-written documentation, and reviewer agreement establish behavior, not user intent. Flag unsupported product assumptions even when the implementation is correct. If accepting the change depends on an unsupported product assumption, return NO_GO with a finding describing the concrete behavior and missing approval evidence. The owner asks the user to settle the choice; reviewers must not decide it. Reuse prior explicit decisions supplied with the review context without asking again.";
-  const outstanding = delegation.outstanding?.length
-    ? delegation.role === COURT_ROLE
-      ? `\n\nOccupying NO_GO packet requiring evidence-only adjudication, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nAccount for every delivered ID in reconciled: use disposition=rejected when inapplicable, or still_present when it remains. Give evidence-based rationale. Do not add findings or unresolved items. Do not clear an issue on the owner's assurance alone. still_present means no rerun; the owner fixes on a new head.`
-      : `\n\nOutstanding MRR findings from an older head requiring explicit reconciliation, judged against the current exact target:\n${delegation.outstanding.map((finding) => `- ${finding.id} (${finding.category}): ${finding.text}`).join("\n")}\nAccount for every delivered ID in reconciled: use disposition=resolved when fixed, rejected when inapplicable to the current claim, or still_present when it remains. Give evidence-based rationale. Findings and unresolved are only for newly discovered issues; do not restate a delivered issue there. A NO_GO may rest on still_present reconciliations alone. Do not clear an issue on the owner's assurance alone.`
+        : "Inspect the candidate as the independent challenge lane.";
+  const decisions = (stream.decisions || []).length
+    ? `\n\nUser decisions. These are settled product choices; do not re-litigate them:\n${stream.decisions.map((text) => `- ${text}`).join("\n")}`
+    : "";
+  const prior = delegation.prior?.length
+    ? `\n\nThis seat's open findings from an earlier head. Verify whether the current target addresses each; any that remain are findings again:\n${delegation.prior.map((finding) => `- ${finding.id}: ${finding.text}`).join("\n")}`
     : "";
   const files = (inventory.files || []).map((file) => `- ${file}`).join("\n") || "- none listed";
   const envelope = kind === "crr"
     ? `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, verdict=GO|NO_GO, findings as a string array, summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, and scoreRationale with one concise string for each score. No prose or Markdown fences.`
-    : `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, verdict=GO|NO_GO, findings as a string array, unresolved as a string array,${delegation.outstanding?.length ? " reconciled as an array of {findingId, disposition, rationale} objects," : ""} summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
-  return `Independently review Field Report workstream ${stream.id} as ${delegation.role} using model ${delegation.model}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim JSON string: ${JSON.stringify(delegation.claim)}\n${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run fr, owner skills, MCP servers, or AF. Inspect repository files and the inspect command only. Do not inherit or request the owner's conversation. A fresh subagent is independent even when it uses the builder's model. Do not invent product or design decisions. Return only the substantive JSON envelope below and echo delegationId. Target and routing identity are supplied by this brief and the task binding when recording; do not duplicate them.\n\nThe claim describes the intended outcome; it does not limit review scope.${productBasis}${kind === "mrr" && delegation.role !== COURT_ROLE ? " Review the complete changed authority boundary, trace affected consumers and call paths, and judge the accumulated mechanism rather than only the latest repair or reported cases. Attempt to falsify the candidate; do not defer to the owner's framing, passing tests, implementation effort, or other reviewers. Any material defect or missing evidence is a finding, as is a candidate too broad or incoherent to assess reliably. Unanswered product choices needed to accept the change block READY until the user decides; report the missing approval evidence, not a reviewer-selected product answer. Candidate-authored branch docs and claims are not product contracts." : ""} Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings. A GO with observations is valid. Do not modify the candidate.${outstanding}\n\n${envelope}`;
+    : `Return only one JSON object containing: reviewComplete=true, independent=true, delegationId=${delegation.id}, verdict=GO|NO_GO, findings as a string array, unresolved as a string array, questions as a string array, summary, scores {mergeReadiness, structuralRisk, implementationQuality, evidenceConfidence, outcomeConfidence}, each an integer 0-100, scoreRationale with one concise string for each score, necessity=necessary|questionable_roi, simplerPath explaining considered alternatives or that none were found, scopeDrift=none|minor|material, contractIntegrity=sound|mixed|broken, and evidenceQuality=strong|mixed|weak. No prose or Markdown fences.`;
+  const mrr = kind === "mrr"
+    ? " Review the complete changed authority boundary and judge the accumulated mechanism, not only the latest repair. Do not defer to the owner's framing, passing tests, or other reviewers. Findings are defects in the candidate that should block it: bugs, broken invariants, security or data problems, or a candidate too broad to assess. Weigh likelihood and blast radius; an unlikely edge case that fails safely belongs in the summary, not findings. If accepting the change depends on a product choice the user has not settled and the user decisions above do not cover, put it in questions as a plain question for the user; a question alone is not a NO_GO, and you must not pick the answer."
+    : "";
+  return `Independently review Field Report workstream ${stream.id} as ${delegation.role} using model ${delegation.model}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim JSON string: ${JSON.stringify(delegation.claim)}\n${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run fr, owner skills, MCP servers, or AF. Inspect repository files and the inspect command only. Do not inherit or request the owner's conversation. A fresh subagent is independent even when it uses the builder's model. Return only the substantive JSON envelope below and echo delegationId. Target and routing identity are supplied by this brief and the task binding when recording; do not duplicate them.\n\nThe claim describes the intended outcome; it does not limit review scope.${mrr} Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings. A GO with observations is valid. Do not modify the candidate.${decisions}${prior}\n\n${envelope}`;
 }
 
 async function gateFor(stream, kind) {
   const project = await store.project(stream.project);
   const target = await targetFor(stream, kind);
-  const [reviews, delegations] = await Promise.all([store.reviews(stream.id), store.delegations(stream.id)]);
-  const gate = evaluateGate({ kind, target, workstream: stream, project, reviews, delegations });
-  return { project, target, gate };
+  const [reviews, dispositions] = await Promise.all([store.reviews(stream.id), store.dispositions(stream.id)]);
+  const ancestors = reviewKind(kind) === "mrr" ? await ancestorHeads(target.repoRoot, reviews.map((review) => review.head), target.head) : null;
+  const gate = evaluateGate({ kind, target, workstream: stream, reviews, dispositions, ancestors });
+  return { project, target, gate, reviews, dispositions, ancestors };
 }
 
 function evidenceLines(gate) {
@@ -181,7 +181,7 @@ function evidenceLines(gate) {
     if (review.necessity) lines.splice(2, 0, `  Signals: necessity ${review.necessity} · scope drift ${review.scopeDrift} · contract integrity ${review.contractIntegrity} · evidence quality ${review.evidenceQuality}`, `  Simpler path: ${review.simplerPath}`);
     if (review.findings?.length) lines.push(`  Findings: ${review.findings.join(" | ")}`);
     if (review.unresolved?.length) lines.push(`  Unresolved: ${review.unresolved.join(" | ")}`);
-    if (review.reconciled?.length) lines.push(`  Reconciled: ${review.reconciled.map((entry) => `${entry.findingId} ${entry.disposition} — ${entry.rationale}`).join(" | ")}`);
+    if (review.questions?.length) lines.push(`  Questions for the user: ${review.questions.join(" | ")}`);
     return lines;
   });
 }
@@ -198,18 +198,8 @@ function scoreLines(reviews, workstream, currentHead) {
   return ["Scores (latest per seat on this claim; structural risk is higher = more risk):", ...latest.map((review) => scoreLine(review, currentHead))];
 }
 
-async function mergeReadyFor(stream) {
-  const project = await store.project(stream.project);
-  const target = await targetFor(stream, "mrr");
-  const [reviews, delegations, waivers] = await Promise.all([store.reviews(stream.id), store.delegations(stream.id), store.waivers(stream.id)]);
-  const gate = evaluateMergeReady({ target, workstream: stream, reviews, delegations, waivers });
-  return { project, target, gate };
-}
-
-function printMergeReady(gate) {
-  if (gate.phase === "ready") return `READY on this HEAD`;
-  if (gate.phase === "waived") return `merge-ready via skip — ${gate.waiver.reason} (prior MRR ${(gate.waiver.priorHead || "").slice(0, 12)})`;
-  if (gate.phase === "churn") return gate.reasons.join("; ");
+function printMrr(gate) {
+  if (gate.ready) return ["READY on this HEAD", ...gate.notes].join("; ");
   return `BLOCKED — ${gate.reasons.join("; ")}`;
 }
 
@@ -231,7 +221,7 @@ async function openGate(stream) {
 }
 
 async function botsGate(stream) {
-  const result = await mergeReadyFor(stream);
+  const result = await gateFor(stream, "mrr");
   const state = await checkout();
   let pr = null;
   let githubError = null;
@@ -300,9 +290,9 @@ async function main() {
     const state = await checkout();
     const identity = identityKey(project.id, stream.ownerTaskId ? "owner" : "coordinator");
     let mrr;
-    try { mrr = await mergeReadyFor(stream); } catch (error) { mrr = { gate: { phase: "blocked", reasons: [error.message] } }; }
+    try { mrr = await gateFor(stream, "mrr"); } catch (error) { mrr = { gate: { ready: false, notes: [], reasons: [error.message] } }; }
     const reviews = await store.reviews(stream.id);
-    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nTodos: ${describeTracker(trackerFor(project), project.id)}\nSession name: ${identity.key} (fallback ${identity.fallback}; AF-save if AF is installed)\nMRR: ${printMergeReady(mrr.gate)}\n${scoreLines(reviews, stream, state.head).join("\n")}\nReviews never require permission. Do not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; wait until the user asks for final MRR. Product and domain questions go to the user; do not infer them from schema or code.\n`);
+    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nTodos: ${describeTracker(trackerFor(project), project.id)}\nSession name: ${identity.key} (fallback ${identity.fallback}; AF-save if AF is installed)\nMRR: ${printMrr(mrr.gate)}\n${(stream.decisions || []).length ? `Decisions: ${stream.decisions.join(" | ")}\n` : ""}${scoreLines(reviews, stream, state.head).join("\n")}\nReviews never require permission. Do not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; earlier seat reviews carry forward, and the user asks for final MRR. Product and domain questions go to the user; do not infer them from schema or code.\n`);
   }
   if (command === "update") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
@@ -314,6 +304,13 @@ async function main() {
     return process.stdout.write(`Updated ${next.id}.\n`);
   }
 
+  if (command === "decide") {
+    const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
+    const text = requireValue(positional.slice(1).join(" ").trim(), "Specify the decision text");
+    const next = await store.saveWorkstream({ ...stream, decisions: [...(stream.decisions || []), text] }, { type: "decision", text: `User decision: ${text}`, actor: process.env.CODEX_THREAD_ID });
+    return process.stdout.write(`Recorded decision ${next.decisions.length} on ${next.id}. Review briefs now carry it as settled.\n`);
+  }
+
   if (command === "review" && positional[0] === "brief") {
     const stream = await store.workstream(positional[1]);
     const kind = reviewKind(requireValue(flags.kind, "Specify --kind crr|mrr"));
@@ -321,33 +318,27 @@ async function main() {
     const role = requireValue(flags.role, kind === "crr" ? "Specify --role crr" : "Specify --role deep-code-review|structural-challenge|fable-challenge");
     if (kind === "crr" && role !== CRR_ROLE) throw new Error("CRR briefs use --role crr");
     if (kind === "mrr" && !REVIEW_ROLES.includes(role)) throw new Error("MRR briefs use a persona role");
-    if (flags.reconcile) throw new Error("Exact-head packets go through fr review adjudicate; do not attach them to a persona brief");
     if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");
     const seated = { ...seatingFor(role, flags.model, flags.route), requested: flags.model || null };
     const target = await targetFor(stream, kind);
-    const reviews = kind === "mrr" ? await store.reviews(stream.id) : [];
-    const delegations = kind === "mrr" ? await store.delegations(stream.id) : [];
+    let prior = [];
     if (kind === "mrr") {
-      assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, delegations });
-      const occupant = occupyingReview(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision }, delegations);
-      if (occupant) {
-        // An authorized same-model court rerun keeps the original job's list.
-        const source = delegations.find((item) => item.id === occupant.delegationId && item.event === "created") || occupant;
-        seated.seatModels = seatModelsFor(source) || seated.seatModels;
-      }
+      const [reviews, dispositions] = await Promise.all([store.reviews(stream.id), store.dispositions(stream.id)]);
+      const scope = { target, claim: stream.claim, claimRevision: stream.claimRevision };
+      assertSeatOpen(reviews, { role, ...scope });
+      // A rerun after a fix verifies this seat's own open findings.
+      const ancestors = await ancestorHeads(target.repoRoot, reviews.map((review) => review.head), target.head);
+      prior = seatStatus(reviews, role, { ...scope, ancestors, dispositions }).open.map(({ id, text }) => ({ id, text }));
     }
     // Resolve the launch before writing anything, so an unlaunchable model leaves no brief.
     const launch = launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head });
-    const outstanding = kind === "mrr" && role === "deep-code-review"
-      ? outstandingForDeep(reviews, stream.claim, target, stream.claimRevision).map(({ id, category, text }) => ({ id, category, text }))
-      : [];
     const inventory = await diffInventory(target);
     const project = await store.project(stream.project);
     const delegation = await store.addDelegation(stream.id, {
       type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision,
       ...(kind === "mrr" ? { seatModels: seated.seatModels } : {}),
       head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}),
-      ...(outstanding.length ? { outstanding } : {}),
+      ...(prior.length ? { prior } : {}),
       ownerTaskIdAtBrief: stream.ownerTaskId || null
     });
     const execution = { ...REVIEW_EXECUTION, intended: seated.intended, model: seated.model, route: seated.route, launch };
@@ -359,30 +350,7 @@ async function main() {
     return process.stdout.write(`Bound review ${event.id} to ${event.taskId}.\n`);
   }
   if (command === "review" && positional[0] === "fail") {
-    throw new Error("Field Report does not record provider failure. Repair or resume a started run. If a model cannot start before any envelope occupies the job, brief another model from the seat's valid list.");
-  }
-  if (command === "review" && positional[0] === "adjudicate") {
-    const stream = await store.workstream(positional[1]);
-    const jobRole = requireValue(flags.role, "Specify --role deep-code-review|structural-challenge|fable-challenge");
-    if (!REVIEW_ROLES.includes(jobRole)) throw new Error("Court requires the persona job being adjudicated");
-    if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");
-    const seated = { ...seatingFor(COURT_ROLE, flags.model, flags.route), requested: flags.model || null };
-    const target = await targetFor(stream, "mrr");
-    const reviews = await store.reviews(stream.id);
-    assertCourtJobAvailable(reviews, { jobRole, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, ownerTaskId: stream.ownerTaskId });
-    const occupant = occupyingReview(reviews, { role: jobRole, target, claim: stream.claim, claimRevision: stream.claimRevision });
-    const outstanding = outstandingOccupantPacket(reviews, occupant, stream.claim).map(({ id, category, text }) => ({ id, category, text }));
-    if (!outstanding.length) throw new Error(`${jobRole} occupying NO_GO has no outstanding packet to adjudicate`);
-    const launch = launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head });
-    const inventory = await diffInventory(target);
-    const project = await store.project(stream.project);
-    const delegation = await store.addDelegation(stream.id, {
-      type: "review", kind: "mrr", role: COURT_ROLE, jobRole, reconciliationOnly: true, model: seated.model, route: seated.route,
-      claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, outstanding,
-      ownerTaskIdAtBrief: stream.ownerTaskId || null
-    });
-    const execution = { ...REVIEW_EXECUTION, intended: null, model: seated.model, route: seated.route, launch };
-    return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
+    throw new Error("Field Report does not record provider failure. Repair or resume a started run. If a model cannot start before it records a review, brief another model from the seat's valid list.");
   }
   if (command === "review" && positional[0] === "record") {
     const stream = await store.workstream(positional[1]);
@@ -404,53 +372,25 @@ async function main() {
     if (!bound) throw new Error("Review requires an explicit delegation task binding before recording");
     const envelope = normalizeReview(parsed, delegation, bound);
     const validated = validateReview(envelope, delegation);
-    const currentTarget = await targetFor(stream, delegation.kind);
-    const stale = (delegation.claimRevision ?? 1) !== (stream.claimRevision ?? 1) || delegation.head !== currentTarget.head || delegation.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && delegation.tree !== currentTarget.tree);
-    if (stale && (validated.verdict !== "NO_GO" || !noGoHasEvidence(validated))) throw new Error("A stale review may record new adverse evidence only; it may not record a GO");
-    if (stale && (validated.reconciled || []).some((entry) => entry.disposition !== "still_present")) throw new Error("A stale review may mark delivered findings still_present but may not resolve or reject them");
-    const packet = new Set((delegation.outstanding || []).map((finding) => finding.id));
-    for (const entry of validated.reconciled || []) if (!packet.has(entry.findingId)) throw new Error(`reconciled may only reference IDs from this brief's outstanding packet; out-of-packet ID: ${entry.findingId}`);
-    for (const delivered of delegation.outstanding || []) if (!(validated.reconciled || []).some((entry) => entry.findingId === delivered.id)) throw new Error(`reconciled must account for delivered issue ${delivered.id}`);
-    const { review, assignedFindingIds: assigned } = await store.addReview(stream.id, { ...validated, sourceText, expectedClaimRevision: stream.claimRevision ?? 1, claimRevision: delegation.claimRevision ?? 1, ...(stale ? { staleAtRecord: true } : {}), ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null }, { beforeAppend: async (prior) => {
-      const latest = await targetFor(stream, delegation.kind);
-      if (latest.head !== currentTarget.head || latest.baseHead !== currentTarget.baseHead || (reviewKind(delegation.kind) === "crr" && latest.tree !== currentTarget.tree)) throw new Error("Repository target changed while the review was being recorded; retry against current state");
-      if (stale) return;
-      const scope = { target: currentTarget, claim: stream.claim, claimRevision: stream.claimRevision };
-      if (validated.role === COURT_ROLE) {
-        assertCourtJobAvailable(prior, { jobRole: delegation.jobRole, ...scope, model: validated.model, reviewerTaskId: validated.reviewerTaskId, ownerTaskId: stream.ownerTaskId });
-      } else if (reviewKind(delegation.kind) === "mrr") {
-        assertPersonaJobAvailable(prior, { role: validated.role, ...scope, model: validated.model, reviewerTaskId: validated.reviewerTaskId, delegations: delegationEvents, currentDelegation: delegation });
-      }
-    } });
+    const { review, assignedFindingIds: assigned } = await store.addReview(stream.id, { ...validated, sourceText, expectedClaimRevision: stream.claimRevision ?? 1, claimRevision: delegation.claimRevision ?? 1, ownerTaskIdAtBrief: delegation.ownerTaskIdAtBrief || null });
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);
   }
-  if (command === "review" && positional[0] === "waive") {
+  if (command === "review" && positional[0] === "accept") {
     const stream = await store.workstream(positional[1]);
+    const findingId = requireValue(flags.finding, "Specify --finding <F-id>");
     const reason = requireValue(flags.reason, "Specify --reason");
-    const target = await targetFor(stream, "mrr");
-    const [reviews, waivers] = await Promise.all([store.reviews(stream.id), store.waivers(stream.id)]);
-    const exact = await gateFor(stream, "mrr");
-    if (exact.gate.ready) throw new Error("Exact-head MRR is already READY; no skip is needed");
-    const last = lastReadyMrr(reviews, stream, await store.delegations(stream.id));
-    if (!last) throw new Error("A skip requires a prior finding-free MRR on this claim");
-    const outstanding = outstandingFindings(reviews, stream.claim, target, stream.claimRevision ?? 1);
-    if (outstanding.length) throw new Error(`Reconcile outstanding MRR findings before skipping the panel: ${outstanding.map((item) => item.id).join(", ")}`);
-    if (matchingWaiver(waivers, { target, workstream: stream })) throw new Error("A skip is already recorded for this exact head");
+    const finding = findingLedger(await store.reviews(stream.id)).find((item) => item.id === findingId);
+    if (!finding) throw new Error(`Unknown MRR finding: ${findingId}`);
     const actor = String(flags.actor || process.env.CODEX_THREAD_ID || stream.ownerTaskId || "").trim();
-    if (!actor) throw new Error("A skip requires a recorded actor: pass --actor, set CODEX_THREAD_ID, or bind an owner session");
-    const waiver = await store.addWaiver(stream.id, { head: target.head, baseHead: target.baseHead, claim: stream.claim, claimRevision: stream.claimRevision ?? 1, priorHead: last.head, reason, actor });
-    return process.stdout.write(`Recorded MRR skip for ${waiver.head.slice(0, 12)} (prior MRR ${waiver.priorHead.slice(0, 12)}, actor ${waiver.actor}). This skip dies if HEAD moves. Do not record a skip unless the user explicitly agreed.\n`);
+    if (!actor) throw new Error("An acceptance requires a recorded actor: pass --actor, set CODEX_THREAD_ID, or bind an owner session");
+    const disposition = await store.addDisposition(stream.id, { findingId, reason, actor });
+    return process.stdout.write(`Recorded acceptance of ${disposition.findingId} (${finding.role}) by ${disposition.actor}. Record it only when the user explicitly accepted the finding.\n`);
   }
   if (command === "review" && positional[0] === "status") {
     const stream = await store.workstream(positional[1]);
     const kind = requireValue(flags.kind, "Specify --kind crr|mrr");
     const result = await gateFor(stream, kind);
-    const reviews = await store.reviews(stream.id);
-    const lines = [printGate(stream, result, true), ...scoreLines(reviews, stream, result.target.head)];
-    if (kind === "mrr") {
-      const merge = await mergeReadyFor(stream);
-      lines.push(`Merge-ready: ${printMergeReady(merge.gate)}`);
-    }
+    const lines = [printGate(stream, result, true), ...scoreLines(result.reviews, stream, result.target.head)];
     return process.stdout.write(`${lines.join("\n")}\n`);
   }
 
@@ -471,7 +411,7 @@ async function main() {
     if (action === "open") {
       const stream = await streamForCheckout(streamId);
       const result = await openGate(stream);
-      const lines = [`${stream.id} open gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, "Field Report does not open the pull request.", ...result.reasons.map((reason) => `- ${reason}`), ...evidenceLines(result.gate)];
+      const lines = [`${stream.id} open gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, "Field Report does not open the pull request.", ...result.reasons.map((reason) => `- ${reason}`), ...result.gate.notes.map((note) => `- ${note}`), ...evidenceLines(result.gate)];
       if (!result.ready) throw new Error(lines.join("\n"));
       return process.stdout.write(`${lines.join("\n")}\n`);
     }
@@ -479,7 +419,7 @@ async function main() {
       const stream = await store.workstream(requireValue(streamId, "Specify a workstream ID"));
       const result = await botsGate(stream);
       const prLine = result.pr ? `PR #${result.pr.number}: ${result.pr.isDraft ? "draft" : "ready"}` : result.githubError ? `GitHub lookup failed: ${result.githubError}` : "No pull request";
-      const lines = [`${stream.id} bots gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, prLine, ...result.reasons.map((reason) => `- ${reason}`), ...evidenceLines(result.gate)];
+      const lines = [`${stream.id} bots gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, prLine, ...result.reasons.map((reason) => `- ${reason}`), ...result.gate.notes.map((note) => `- ${note}`), ...evidenceLines(result.gate)];
       if (!result.ready) throw new Error(lines.join("\n"));
       return process.stdout.write(`${lines.join("\n")}\n`);
     }
