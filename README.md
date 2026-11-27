@@ -2,11 +2,11 @@
 
 Field Report is a thin control loop around a delivery unit. It binds repo, branch, claim, and owner session; records CRR and three-seat MRR; and gates readiness for CI bots. It does not launch reviewers, open pull requests, or merge.
 
-Agent Fixes, when installed, owns sessions and names. Each project's tracker — AF issues or a Linear team — owns todos. Field Report stores only that pointer. Each target repository's `merge-ready-review.md` owns merge quality. Your config file chooses the reviewer models (see [Seats](#seats)). Cursor Cloud Agents reach the host `codex` and `claude` CLIs through My Machines when a worker for that checkout is online.
+Each project says where todos go (GitHub Issues by default, or Linear, Notion, or Ref) and where build plans live; Field Report stores only those pointers. Each target repository's `merge-ready-review.md` owns merge quality. Your config file chooses the reviewer models (see [Seats](#seats)). Cursor Cloud Agents reach the host `codex` and `claude` CLIs through My Machines when a worker for that checkout is online.
 
 ## Core loop
 
-- When AF is installed, coordinators and owners name themselves (`fr identity`, then AF save); without AF they skip naming. The user does not name agents. Reviewers stay unnamed and off AF.
+- Coordinators and owners title their session with the key `fr identity` prints (for example `aon/owner`) where the host allows, so the user can find it. It is a label only. The user does not name agents. Reviewers take no title.
 - Before you run `git commit` on a commit you intend to keep, stop and run CRR (1–2 subagents, local models first, scores required). A green checkout hook is not CRR. WIP or amend is owner judgment. Findings are for the owner on that staged tree. `fr context` always prints the latest scores and structural risk (higher = more risk), even when the gate is blocked.
 - Keep a one-line next action with `fr update <id> --next`. It is a sticky note, not a todo ledger.
 - MRR (three seats whose valid models come from your config file; see [Seats](#seats)) before a PR is opened. Each seat is decided by its review of the commit nearest HEAD (HEAD or an ancestor); READY means every seat's deciding review is a GO, or a NO_GO whose findings the user accepted (`fr review accept`). Earlier GOs carry forward and the gate prints what each seat has not seen. After a fix, rerun only the seat that said NO_GO. A seat reviews each exact head once. Reviewers return unsettled product choices as questions; record the user's answers with `fr decide`. The full rules live in `fr workflow`. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules.
@@ -53,7 +53,7 @@ Paste this into Claude Code, Codex, or Cursor:
 Install Field Report for me.
 1. Clone https://github.com/haridigresses/field-report to ~/field-report (or git pull if it exists), then run: node scripts/install.mjs && fr init
 2. Run fr doctor and fix what it reports. For each seat in the config file that fr seats prints on its Config line, ask me which models I have access to and edit the config so every seat's first model is one I can run. Do not guess model ids; for Cursor, use ids from cursor-agent --list-models.
-3. Ask me which repositories to register. For each, run fr project add <id> --label <label> --repo <path> --github <owner/repo>. Ask whether todos go to Agent Fixes or Linear; for Linear, ask for the team key and label and run fr project update <id> --tracker linear --linear-team <key> [--linear-label <label>].
+3. Ask me which repositories to register. For each, run fr project add <id> --label <label> --repo <path> --github <owner/repo>. Ask where todos go (GitHub Issues in that repo by default, or Linear, Notion, or Ref) and where build plans live (docs/plans/ by default); for anything but the defaults run fr project update <id> --todos <service> --todos-reference "<where>" and --plans <service> --plans-reference "<where>".
 4. Run fr doctor again. For each project: if doctor says a hook manager (husky, lefthook) owns the pre-commit hook, do not run fr hook install; tell me, and suggest adding `fr gate checkout` to that hook manager. Otherwise run fr hook install <id>.
 5. Finish with fr doctor and fr seats, and show me both outputs.
 Do not change anything inside my repositories except the git hook in step 4.
@@ -73,13 +73,13 @@ fr hook status aon
 
 If the repository uses a hook manager (`core.hooksPath`, as husky and lefthook set) or tracks its pre-commit hook in git, `fr hook install` refuses rather than overwrite that file, and `fr doctor` warns. Add `fr gate checkout` to the manager's pre-commit hook instead; `fr hook status` and `fr doctor` then report it as installed.
 
-Todos default to AF issues in the project namespace. To file them in Linear instead (no AF required):
+Todos default to GitHub issues in the project's own repository (agents use `gh issue create`). To send them elsewhere, name the service and, in free text, where in it:
 
 ```bash
-fr project update aon --tracker linear --linear-team ENG --linear-label agent-todo
+fr project update aon --todos linear --todos-reference "ENG, label agent-todo"
 ```
 
-Changing `--linear-team` drops the old label unless the same command passes `--linear-label`; `--clear-linear-label` removes it. `fr context` prints the tracker on its `Todos:` line and `fr project list` shows it as `linear:<team>[/<label>]`. Owners need the Linear MCP or CLI authorized; reviewers never touch the tracker.
+`--todos` is `github`, `linear`, `notion`, or `ref`. The reference is free text: a repo and label for GitHub, a team and label for Linear, a database or page for Notion, a parent ref for Ref. Changing the service drops the old reference unless you give a new one; `--clear-todos-reference` removes it. `fr context` prints it on its `Todos:` line and `fr project list` shows it. Owners need that service's CLI or MCP connector authorized; reviewers never file todos.
 
 Agents may self-register an unbound branch with `fr create`, or bind the correct existing outcome with `fr update --branch <current> --owner-task <current-task>`. The checkout hook only checks that the branch is bound. It does not run a review panel and must not grow one.
 
@@ -102,18 +102,19 @@ Field Report hardcodes no model names. Your config file lists the models valid f
 - Model ids match through a `cursor-` prefix and effort suffixes, so `cursor-grok-4.6-high` is `grok-4.6`. A model listed in two seats launches the same way in both.
 - `launch` is `codex`, `claude`, or `cursor` (through `fr-cursor-review`). `--route native` runs any seat as a native subagent instead. `cliModel` is the id that launcher expects, when it differs (Cursor ids carry effort suffixes).
 
-To edit seats and the plan home in a browser instead, run `fr ui` and open `http://127.0.0.1:4177/settings`. The page is local only, checks the config with the same rules as `fr`, and refuses to save an invalid one. When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
+To edit seats and projects (including each project's plan home) in a browser instead, run `fr ui` and open `http://127.0.0.1:4177/settings`. Model fields suggest your Cursor account's models (from `cursor-agent --list-models`) and the models already in your config; any id still works. Remove a project you no longer use with `fr project remove <id>`; add `--with-workstreams` to delete its workstreams and their review records too. The page is local only, checks the config with the same rules as `fr`, and refuses to save an invalid one. When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, `dispositions`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
 
 ### Plan home
 
-`plans` in the same config file says where build-ready review (BRR) plans live. Leave it out to keep plans in `docs/plans/` in each repository.
+Each project says where its build-ready review (BRR) plans live. The default is `docs/plans/` in the repository.
 
-```json
-"plans": { "home": "ref", "reference": "Engineering plans" }
+```bash
+fr project update aon --plans ref --plans-reference "Engineering plans"
 ```
 
-- `home` is `repo`, `linear`, `notion`, or `ref`. `reference` is optional free text naming the team, page, or parent document; it does not apply to `repo`.
-- Field Report only prints it, on the `Plans:` line of `fr seats` and `fr context`. The agent reads and writes the plan through its host's MCP connector for that service, and asks the user if it has none.
+- `--plans` is `repo`, `linear`, `notion`, or `ref`. `--plans-reference` is optional free text naming the team, page, or parent document; it does not apply to `repo`. Changing the service drops the old reference unless you give a new one; `--clear-plans-reference` removes it.
+- Field Report only prints it: on the `Plans:` line of `fr context`, in `fr project list`, and in `fr identity`. The agent reads and writes the plan through its host's MCP connector for that service, and asks the user if it has none.
+- Plan homes used to live in the config file; a `plans` key there now fails with a pointer to this command.
 
 ### Seat names
 

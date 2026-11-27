@@ -44,16 +44,8 @@ test("config file rejects malformed seats", () => {
   assert.throws(broken((raw) => { raw.seats["design"].models[0].id = " "; }), /models\[0\]\.id is missing/);
 });
 
-test("plans default to the repository and take a service plus an optional reference", () => {
-  assert.equal(parseSeatConfig(clone()).plans, null);
-  assert.deepEqual(parseSeatConfig({ ...clone(), plans: { home: "ref", reference: " Engineering plans " } }).plans, { home: "ref", reference: "Engineering plans" });
-  assert.deepEqual(parseSeatConfig({ ...clone(), plans: { home: "linear" } }).plans, { home: "linear", reference: null });
-  const broken = (plans) => () => parseSeatConfig({ ...clone(), plans });
-  assert.throws(broken("ref: Engineering plans"), /plans must be an object/);
-  assert.throws(broken({ home: "jira" }), /plans.home must be one of repo, linear, notion, ref/);
-  assert.throws(broken({ home: "repo", reference: "x" }), /does not apply to repo/);
-  assert.throws(broken({ home: "notion", reference: "a\nb" }), /single line/);
-  assert.throws(broken({ home: "notion", url: "x" }), /unknown key "url"/);
+test("plans in the config file fail with a pointer to per-project plan homes", () => {
+  assert.throws(() => parseSeatConfig({ ...clone(), plans: { home: "ref" } }), /plans moved to each project; .*fr project update <id> --plans/);
 });
 
 test("any model, from any lab, can fill any seat the config lists it in", () => {

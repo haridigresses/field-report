@@ -35,47 +35,51 @@ async function writeJson(file, value) {
   await rename(temporary, file);
 }
 
-export const TRACKER_KINDS = ["af", "linear"];
-
 const CONTROL = /[\u0000-\u001f\u007f]/;
 
-// Where agents file todos for a project. Field Report stores only this pointer;
-// the tracker itself owns the issues. Projects saved before trackers existed
-// read as AF. Linear labels are often team-scoped, so changing the team drops
-// the old label unless the same update names one.
-export function normalizeTracker(value, previous = null) {
-  const prior = previous || { kind: "af" };
+// A project points at two outside places: where agents file todos and where
+// BRR plans live. Each is a service plus an optional free-text reference
+// (repo, team, label, page, parent document). Field Report stores only the
+// pointer; agents reach the service themselves (gh for GitHub, the host's MCP
+// connector for the rest). Changing the service drops the old reference
+// unless the same update names one.
+const SERVICE_NAMES = { github: "GitHub", linear: "Linear", notion: "Notion", ref: "Ref" };
+export const TODO_SERVICES = ["github", "linear", "notion", "ref"];
+export const PLAN_SERVICES = ["repo", "linear", "notion", "ref"];
+
+function normalizeDestination(value, previous, { services, fallback, what, flag }) {
+  const prior = previous || { service: fallback, reference: null };
   if (value == null) return prior;
-  const kind = value.kind == null ? prior.kind : requiredString(value.kind, "Tracker", 20).toLowerCase();
-  if (!TRACKER_KINDS.includes(kind)) throw new Error(`Tracker must be ${TRACKER_KINDS.join(" or ")}`);
-  if (kind === "af") {
-    if (value.team != null || value.label != null || value.clearLabel) throw new Error("--linear-team, --linear-label, and --clear-linear-label require --tracker linear");
-    return { kind };
-  }
-  if (value.clearLabel && value.label != null) throw new Error("Use --linear-label or --clear-linear-label, not both");
-  const carried = prior.kind === "linear" ? prior : {};
-  const team = value.team == null ? carried.team : requiredString(value.team, "Linear team key", 50);
-  if (!team) throw new Error("A Linear tracker needs --linear-team <team key>");
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(team)) throw new Error("Linear team key starts with a letter or number and uses letters, numbers, underscores, and hyphens");
-  const teamChanged = carried.team != null && team !== carried.team;
-  let label = value.clearLabel || teamChanged ? null : carried.label ?? null;
-  if (value.label != null) label = requiredString(value.label, "Linear label", 100);
-  if (label != null && CONTROL.test(label)) throw new Error("Linear label cannot contain control characters or line breaks");
-  return { kind, team, label };
+  const service = value.service == null ? prior.service : String(value.service).toLowerCase();
+  if (!services.includes(service)) throw new Error(`${what} must be ${services.join(", ")}`);
+  if (value.clearReference && value.reference != null) throw new Error(`Use --${flag}-reference or --clear-${flag}-reference, not both`);
+  let reference = value.clearReference || service !== prior.service ? null : prior.reference ?? null;
+  if (value.reference != null) reference = requiredString(value.reference, `${what} reference`, 200);
+  if (reference != null && CONTROL.test(reference)) throw new Error(`${what} reference cannot contain control characters or line breaks`);
+  if (service === "repo" && reference != null) throw new Error("A repo plan home takes no reference; plans go in docs/plans/");
+  return { service, reference };
 }
 
-export function trackerFor(project) { return normalizeTracker(null, project?.tracker); }
-
-// One-token form for list output: af, linear:ENG, or linear:ENG/agent-todo.
-export function trackerTarget(tracker) {
-  if (tracker.kind !== "linear") return tracker.kind;
-  return `linear:${tracker.team}${tracker.label ? `/${tracker.label}` : ""}`;
+// Todos default to GitHub Issues in the project's own repository.
+export function normalizeTodos(value, previous = null) { return normalizeDestination(value, previous, { services: TODO_SERVICES, fallback: "github", what: "Todos", flag: "todos" }); }
+export function todosFor(project) { return normalizeTodos(null, project?.todos); }
+export function describeTodos(todos, project) {
+  if (todos.service === "github") return `GitHub issues in ${todos.reference || project?.githubRepo || "this repository"} (gh issue create)`;
+  const name = SERVICE_NAMES[todos.service];
+  return `${name}${todos.reference ? `: ${todos.reference}` : ""}, through this host's ${name} MCP connector`;
 }
 
-export function describeTracker(tracker, projectId) {
-  if (tracker.kind === "linear") return `Linear team ${tracker.team}${tracker.label ? `, label ${tracker.label}` : ""}`;
-  return `AF issues in namespace ${projectId}`;
+// Plans default to docs/plans/ in the repository.
+export function normalizePlans(value, previous = null) { return normalizeDestination(value, previous, { services: PLAN_SERVICES, fallback: "repo", what: "Plan home", flag: "plans" }); }
+export function plansFor(project) { return normalizePlans(null, project?.plans); }
+export function describePlans(plans) {
+  if (plans.service === "repo") return "docs/plans/ in this repository";
+  const name = SERVICE_NAMES[plans.service];
+  return `${name}${plans.reference ? `: ${plans.reference}` : ""}, through this host's ${name} MCP connector`;
 }
+
+// One-token form for list output: github, linear:ENG/agent-todo, notion:Plans.
+export const destinationTarget = (value) => `${value.service}${value.reference ? `:${value.reference}` : ""}`;
 
 export function defaultStateRoot() { return process.env.FIELD_REPORT_STATE_ROOT || DEFAULT_ROOT; }
 
@@ -120,7 +124,7 @@ export function createStore(root = defaultStateRoot()) {
   async function projects() {
     await init();
     const files = (await readdir(path.join(root, "projects"))).filter((file) => file.endsWith(".json")).sort();
-    return (await Promise.all(files.map((file) => readJson(path.join(root, "projects", file))))).map(withTracker);
+    return (await Promise.all(files.map((file) => readJson(path.join(root, "projects", file))))).map(withDestinations);
   }
 
   async function saveProject(value) {
@@ -132,7 +136,8 @@ export function createStore(root = defaultStateRoot()) {
       repoPath: path.resolve(requiredString(value.repoPath, "Repository path", 1000)),
       githubRepo: optionalString(value.githubRepo, "GitHub repository", 300),
       baseBranch: optionalString(value.baseBranch, "Base branch", 200) || "main",
-      tracker: normalizeTracker(value.tracker),
+      todos: normalizeTodos(value.todos),
+      plans: normalizePlans(value.plans),
       updatedAt: new Date().toISOString()
     };
     await locked(async () => {
@@ -154,7 +159,8 @@ export function createStore(root = defaultStateRoot()) {
         repoPath: value.repoPath == null ? previous.repoPath : path.resolve(requiredString(value.repoPath, "Repository path", 1000)),
         githubRepo: value.githubRepo == null ? previous.githubRepo : optionalString(value.githubRepo, "GitHub repository", 300),
         baseBranch: value.baseBranch == null ? previous.baseBranch : requiredString(value.baseBranch, "Base branch", 200),
-        tracker: normalizeTracker(value.tracker, previous.tracker),
+        todos: normalizeTodos(value.todos, todosFor(previous)),
+        plans: normalizePlans(value.plans, plansFor(previous)),
         updatedAt: new Date().toISOString()
       };
       await writeJson(file, project);
@@ -165,12 +171,12 @@ export function createStore(root = defaultStateRoot()) {
   async function project(projectId) {
     const value = await readJson(path.join(root, "projects", `${id(projectId, "Project ID")}.json`), null);
     if (!value) throw new Error(`Unknown project: ${projectId}`);
-    return withTracker(value);
+    return withDestinations(value);
   }
 
-  // Projects saved before trackers existed read as AF, so every consumer sees
-  // one tracker shape without rewriting the stored record.
-  function withTracker(value) { return { ...value, tracker: trackerFor(value) }; }
+  // Projects saved without todos or plans read as the defaults, so every
+  // consumer sees one shape without rewriting the stored record.
+  function withDestinations(value) { return { ...value, todos: todosFor(value), plans: plansFor(value) }; }
 
   // One-time v2 claim migration: records saved before the dedicated delivery
   // claim existed used summary as the implicit claim; preserve that reading
@@ -190,8 +196,9 @@ export function createStore(root = defaultStateRoot()) {
   }
 
   async function saveWorkstream(value, event = null) {
-    await project(value.project);
     return locked(async () => {
+      // Under the lock, so a project removed meanwhile can't gain an orphan.
+      await project(value.project);
       const previous = await readJson(path.join(root, "workstreams", `${id(value.id, "Workstream ID")}.json`), {});
       if (previous.id && value.revision == null) throw new Error(`Workstream already exists: ${value.id}`);
       if (value.revision != null && value.revision !== previous.revision) throw new Error(`Workstream ${value.id} changed since it was read; reload before updating`);
@@ -291,5 +298,23 @@ export function createStore(root = defaultStateRoot()) {
     return disposition;
   }
 
-  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), dispositions: (id) => lines("dispositions", id), addDelegation, addDelegationEvent, addReview, addDisposition };
+  // Removing a project deletes its record. Its workstreams and their review
+  // records go too, but only when asked: they are review history.
+  async function removeProject(projectId, { withWorkstreams = false, expectedWorkstreams = null } = {}) {
+    const target = await project(projectId);
+    return locked(async () => {
+      const owned = (await workstreams()).filter((stream) => stream.project === target.id).map((stream) => stream.id);
+      // The settings page confirms a count; refuse if workstreams appeared since.
+      if (expectedWorkstreams != null && expectedWorkstreams !== owned.length) throw new Error(`Project ${target.id} now has ${owned.length} workstreams, not ${expectedWorkstreams}; reload and confirm again`);
+      if (owned.length && !withWorkstreams) throw new Error(`Project ${target.id} has ${owned.length} workstream${owned.length === 1 ? "" : "s"} (${owned.join(", ")}); removing it also deletes them and their reviews. Pass --with-workstreams to confirm.`);
+      for (const streamId of owned) {
+        await rm(path.join(root, "workstreams", `${streamId}.json`), { force: true });
+        for (const kind of ["events", "reviews", "delegations", "dispositions"]) await rm(path.join(root, kind, `${streamId}.jsonl`), { force: true });
+      }
+      await rm(path.join(root, "projects", `${target.id}.json`));
+      return { project: target.id, workstreams: owned };
+    });
+  }
+
+  return { root, init, projects, project, saveProject, updateProject, removeProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), dispositions: (id) => lines("dispositions", id), addDelegation, addDelegationEvent, addReview, addDisposition };
 }

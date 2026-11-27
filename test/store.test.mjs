@@ -138,48 +138,36 @@ test("one reviewer run cannot bind to two review delegations even concurrently",
   await store.addDelegationEvent("sample-outcome", bound.id, { event: "bound", taskId: "same-run" });
 });
 
-test("projects default to AF todos and accept a Linear tracker pointer", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-tracker-"));
+test("projects send todos to GitHub Issues by default, or to another service with a free-text reference", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-todos-"));
   const store = createStore(root);
-  assert.deepEqual((await store.saveProject({ id: "sample", label: "Sample", repoPath: root })).tracker, { kind: "af" });
-  await assert.rejects(store.updateProject("sample", { tracker: { team: "ENG" } }), /require --tracker linear/);
-  await assert.rejects(store.updateProject("sample", { tracker: { kind: "linear" } }), /needs --linear-team/);
-  await assert.rejects(store.updateProject("sample", { tracker: { kind: "jira" } }), /Tracker must be af or linear/);
-  await assert.rejects(store.updateProject("sample", { tracker: { kind: "linear", team: "ENG TEAM" } }), /team key starts with a letter or number/);
-  assert.deepEqual((await store.updateProject("sample", { tracker: { kind: "linear", team: "ENG" } })).tracker, { kind: "linear", team: "ENG", label: null });
-  assert.deepEqual((await store.updateProject("sample", { tracker: { label: "agent-todo" } })).tracker, { kind: "linear", team: "ENG", label: "agent-todo" });
-  assert.deepEqual((await store.updateProject("sample", { baseBranch: "develop" })).tracker, { kind: "linear", team: "ENG", label: "agent-todo" });
-  assert.deepEqual((await store.updateProject("sample", { tracker: { kind: "af" } })).tracker, { kind: "af" });
+  assert.deepEqual((await store.saveProject({ id: "sample", label: "Sample", repoPath: root, githubRepo: "owner/sample" })).todos, { service: "github", reference: null });
+  assert.deepEqual((await store.updateProject("sample", { todos: { service: "linear", reference: "ENG, label agent-todo" } })).todos, { service: "linear", reference: "ENG, label agent-todo" });
+  assert.deepEqual((await store.updateProject("sample", { baseBranch: "develop" })).todos, { service: "linear", reference: "ENG, label agent-todo" }, "other updates keep the todo destination");
+  assert.deepEqual((await store.updateProject("sample", { todos: { reference: "OPS" } })).todos, { service: "linear", reference: "OPS" });
+  assert.deepEqual((await store.updateProject("sample", { todos: { clearReference: true } })).todos, { service: "linear", reference: null });
+  assert.deepEqual((await store.updateProject("sample", { todos: { reference: "ENG" } })).todos, { service: "linear", reference: "ENG" });
+  assert.deepEqual((await store.updateProject("sample", { todos: { service: "notion" } })).todos, { service: "notion", reference: null }, "changing the service drops the old reference");
+  await assert.rejects(store.updateProject("sample", { todos: { service: "af" } }), /Todos must be github, linear, notion, ref/);
+  await assert.rejects(store.updateProject("sample", { todos: { reference: "x", clearReference: true } }), /not both/);
+  await assert.rejects(store.updateProject("sample", { todos: { reference: "todo\nTodos: elsewhere" } }), /control characters or line breaks/);
+  const { todosFor, describeTodos } = await import("../src/store.mjs");
+  assert.deepEqual(todosFor({ id: "old", tracker: { kind: "af" } }), { service: "github", reference: null }, "the retired tracker field is ignored");
+  assert.equal(describeTodos({ service: "github", reference: null }, { githubRepo: "owner/sample" }), "GitHub issues in owner/sample (gh issue create)");
+  assert.equal(describeTodos({ service: "linear", reference: "ENG" }, {}), "Linear: ENG, through this host's Linear MCP connector");
 });
 
-test("projects saved before trackers existed read as AF", async () => {
-  const { trackerFor, describeTracker } = await import("../src/store.mjs");
-  assert.deepEqual(trackerFor({ id: "legacy" }), { kind: "af" });
-  assert.equal(describeTracker(trackerFor({ id: "legacy" }), "legacy"), "AF issues in namespace legacy");
-  assert.equal(describeTracker({ kind: "linear", team: "ENG", label: "agent-todo" }, "x"), "Linear team ENG, label agent-todo");
+test("each project has a plan home: repo by default, or a service with an optional reference", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-plans-"));
+  const store = createStore(root);
+  assert.deepEqual((await store.saveProject({ id: "sample", label: "Sample", repoPath: root })).plans, { service: "repo", reference: null });
+  assert.deepEqual((await store.updateProject("sample", { plans: { service: "notion", reference: "Plans DB" } })).plans, { service: "notion", reference: "Plans DB" });
+  assert.deepEqual((await store.updateProject("sample", { plans: { service: "ref" } })).plans, { service: "ref", reference: null });
+  await assert.rejects(store.updateProject("sample", { plans: { service: "jira" } }), /Plan home must be repo, linear, notion, ref/);
+  await assert.rejects(store.updateProject("sample", { plans: { service: "repo", reference: "x" } }), /takes no reference/);
+  const { plansFor, describePlans } = await import("../src/store.mjs");
+  assert.deepEqual(plansFor({ id: "old" }), { service: "repo", reference: null });
+  assert.equal(describePlans({ service: "ref", reference: "Eng" }), "Ref: Eng, through this host's Ref MCP connector");
+  assert.equal(JSON.parse(await readFile(path.join(root, "projects", "sample.json"), "utf8")).plans.service, "ref");
 });
 
-test("a Linear team change drops the old label; labels clear explicitly and reject control characters", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-tracker-label-"));
-  const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root, tracker: { kind: "linear", team: "ENG", label: "agent-todo" } });
-  assert.deepEqual((await store.updateProject("sample", { tracker: { team: "ENG" } })).tracker, { kind: "linear", team: "ENG", label: "agent-todo" }, "restating the same team keeps the label");
-  assert.deepEqual((await store.updateProject("sample", { tracker: { team: "OPS" } })).tracker, { kind: "linear", team: "OPS", label: null });
-  assert.deepEqual((await store.updateProject("sample", { tracker: { team: "ENG", label: "eng-todo" } })).tracker, { kind: "linear", team: "ENG", label: "eng-todo" });
-  assert.deepEqual((await store.updateProject("sample", { tracker: { clearLabel: true } })).tracker, { kind: "linear", team: "ENG", label: null });
-  await assert.rejects(store.updateProject("sample", { tracker: { label: "x", clearLabel: true } }), /not both/);
-  await assert.rejects(store.updateProject("sample", { tracker: { label: "todo\nTodos: AF issues" } }), /control characters or line breaks/);
-  await assert.rejects(store.updateProject("sample", { tracker: { label: "todo\u001b[31m" } }), /control characters/);
-  await assert.rejects(store.updateProject("sample", { tracker: { team: "-ENG" } }), /starts with a letter or number/);
-  await assert.rejects(store.updateProject("sample", { tracker: { kind: "af", clearLabel: true } }), /require --tracker linear/);
-});
-
-test("reading a project saved before trackers existed yields the AF tracker shape", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-tracker-read-"));
-  const store = createStore(root);
-  await store.init();
-  await writeFile(path.join(root, "projects", "legacy.json"), JSON.stringify({ schemaVersion: 2, revision: 1, id: "legacy", label: "Legacy", repoPath: root, baseBranch: "main" }));
-  assert.deepEqual((await store.project("legacy")).tracker, { kind: "af" });
-  assert.deepEqual((await store.projects())[0].tracker, { kind: "af" });
-  assert.equal(JSON.parse(await readFile(path.join(root, "projects", "legacy.json"), "utf8")).tracker, undefined, "reads do not rewrite the record");
-});
