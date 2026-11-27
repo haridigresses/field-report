@@ -62,7 +62,7 @@ Separate blockers-to-slash from optional taste. Do not invent product decisions.
 
 - Watch GitHub checks. Flake vs real failure is owner judgment. If it is on the border, consult one seated model (`fr seats`) once before deciding whether to address it. That consult is not a hard gate.
 - Fix-and-push still uses CRR. Do not restart MRR because HEAD moved. Wait until the user asks for final MRR.
-- Bot comments are owner triage, not a new persona panel, and none is skipped. After every push to an open PR, wait for the review bots to post on that head. Fix each comment, or reply on its thread with why not, then resolve the thread. A bot that has not posted yet leaves no thread, so the gate cannot see it; waiting is the owner's job.
+- Bot comments are owner triage, not a new persona panel, and none is skipped. Whenever a review bot posts, fix each comment, or reply on its thread with why not, then resolve the thread. After opening a PR, wait for its review bots. Some bots review every push; others review only on open or on request (Codex: comment `@codex review`). A bot that has not posted yet leaves no thread, so the gate cannot see it; waiting is the owner's job.
 - If `main` moves and the PR head did not, do not redo MRR. If merge or rebase changes the head, that is a new HEAD; still wait for the user to ask for final MRR.
 
 ### Review envelope
