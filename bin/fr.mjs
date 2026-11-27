@@ -9,7 +9,7 @@ import { createStore, defaultStateRoot, describePlans, describeTodos, destinatio
 import { assertSeatOpen, botsReasons, CRR_ROLE, evaluateGate, findingLedger, identityKey, latestClaimReviews, openReasons, reviewKind, REVIEW_ROLES, seatingFor, seatStatus, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { ancestorHeads, checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookManagerPath, hookState, hookText, isManagedHook, quote, shouldRunPreserved } from "../src/hooks.mjs";
-import { claudeInvokeCommand, codexInvokeCommand, cursorReviewCommand, HOST_LAUNCHERS } from "../src/machines.mjs";
+import { agyInvokeCommand, claudeInvokeCommand, codexInvokeCommand, cursorReviewCommand, devinInvokeCommand, HOST_LAUNCHERS } from "../src/machines.mjs";
 import { configSource, launchEntry, REVIEW_ROLES as SEATS, seatConfig, seatFor } from "../src/seats.mjs";
 import { doctor, formatDoctor } from "../src/doctor.mjs";
 
@@ -28,7 +28,10 @@ function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = 
   const launch = launchEntry(model)?.launch;
   if (!launch) throw new Error(`${seated.model} has no launcher in ${configSource()}. List it in a seat's models there, or use --route native.`);
   if (launch === "codex") return codexInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review", model });
-  if (launch === "claude") return claudeInvokeCommand({ promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA", model });
+  const pinned = { promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA", model };
+  if (launch === "claude") return claudeInvokeCommand(pinned);
+  if (launch === "agy") return agyInvokeCommand(pinned);
+  if (launch === "devin") return devinInvokeCommand(pinned);
   return cursorReviewCommand({ promptFile, model });
 }
 

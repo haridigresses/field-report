@@ -74,6 +74,12 @@ seatsEl.addEventListener("input", (event) => {
 });
 
 let suggestions = {};
+// One pair of datalists per launcher, made on first use.
+function datalist(id) {
+  let list = document.getElementById(id);
+  if (!list) { list = document.createElement("datalist"); list.id = id; document.body.append(list); }
+  return list;
+}
 async function loadSuggestions() {
   const response = await fetch("/api/models");
   const data = await response.json();
@@ -81,10 +87,10 @@ async function loadSuggestions() {
   suggestions = data.byLaunch;
   for (const [launch, models] of Object.entries(suggestions)) {
     const ids = [...new Set(models.map((model) => model.id))];
-    document.querySelector(`#ids-${launch}`).innerHTML = ids.map((id) => `<option value="${escape(id)}">`).join("");
-    document.querySelector(`#cli-${launch}`).innerHTML = [...new Set(models.map((model) => model.cliModel).filter(Boolean))].map((id) => `<option value="${escape(id)}">`).join("");
+    datalist(`ids-${launch}`).innerHTML = ids.map((id) => `<option value="${escape(id)}">`).join("");
+    datalist(`cli-${launch}`).innerHTML = [...new Set(models.map((model) => model.cliModel).filter(Boolean))].map((id) => `<option value="${escape(id)}">`).join("");
   }
-  if (data.cursorError) sourceEl.textContent += ` Cursor model suggestions unavailable: ${data.cursorError}.`;
+  for (const [launch, error] of Object.entries(data.listErrors || {})) sourceEl.textContent += ` ${launch} model suggestions unavailable: ${error}.`;
 }
 
 seatsEl.addEventListener("click", (event) => {

@@ -39,6 +39,12 @@ function successfulCursorResult(value) {
   return undefined;
 }
 
+// agy --output-format json: {"status":"SUCCESS","response":"<reply text>"}.
+function successfulAgyResult(value) {
+  if (!isObject(value) || value.status !== "SUCCESS" || typeof value.response !== "string") return undefined;
+  return value.response.trim() ? parseObject(value.response) : undefined;
+}
+
 function cursorStreamResult(text) {
   let last;
   for (const line of String(text).split(/\n/)) {
@@ -63,7 +69,7 @@ function stringList(value, field) {
 export function parseEnvelope(text) {
   const value = parseObject(text) || cursorStreamResult(text);
   if (!value) throw new Error("Review file must contain a JSON object");
-  return successfulClaudeResult(value) || successfulCursorResult(value) || value;
+  return successfulClaudeResult(value) || successfulCursorResult(value) || successfulAgyResult(value) || value;
 }
 
 export function normalizeReview(input, delegation, binding) {

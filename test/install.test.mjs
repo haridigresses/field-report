@@ -45,7 +45,7 @@ test("installer writes launchers and skill links under HOME", async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), "fr-install-"));
   const state = path.join(home, "state");
   const { stdout } = await exec(process.execPath, [installer], { env: { ...process.env, HOME: home, FIELD_REPORT_STATE_ROOT: state } });
-  assert.match(stdout, new RegExp(`Installed Field Report launchers at ${home}/.local/bin/fr and ${home}/.local/bin/fr-cursor-review`));
+  assert.match(stdout, new RegExp(`Installed Field Report launchers at ${home}/.local/bin/fr, ${home}/.local/bin/fr-cursor-review, ${home}/.local/bin/fr-devin-review`));
   assert.match(stdout, new RegExp(`Skill links: .*${home}/.codex/skills/field-report`));
   assert.match(stdout, new RegExp(`${home}/.claude/skills/field-report`));
   assert.match(stdout, new RegExp(`${home}/.cursor/skills/field-report`));

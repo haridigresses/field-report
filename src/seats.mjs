@@ -19,7 +19,7 @@ export const SEAT_PURPOSES = {
 // Only for the error message after the rename; old keys are never accepted.
 const RENAMED_SEATS = { "deep-code-review": "correctness", "structural-challenge": "design", "fable-challenge": "intent" };
 // Each launcher runs reviewers without MCP servers.
-export const LAUNCHERS = ["codex", "claude", "cursor"];
+export const LAUNCHERS = ["codex", "claude", "cursor", "agy", "devin"];
 const NAME = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
 // A cursor- prefix and one effort or speed suffix name the same model.
 const EFFORT_SUFFIX = /-(?:thinking-(?:xhigh|high|medium|low|max)|xhigh|high|medium|low|fast|max)$/;

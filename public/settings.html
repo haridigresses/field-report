@@ -26,9 +26,9 @@
       <p><button class="primary save">Save models</button></p>
       <p class="quiet">Each seat accepts only the models listed for it. The first is the default; the others are fallbacks, tried in order if the default can't start. Using different models across seats gives different perspectives, but one model may fill every seat.</p>
       <dl class="launchers">
-        <div><dt>Launch</dt><dd>Which command-line tool runs the reviewer: <code>codex</code> (OpenAI's Codex CLI), <code>claude</code> (Claude Code), or <code>cursor</code> (Cursor's agent CLI, which offers models from several labs). It must be installed and signed in; <code>fr doctor</code> checks.</dd></div>
-        <div><dt>Model id</dt><dd>The model's plain name, without a <code>cursor-</code> prefix or an effort suffix like <code>-high</code>. Suggestions come from your Cursor account and your config; any id works.</dd></div>
-        <div><dt>CLI model</dt><dd>Only when the tool expects a different name. Cursor ids usually add an effort level, for example <code>cursor-grok-4.6-high</code>.</dd></div>
+        <div><dt>Launch</dt><dd>Which command-line tool runs the reviewer: <code>codex</code> (OpenAI's Codex CLI), <code>claude</code> (Claude Code), <code>cursor</code> (Cursor's agent CLI), <code>agy</code> (Google's Antigravity CLI), or <code>devin</code> (Devin's CLI). Use whichever you have; several offer models from more than one lab. It must be installed and signed in; <code>fr doctor</code> checks.</dd></div>
+        <div><dt>Model id</dt><dd>The model's plain name, without a <code>cursor-</code> prefix or an effort suffix like <code>-high</code>. Suggestions come from your Cursor and Antigravity accounts and your config; any id works.</dd></div>
+        <div><dt>CLI model</dt><dd>Only when the tool expects a different name. Cursor and Antigravity ids usually add an effort level, for example <code>cursor-grok-4.6-high</code> or <code>gemini-4-neon-high</code>.</dd></div>
       </dl>
       <div id="seats"></div>
       <p><button class="primary save">Save models</button></p>
@@ -40,8 +40,6 @@
       <div id="project-list"></div>
     </section>
   </main>
-  <datalist id="ids-codex"></datalist><datalist id="ids-claude"></datalist><datalist id="ids-cursor"></datalist>
-  <datalist id="cli-codex"></datalist><datalist id="cli-claude"></datalist><datalist id="cli-cursor"></datalist>
   <script type="module" src="/settings.js"></script>
 </body>
 </html>

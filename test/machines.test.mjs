@@ -7,7 +7,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { quote } from "../src/hooks.mjs";
-import { claudeInvokeCommand, claudeInvokeInner, codexInvokeCommand, cursorReviewCommand } from "../src/machines.mjs";
+import { agyInvokeCommand, claudeInvokeCommand, claudeInvokeInner, codexInvokeCommand, cursorReviewCommand, devinInvokeCommand } from "../src/machines.mjs";
+import { useSeatConfig } from "../src/seats.mjs";
 
 const exec = promisify(execFile);
 const cli = path.resolve("bin/fr.mjs");
@@ -107,4 +108,19 @@ test("cursor-launched seats send the brief on stdin with the configured Cursor m
   assert.match(cursorReviewCommand({ promptFile: "/tmp/a b.txt", model: "grok-4.6" }), /< "\/tmp\/a b.txt"$/);
   assert.throws(() => cursorReviewCommand({ model: "grok-4.7-high" }), /no seat lists it/);
   assert.throws(() => cursorReviewCommand({ model: "gpt-6-astra" }), /launches with codex/);
+});
+
+test("agy and devin seats get read-only launch commands pinned to the review diff", async (t) => {
+  const example = JSON.parse(await readFile(process.env.FIELD_REPORT_CONFIG, "utf8"));
+  useSeatConfig({ ...example, seats: { ...example.seats, design: { models: [{ id: "gemini-4-neon", launch: "agy", cliModel: "gemini-4-neon-high" }, { id: "swe-2", launch: "devin" }] } } });
+  t.after(() => useSeatConfig(null));
+  const repo = "/tmp/work repo";
+  const prompt = "/tmp/brief's.txt";
+  const settings = JSON.stringify({ permissions: { allow: [`command(git diff --no-ext-diff --no-textconv ${sha} ${head} --)`], deny: ["write_file(*)", "mcp(*)"] } });
+  assert.equal(agyInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: head }), `zsh -ic ${quote(`cd "/tmp/work repo" && test "$(git rev-parse HEAD)" = "${head}" && test -z "$(git status --porcelain)" && agy --mode plan --sandbox --output-format json --model gemini-4-neon-high --settings ${quote(settings)} -p "$(< "/tmp/brief's.txt")"`)}`);
+  assert.equal(devinInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: head }), `zsh -ic ${quote(`cd "/tmp/work repo" && test "$(git rev-parse HEAD)" = "${head}" && test -z "$(git status --porcelain)" && fr-devin-review --base ${sha} --head ${head} --model swe-2 --prompt-file "/tmp/brief's.txt"`)}`);
+  assert.doesNotMatch(devinInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: head }), /--sandbox/);
+  assert.throws(() => agyInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: "BASE_SHA", headSha: head }), /base SHA must be a 40-character SHA/);
+  assert.throws(() => devinInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: "HEAD_SHA" }), /head SHA must be a 40-character SHA/);
+  assert.throws(() => agyInvokeCommand({ promptFile: prompt, cwd: repo, baseSha: sha, headSha: head, model: "swe-2" }), /launches with devin in config.json, not agy/);
 });

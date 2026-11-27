@@ -6,7 +6,7 @@ import { collect } from "./collect.mjs";
 import { createStore, PLAN_SERVICES, TODO_SERVICES } from "./store.mjs";
 import { access } from "node:fs/promises";
 import { LAUNCHERS, normalizeId, readRawConfig, REVIEW_ROLES, saveSeatConfig, SEAT_PURPOSES } from "./seats.mjs";
-import { cursorModelIds, defaultProbe } from "./doctor.mjs";
+import { BINARIES, defaultProbe, MODEL_LISTS } from "./doctor.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PAGES = { "/": ["index.html", "text/html"], "/index.html": ["index.html", "text/html"], "/settings": ["settings.html", "text/html"], "/app.js": ["app.js", "text/javascript"], "/settings.js": ["settings.js", "text/javascript"], "/styles.css": ["styles.css", "text/css"] };
@@ -48,7 +48,7 @@ async function projectList(store) {
 }
 
 // Suggestions only: the page offers them, and any typed id still works.
-// Cursor lists the account's models; codex and claude cannot, so their
+// Cursor and agy list the account's models; the others cannot, so their
 // suggestions come from the config and the shipped example.
 export async function modelSuggestions({ probe = defaultProbe(), configs = [] } = {}) {
   const byLaunch = Object.fromEntries(LAUNCHERS.map((launch) => [launch, new Map()]));
@@ -59,15 +59,21 @@ export async function modelSuggestions({ probe = defaultProbe(), configs = [] } 
       }
     }
   }
-  let cursorError = null;
-  const listed = await probe.run("cursor-agent", ["--list-models"]);
-  if (listed.code === 0) {
-    for (const cliModel of cursorModelIds(listed.stdout)) {
-      const id = normalizeId(cliModel);
-      if (id) byLaunch.cursor.set(`${id} ${cliModel}`, { id, cliModel: cliModel === id ? null : cliModel });
-    }
-  } else cursorError = listed.code === "ENOENT" ? "cursor-agent is not installed" : "cursor-agent --list-models failed; sign in with cursor-agent login";
-  return { byLaunch: Object.fromEntries(Object.entries(byLaunch).map(([launch, models]) => [launch, [...models.values()]])), cursorError };
+  // A launcher that is not installed is not an error; one that fails to list is.
+  const listErrors = {};
+  const lists = Object.entries(MODEL_LISTS);
+  const results = await Promise.all(lists.map(([launch, { args }]) => probe.run(BINARIES[launch], args)));
+  for (const [index, [launch, { args, parse }]] of lists.entries()) {
+    const listed = results[index];
+    if (listed.code === 0) {
+      for (const cliModel of parse(listed.stdout)) {
+        const id = normalizeId(cliModel);
+        const entry = { id, cliModel: cliModel === id ? null : cliModel };
+        if (id) byLaunch[launch].set(`${entry.id} ${entry.cliModel || ""}`, entry);
+      }
+    } else if (listed.code !== "ENOENT") listErrors[launch] = `${BINARIES[launch]} ${args.join(" ")} failed; sign in to ${BINARIES[launch]}`;
+  }
+  return { byLaunch: Object.fromEntries(Object.entries(byLaunch).map(([launch, models]) => [launch, [...models.values()]])), listErrors };
 }
 
 export function createServer({ port, store = createStore(), probe = defaultProbe() }) {

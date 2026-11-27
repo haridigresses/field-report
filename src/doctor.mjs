@@ -4,13 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import { skillHostDirs, SKILL_NAMES } from "./install.mjs";
 import { hookManagerPath, hookState } from "./hooks.mjs";
-import { REVIEW_ROLES } from "./seats.mjs";
+import { normalizeId, REVIEW_ROLES } from "./seats.mjs";
 
 // fr doctor checks that this machine can run the loop: launchers, skills,
 // state, the seat config, the CLIs each configured model needs, gh, and each
 // project's hook. It only reads; it never installs or edits anything.
 
-const BINARIES = { codex: "codex", claude: "claude", cursor: "cursor-agent" };
+export const BINARIES = { codex: "codex", claude: "claude", cursor: "cursor-agent", agy: "agy", devin: "devin" };
+// Launchers whose review runs through an installed fr-* wrapper.
+const WRAPPERS = { cursor: "fr-cursor-review", devin: "fr-devin-review" };
 
 export function defaultProbe() {
   return {
@@ -28,6 +30,33 @@ export function defaultProbe() {
 // Cursor prints "id - Display Name" lines.
 export function cursorModelIds(text) {
   return new Set(String(text).split("\n").map((line) => line.split(" - ")[0].trim()).filter((id) => /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(id)));
+}
+
+// agy models prints "id<TAB>Display Name" lines.
+export function agyModelIds(text) {
+  return new Set(String(text).split("\n").filter((line) => line.includes("\t")).map((line) => line.split("\t")[0].trim()).filter((id) => /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(id)));
+}
+
+// devin models list --format json: families, each with a slug, aliases, and
+// variants. Any of those names works as --model.
+export function devinModelIds(text) {
+  let families;
+  try { families = JSON.parse(text).families; } catch { return new Set(); }
+  if (!Array.isArray(families)) return new Set();
+  const names = families.flatMap((family) => [family?.slug, ...(Array.isArray(family?.aliases) ? family.aliases : []), ...(Array.isArray(family?.variants) ? family.variants.map((variant) => variant?.model_uid) : [])]);
+  return new Set(names.filter((id) => typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(id)));
+}
+
+// Launchers that can list the account's models. agy also takes a bare model
+// name and picks its default effort.
+export const MODEL_LISTS = {
+  cursor: { args: ["--list-models"], parse: cursorModelIds },
+  agy: { args: ["models"], parse: agyModelIds, bareIds: true },
+  devin: { args: ["models", "list", "--format", "json"], parse: devinModelIds }
+};
+
+export function listedModel(launch, ids, cliModel) {
+  return ids.has(cliModel) || Boolean(MODEL_LISTS[launch]?.bareIds && [...ids].some((id) => normalizeId(id) === cliModel));
 }
 
 export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env = process.env, nodeVersion = process.versions.node, loadConfig, projects = null, probe = defaultProbe() }) {
@@ -92,29 +121,33 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
       if (available[launch]) add("ok", `${binary} CLI`, result.stdout.trim().split("\n")[0] || "found");
       else add(needed ? "fail" : "warn", `${binary} CLI`, `not found or not runnable; needed for ${models.filter((model) => model.launch === launch).map((model) => `${model.role}: ${model.id}`).join(", ")}`);
     }
-    if (launches.includes("cursor")) {
-      const wrapper = path.join(binDir, "fr-cursor-review");
-      if (await probe.exists(wrapper)) add("ok", "fr-cursor-review", wrapper);
-      else add("fail", "fr-cursor-review", `missing ${wrapper}; Cursor seats launch through it. Run node scripts/install.mjs`);
+    for (const launch of launches.filter((launch) => WRAPPERS[launch])) {
+      const wrapper = path.join(binDir, WRAPPERS[launch]);
+      if (await probe.exists(wrapper)) add("ok", WRAPPERS[launch], wrapper);
+      else add("fail", WRAPPERS[launch], `missing ${wrapper}; ${launch} seats launch through it. Run node scripts/install.mjs`);
     }
-    // Codex and Claude launch commands run through zsh -ic.
-    if (launches.some((launch) => launch === "codex" || launch === "claude")) {
-      if ((await probe.run("zsh", ["--version"])).code === 0) add("ok", "zsh", "found (codex and claude launches use zsh -ic)");
-      else add("fail", "zsh", "not found; codex and claude launch commands run through zsh -ic");
+    // Every launch command except Cursor's runs through zsh -ic.
+    const shellLaunches = launches.filter((launch) => launch !== "cursor");
+    if (shellLaunches.length) {
+      if ((await probe.run("zsh", ["--version"])).code === 0) add("ok", "zsh", `found (${shellLaunches.join(", ")} launches use zsh -ic)`);
+      else add("fail", "zsh", `not found; ${shellLaunches.join(", ")} launch commands run through zsh -ic`);
     }
-    let cursorIds = null;
-    if (available.cursor) {
-      const list = await probe.run(BINARIES.cursor, ["--list-models"]);
-      cursorIds = list.code === 0 ? cursorModelIds(list.stdout) : null;
-      if (!cursorIds) add("warn", "cursor models", "cursor-agent --list-models failed; sign in with cursor-agent login");
+    const listed = {};
+    for (const launch of Object.keys(MODEL_LISTS).filter((launch) => available[launch])) {
+      const { args, parse } = MODEL_LISTS[launch];
+      const list = await probe.run(BINARIES[launch], args);
+      listed[launch] = list.code === 0 ? parse(list.stdout) : null;
+      if (!listed[launch]) add("warn", `${launch} models`, `${BINARIES[launch]} ${args.join(" ")} failed; sign in to ${BINARIES[launch]}`);
     }
     for (const model of models) {
       const label = `${model.role} ${model.isDefault ? "default" : "fallback"} ${model.id}`;
       if (!available[model.launch]) continue;
-      if (model.launch === "cursor") {
-        if (!cursorIds) continue;
-        if (cursorIds.has(model.cliModel)) add("ok", label, `cursor model ${model.cliModel} is available`);
-        else add(model.isDefault ? "fail" : "warn", label, `cursor model ${model.cliModel} is not in cursor-agent --list-models; edit the config to a model you have`);
+      if (MODEL_LISTS[model.launch]) {
+        const ids = listed[model.launch];
+        if (!ids) continue;
+        const command = `${BINARIES[model.launch]} ${MODEL_LISTS[model.launch].args.join(" ")}`;
+        if (listedModel(model.launch, ids, model.cliModel)) add("ok", label, `${model.launch} model ${model.cliModel} is available`);
+        else add(model.isDefault ? "fail" : "warn", label, `${model.launch} model ${model.cliModel} is not in ${command}; edit the config to a model you have`);
       } else {
         add("ok", label, `${BINARIES[model.launch]} found; ${model.launch} cannot list models, so availability is checked at first launch`);
       }

@@ -35,7 +35,7 @@ Override this location in tests or isolated environments with `FIELD_REPORT_STAT
 
 ## Install
 
-Prerequisites: Node 20+, git, `gh` (signed in; `fr gate bots` uses it), and the CLI for each launcher your seat config uses: `codex`, `claude`, or `cursor-agent`, installed and signed in. Codex and Claude launches run through `zsh`.
+Prerequisites: Node 20+, git, `gh` (signed in; `fr gate bots` uses it), and the CLI for each launcher your seat config uses (`codex`, `claude`, `cursor-agent`, `agy`, or `devin`), installed and signed in. Use whichever you have. Every launch except Cursor's runs through `zsh`.
 
 ```bash
 git clone https://github.com/haridigresses/field-report ~/field-report
@@ -43,7 +43,7 @@ cd ~/field-report && node scripts/install.mjs && fr init
 fr doctor
 ```
 
-Keep the clone where it is: the launchers and skill links point into it, and `git pull` updates Field Report. `fr doctor` only reads. It checks Node, git, the `fr` launcher and `PATH`, the skill links, the state root, the seat config, the CLI for each configured model (and, for Cursor, that each model id is in `cursor-agent --list-models`; for `codex` and `claude` it checks only that the CLI runs, not that you are signed in or have credits, so those surface at first launch), `gh`, and each registered project's hook. It exits nonzero while anything is FAIL. Rerun it after editing the config or adding a project.
+Keep the clone where it is: the launchers and skill links point into it, and `git pull` updates Field Report. `fr doctor` only reads. It checks Node, git, the `fr` launcher and `PATH`, the skill links, the state root, the seat config, the CLI for each configured model (and, for Cursor and agy, that each model id is in `cursor-agent --list-models` or `agy models`; for `codex`, `claude`, and `devin` it checks only that the CLI runs, not that you are signed in or have credits, so those surface at first launch), `gh`, and each registered project's hook. It exits nonzero while anything is FAIL. Rerun it after editing the config or adding a project.
 
 ### Install with your agent
 
@@ -52,7 +52,7 @@ Paste this into Claude Code, Codex, or Cursor:
 ```text
 Install Field Report for me.
 1. Clone https://github.com/haridigresses/field-report to ~/field-report (or git pull if it exists), then run: node scripts/install.mjs && fr init
-2. Run fr doctor and fix what it reports. For each seat in the config file that fr seats prints on its Config line, ask me which models I have access to and edit the config so every seat's first model is one I can run. Do not guess model ids; for Cursor, use ids from cursor-agent --list-models.
+2. Run fr doctor and fix what it reports. For each seat in the config file that fr seats prints on its Config line, ask me which models I have access to and edit the config so every seat's first model is one I can run. Do not guess model ids; for Cursor and agy, use ids from cursor-agent --list-models or agy models.
 3. Ask me which repositories to register. For each, run fr project add <id> --label <label> --repo <path> --github <owner/repo>. Ask where todos go (GitHub Issues in that repo by default, or Linear, Notion, or Ref) and where build plans live (docs/plans/ by default); for anything but the defaults run fr project update <id> --todos <service> --todos-reference "<where>" and --plans <service> --plans-reference "<where>".
 4. Run fr doctor again. For each project: if doctor says a hook manager (husky, lefthook) owns the pre-commit hook, do not run fr hook install; tell me, and suggest adding `fr gate checkout` to that hook manager. Otherwise run fr hook install <id>.
 5. Finish with fr doctor and fr seats, and show me both outputs.
@@ -100,9 +100,9 @@ Field Report hardcodes no model names. Your config file lists the models valid f
 - Each seat lists its valid models. The first is the default; `--model` picks another listed one. A model not listed for a seat cannot review it; add it to the config first.
 - The shipped example seats three labs (OpenAI, xAI, Anthropic). That is a suggestion for diversity of thought, not a rule: one model may serve every seat.
 - Model ids match through a `cursor-` prefix and effort suffixes, so `cursor-grok-4.6-high` is `grok-4.6`. A model listed in two seats launches the same way in both.
-- `launch` is `codex`, `claude`, or `cursor` (through `fr-cursor-review`). `--route native` runs any seat as a native subagent instead. `cliModel` is the id that launcher expects, when it differs (Cursor ids carry effort suffixes).
+- `launch` is `codex`, `claude`, `cursor` (through `fr-cursor-review`), `agy` (Google's Antigravity CLI), or `devin` (through `fr-devin-review`). `--route native` runs any seat as a native subagent instead. `cliModel` is the id that launcher expects, when it differs (Cursor and agy ids carry effort suffixes).
 
-To edit seats and projects (including each project's plan home) in a browser instead, run `fr ui` and open `http://127.0.0.1:4177/settings`. Model fields suggest your Cursor account's models (from `cursor-agent --list-models`) and the models already in your config; any id still works. Remove a project you no longer use with `fr project remove <id>`; add `--with-workstreams` to delete its workstreams and their review records too. The page is local only, checks the config with the same rules as `fr`, and refuses to save an invalid one. When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, `dispositions`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
+To edit seats and projects (including each project's plan home) in a browser instead, run `fr ui` and open `http://127.0.0.1:4177/settings`. Model fields suggest your Cursor and Antigravity accounts' models (from `cursor-agent --list-models` and `agy models`) and the models already in your config; any id still works. Remove a project you no longer use with `fr project remove <id>`; add `--with-workstreams` to delete its workstreams and their review records too. The page is local only, checks the config with the same rules as `fr`, and refuses to save an invalid one. When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, `dispositions`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
 
 ### Plan home
 

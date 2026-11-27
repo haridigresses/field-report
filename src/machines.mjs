@@ -54,14 +54,17 @@ export function codexInvokeCommand(options, shell = LOGIN_SHELL) {
   return loginShellCommand(codexInvokeInner(options), shell);
 }
 
+function headCheck(headSha) {
+  return `test "$(git rev-parse HEAD)" = ${doubleQuote(headSha)} && test -z "$(git status --porcelain)" && `;
+}
+
 function claudeCli({ promptFile, cwd, baseSha, headSha, model = null }) {
   const selected = launcherModel("claude", model);
   const diff = `git diff --no-ext-diff --no-textconv ${baseSha} ${headSha} --`;
   const repo = resolveMaybe(cwd);
   const prompt = resolveMaybe(promptFile);
   const claude = `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(${diff})" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model ${selected} "$(< ${doubleQuote(prompt)})"`;
-  const headCheck = SHA.test(headSha) ? `test "$(git rev-parse HEAD)" = ${doubleQuote(headSha)} && test -z "$(git status --porcelain)" && ` : "";
-  return `cd ${doubleQuote(repo)} && ${headCheck}${claude}`;
+  return `cd ${doubleQuote(repo)} && ${SHA.test(headSha) ? headCheck(headSha) : ""}${claude}`;
 }
 
 export function claudeInvokeInner({ promptFile, cwd, baseSha, headSha, model = null }) {
@@ -76,6 +79,36 @@ export function claudeInvokeInner({ promptFile, cwd, baseSha, headSha, model = n
 
 export function claudeInvokeCommand(options, shell = LOGIN_SHELL) {
   return loginShellCommand(claudeInvokeInner(options), shell);
+}
+
+// Antigravity: plan mode does not edit or run commands on its own, the
+// session-only settings allow just the review diff and deny writes and every MCP
+// tool, and headless runs deny anything else rather than prompt.
+export function agyInvokeInner({ promptFile, cwd, baseSha, headSha, model = null }) {
+  const selected = launcherModel("agy", model);
+  const diff = `git diff --no-ext-diff --no-textconv ${requireSha(baseSha, "base SHA")} ${requireSha(headSha, "head SHA")} --`;
+  const settings = JSON.stringify({ permissions: { allow: [`command(${diff})`], deny: ["write_file(*)", "mcp(*)"] } });
+  const repo = resolveMaybe(cwd);
+  const prompt = resolveMaybe(promptFile);
+  return `cd ${doubleQuote(repo)} && ${headCheck(headSha)}agy --mode plan --sandbox --output-format json --model ${selected} --settings ${quote(settings)} -p "$(< ${doubleQuote(prompt)})"`;
+}
+
+export function agyInvokeCommand(options, shell = LOGIN_SHELL) {
+  return loginShellCommand(agyInvokeInner(options), shell);
+}
+
+// Devin runs through fr-devin-review, which writes it a review-only config.
+export function devinInvokeInner({ promptFile, cwd, baseSha, headSha, model = null }) {
+  const selected = launcherModel("devin", model);
+  const base = requireSha(baseSha, "base SHA");
+  const head = requireSha(headSha, "head SHA");
+  const repo = resolveMaybe(cwd);
+  const prompt = resolveMaybe(promptFile);
+  return `cd ${doubleQuote(repo)} && ${headCheck(head)}fr-devin-review --base ${base} --head ${head} --model ${selected} --prompt-file ${doubleQuote(prompt)}`;
+}
+
+export function devinInvokeCommand(options, shell = LOGIN_SHELL) {
+  return loginShellCommand(devinInvokeInner(options), shell);
 }
 
 // Cursor-hosted reviewers run through the MCP-isolating wrapper. The brief goes

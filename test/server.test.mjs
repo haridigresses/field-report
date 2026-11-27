@@ -129,14 +129,23 @@ test("projects can be edited and removed from the settings page, removal deletes
   } finally { server.close(); }
 });
 
-test("model suggestions combine the account's Cursor models with configured ones", async () => {
+test("model suggestions combine the account's Cursor and agy models with configured ones", async () => {
   const { modelSuggestions } = await import("../src/server.mjs");
-  const probe = { run: async () => ({ code: 0, stdout: "Available models\n\nauto - Auto\ngrok-4.6-high - Grok 4.6 High\nclaude-opus-5-5 - Opus\n" }) };
-  const config = { seats: { intent: { models: [{ id: "claude-fable-5-1", launch: "claude" }] } } };
+  const lists = {
+    "cursor-agent --list-models": "Available models\n\nauto - Auto\ngrok-4.6-high - Grok 4.6 High\nclaude-opus-5-5 - Opus\n",
+    "agy models": "Fetching available models...\ngemini-4-neon-high\tGemini 4 Neon (High)\ngemini-4-neon-low\tGemini 4 Neon (Low)\n",
+    "devin models list --format json": JSON.stringify({ families: [{ slug: "swe-2", aliases: [], variants: [{ model_uid: "swe-2-high" }] }] })
+  };
+  const probe = { run: async (command, args) => ({ code: 0, stdout: lists[`${command} ${args.join(" ")}`] }) };
+  const config = { seats: { intent: { models: [{ id: "claude-fable-5-1", launch: "claude" }, { id: "swe-2", launch: "devin" }] } } };
   const result = await modelSuggestions({ probe, configs: [config] });
   assert.deepEqual(result.byLaunch.claude, [{ id: "claude-fable-5-1", cliModel: null }]);
+  assert.deepEqual(result.byLaunch.devin, [{ id: "swe-2", cliModel: null }, { id: "swe-2", cliModel: "swe-2-high" }]);
   assert.deepEqual(result.byLaunch.cursor, [{ id: "auto", cliModel: null }, { id: "grok-4.6", cliModel: "grok-4.6-high" }, { id: "claude-opus-5-5", cliModel: null }]);
-  assert.equal(result.cursorError, null);
+  assert.deepEqual(result.byLaunch.agy, [{ id: "gemini-4-neon", cliModel: "gemini-4-neon-high" }, { id: "gemini-4-neon", cliModel: "gemini-4-neon-low" }]);
+  assert.deepEqual(result.listErrors, {});
   const missing = await modelSuggestions({ probe: { run: async () => ({ code: "ENOENT", stdout: "" }) }, configs: [] });
-  assert.equal(missing.cursorError, "cursor-agent is not installed");
+  assert.deepEqual(missing.listErrors, {}, "a launcher that is not installed is not an error");
+  const signedOut = await modelSuggestions({ probe: { run: async () => ({ code: 1, stdout: "" }) }, configs: [] });
+  assert.deepEqual(Object.keys(signedOut.listErrors), ["cursor", "agy", "devin"]);
 });

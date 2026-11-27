@@ -18,6 +18,21 @@ test("parseEnvelope accepts a Claude CLI result string", () => {
   assert.deepEqual(parseEnvelope(JSON.stringify(wrapper)), review);
 });
 
+test("parseEnvelope unwraps a successful agy JSON result and leaves a failed one", () => {
+  const wrapper = { conversation_id: "c", status: "SUCCESS", response: `Here you go:\n${JSON.stringify(review)}\n` };
+  assert.deepEqual(parseEnvelope(JSON.stringify(wrapper)), review);
+  const failed = { status: "ERROR", response: JSON.stringify(review) };
+  assert.deepEqual(parseEnvelope(JSON.stringify(failed)), failed);
+  const empty = { status: "SUCCESS", response: "" };
+  assert.deepEqual(parseEnvelope(JSON.stringify(empty)), empty);
+});
+
+test("parseEnvelope reads a devin -p reply, which is the reviewer's text with stderr warnings apart", () => {
+  // Captured stdout of fr-devin-review on a one-line change.
+  const stdout = `{"reviewComplete":true,"verdict":"GO","summary":"Appends the line \\"two\\" to a.txt."}\n`;
+  assert.deepEqual(parseEnvelope(stdout), { reviewComplete: true, verdict: "GO", summary: "Appends the line \"two\" to a.txt." });
+});
+
 test("parseEnvelope accepts a Claude CLI result object", () => {
   const wrapper = { is_error: false, subtype: "success", result: review };
   assert.deepEqual(parseEnvelope(JSON.stringify(wrapper)), review);

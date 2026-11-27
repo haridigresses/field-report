@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { cursorModelIds, defaultProbe, doctor, formatDoctor } from "../src/doctor.mjs";
+import { agyModelIds, cursorModelIds, devinModelIds, defaultProbe, doctor, formatDoctor } from "../src/doctor.mjs";
 import { skillHostDirs, SKILL_NAMES } from "../src/install.mjs";
 import { parseSeatConfig } from "../src/seats.mjs";
 
@@ -60,6 +60,43 @@ const byLabel = (results, label) => results.find((item) => item.label === label)
 
 test("cursorModelIds reads the id before the display name", () => {
   assert.deepEqual([...cursorModelIds("Available models\n\nauto - Auto (default)\ngpt-5.3-codex-low - Codex 5.3 Low\n")], ["auto", "gpt-5.3-codex-low"]);
+});
+
+test("agyModelIds reads the id before the tab and skips the progress line", () => {
+  assert.deepEqual([...agyModelIds("Fetching available models...\ngemini-4-neon-high\tGemini 4 Neon (High)\nclaude-opus-5-5-low\tClaude Opus 5.5 (Low)\n")], ["gemini-4-neon-high", "claude-opus-5-5-low"]);
+});
+
+test("devinModelIds reads family slugs, aliases, and variant ids", () => {
+  const listing = JSON.stringify({ families: [{ slug: "swe-2", aliases: ["swe"], variants: [{ model_uid: "swe-2-high" }, { model_uid: "swe-2-medium" }] }, { slug: "adaptive", aliases: [], variants: [{ model_uid: "adaptive" }] }] });
+  assert.deepEqual([...devinModelIds(listing)], ["swe-2", "swe", "swe-2-high", "swe-2-medium", "adaptive"]);
+  assert.deepEqual([...devinModelIds("not json")], []);
+});
+
+test("doctor checks agy models (bare ids included) and the Devin wrapper", async () => {
+  const { home, stateRoot } = await installedHome();
+  const mixed = parseSeatConfig({
+    schemaVersion: 1,
+    seats: {
+      "correctness": { models: [{ id: "gemini-4-neon", launch: "agy", cliModel: "gemini-4-neon-high" }, { id: "gemini-4-carbon", launch: "agy" }, { id: "gemini-9", launch: "agy" }] },
+      "design": { models: [{ id: "swe-2", launch: "devin" }, { id: "swe-9", launch: "devin" }] },
+      "intent": { models: [{ id: "claude-x", launch: "claude" }] }
+    }
+  });
+  const commands = {
+    ...allCommands,
+    "agy --version": { code: 0, stdout: "agy 1\n" },
+    "agy models": { code: 0, stdout: "Fetching available models...\ngemini-4-neon-high\tNeon\ngemini-4-carbon-medium\tCarbon\n" },
+    "devin --version": { code: 0, stdout: "devin 3000\n" },
+    "devin models list --format json": { code: 0, stdout: JSON.stringify({ families: [{ slug: "swe-2", aliases: ["swe"], variants: [{ model_uid: "swe-2-high" }] }] }) }
+  };
+  const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => mixed, probe: probeWith(commands) });
+  assert.equal(byLabel(results, "correctness default gemini-4-neon").level, "ok");
+  assert.equal(byLabel(results, "correctness fallback gemini-4-carbon").level, "ok", "agy takes a bare model id");
+  assert.equal(byLabel(results, "correctness fallback gemini-9").level, "warn");
+  assert.equal(byLabel(results, "design default swe-2").level, "ok");
+  assert.equal(byLabel(results, "design fallback swe-9").level, "warn");
+  assert.equal(byLabel(results, "fr-devin-review").level, "fail", "the installed home has no Devin wrapper");
+  assert.match(byLabel(results, "zsh").detail, /agy, devin, claude/);
 });
 
 test("doctor passes on a fully installed machine", async () => {
