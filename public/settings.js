@@ -8,7 +8,6 @@ function showTab() {
 addEventListener("hashchange", showTab);
 showTab();
 
-const HOME_LABELS = { repo: "Repository (docs/plans/)", linear: "Linear", notion: "Notion", ref: "Ref" };
 const statusEl = document.querySelector("#status");
 const sourceEl = document.querySelector("#source");
 let roles = [];
@@ -131,7 +130,13 @@ if (!response.ok) status(data.error, "warn"); else load(data);
 const projectsEl = document.querySelector("#project-list");
 const projectStatusEl = document.querySelector("#project-status");
 let projects = [];
-let planHomes = [];
+let todoServices = [];
+let planServices = [];
+const SERVICE_LABELS = { github: "GitHub Issues", linear: "Linear", notion: "Notion", ref: "Ref", repo: "Repository (docs/plans/)" };
+// Each service's location is free text; the placeholder says what it means there.
+const TODO_PLACEHOLDERS = { github: "owner/repo, label (blank: this project's repo)", linear: "team and label, e.g. ENG, agent-todo", notion: "database or page", ref: "parent ref" };
+const PLAN_PLACEHOLDERS = { linear: "team or project", notion: "page or database", ref: "parent ref" };
+const serviceSelect = (field, services, current) => `<select data-field="${field}">${services.map((service) => `<option value="${escape(service)}" ${service === current ? "selected" : ""}>${escape(SERVICE_LABELS[service] || service)}</option>`).join("")}</select>`;
 
 function projectStatus(text, kind = "") { projectStatusEl.textContent = text; projectStatusEl.className = kind; }
 
@@ -147,13 +152,12 @@ function renderProjects() {
       <div class="project-fields">
         <label>GitHub repo <input data-field="githubRepo" value="${escape(project.githubRepo || "")}" placeholder="owner/name"></label>
         <label>Base branch <input data-field="baseBranch" value="${escape(project.baseBranch || "main")}"></label>
-        <label>Todos go to <select data-field="kind"><option value="af" ${project.tracker.kind === "af" ? "selected" : ""}>AF issues</option><option value="linear" ${project.tracker.kind === "linear" ? "selected" : ""}>Linear</option></select></label>
-        <label class="linear-only" ${project.tracker.kind === "linear" ? "" : "hidden"}>Linear team <input data-field="team" value="${escape(project.tracker.team || "")}" placeholder="e.g. ENG"></label>
-        <label class="linear-only" ${project.tracker.kind === "linear" ? "" : "hidden"}>Linear label <input data-field="label" value="${escape(project.tracker.label || "")}" placeholder="optional"></label>
+        <label>Todos go to ${serviceSelect("todoService", todoServices, project.todos.service)}</label>
+        <label class="todo-reference">Todo location <input data-field="todoReference" value="${escape(project.todos.reference || "")}" placeholder="${escape(TODO_PLACEHOLDERS[project.todos.service] || "")}"></label>
       </div>
       <div class="project-fields plans-fields">
-        <label>Plans live in <select data-field="planHome">${planHomes.map((home) => `<option value="${escape(home)}" ${home === project.plans.home ? "selected" : ""}>${escape(HOME_LABELS[home] || home)}</option>`).join("")}</select></label>
-        <label class="plan-reference" ${project.plans.home === "repo" ? "hidden" : ""}>Plan reference <input data-field="planReference" value="${escape(project.plans.reference || "")}" placeholder="team, page, or parent document (optional)"></label>
+        <label>Plans live in ${serviceSelect("planService", planServices, project.plans.service)}</label>
+        <label class="plan-reference" ${project.plans.service === "repo" ? "hidden" : ""}>Plan location <input data-field="planReference" value="${escape(project.plans.reference || "")}" placeholder="${escape(PLAN_PLACEHOLDERS[project.plans.service] || "")}"></label>
       </div>
       <div class="project-actions"><button data-action="save-project">Save project</button><button data-action="remove-project">Remove</button></div>
     </div>`).join("");
@@ -161,12 +165,18 @@ function renderProjects() {
 
 projectsEl.addEventListener("change", (event) => {
   const card = event.target.closest(".project");
-  if (event.target.dataset.field === "kind") for (const label of card.querySelectorAll(".linear-only")) label.hidden = event.target.value !== "linear";
-  // A repository plan has no reference: it always goes in docs/plans/.
-  if (event.target.dataset.field === "planHome") {
-    const repo = event.target.value === "repo";
-    card.querySelector(".plan-reference").hidden = repo;
-    if (repo) card.querySelector('[data-field="planReference"]').value = "";
+  const field = event.target.dataset.field;
+  // A new service means a new location; a repository plan has none.
+  if (field === "todoService") {
+    const input = card.querySelector('[data-field="todoReference"]');
+    input.value = "";
+    input.placeholder = TODO_PLACEHOLDERS[event.target.value] || "";
+  }
+  if (field === "planService") {
+    const input = card.querySelector('[data-field="planReference"]');
+    input.value = "";
+    input.placeholder = PLAN_PLACEHOLDERS[event.target.value] || "";
+    card.querySelector(".plan-reference").hidden = event.target.value === "repo";
   }
 });
 
@@ -175,7 +185,8 @@ async function projectRequest(path, payload, done) {
   const data = await response.json();
   if (!response.ok) return projectStatus(`Not saved: ${data.error}`, "warn");
   projects = data.projects;
-  planHomes = data.planHomes || planHomes;
+  todoServices = data.todoServices || todoServices;
+  planServices = data.planServices || planServices;
   renderProjects();
   projectStatus(done, "good");
 }
@@ -191,13 +202,11 @@ projectsEl.addEventListener("click", async (event) => {
     if (!confirm(`Remove ${project.id}${extra}? This cannot be undone.`)) return;
     return projectRequest("/api/projects/remove", { id: project.id, withWorkstreams: true, expectedWorkstreams: project.workstreams }, `Removed ${project.id}.`);
   }
-  const kind = value("kind");
-  const tracker = kind === "linear" ? (value("label") ? { kind, team: value("team"), label: value("label") } : { kind, team: value("team"), clearLabel: true }) : { kind };
-  const plans = value("planReference") ? { home: value("planHome"), reference: value("planReference") } : { home: value("planHome"), clearReference: true };
-  return projectRequest("/api/projects/update", { id: project.id, githubRepo: value("githubRepo"), baseBranch: value("baseBranch"), tracker, plans }, `Saved ${project.id}.`);
+  const destination = (service, reference) => (value(reference) ? { service: value(service), reference: value(reference) } : { service: value(service), clearReference: true });
+  return projectRequest("/api/projects/update", { id: project.id, githubRepo: value("githubRepo"), baseBranch: value("baseBranch"), todos: destination("todoService", "todoReference"), plans: destination("planService", "planReference") }, `Saved ${project.id}.`);
 });
 
 const projectResponse = await fetch("/api/projects");
 const projectData = await projectResponse.json();
-if (projectResponse.ok) { projects = projectData.projects; planHomes = projectData.planHomes; renderProjects(); } else projectStatus(projectData.error, "warn");
+if (projectResponse.ok) { projects = projectData.projects; todoServices = projectData.todoServices; planServices = projectData.planServices; renderProjects(); } else projectStatus(projectData.error, "warn");
 loadSuggestions();

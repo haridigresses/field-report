@@ -125,7 +125,7 @@ test("crr briefs prefer a local native subagent", async () => {
   assert.doesNotMatch(crr.prompt, /necessity=/);
 });
 
-test("mrr briefs seat each configured default model and isolate reviewers from AF", async () => {
+test("mrr briefs seat each configured default model and isolate reviewers from MCP", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
   const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "correctness"], repo, state));
@@ -153,7 +153,7 @@ test("mrr briefs seat each configured default model and isolate reviewers from A
   assert.doesNotMatch(fable.execution.launch, /Bash\(git \*\)/);
   assert.match(deep.prompt, /delegationId=/);
   for (const brief of [deep, structural, fable]) assert.doesNotMatch(brief.prompt, /\bprovider\b/);
-  assert.match(deep.prompt, /Do not run fr, owner skills, MCP servers, or AF/);
+  assert.match(deep.prompt, /Do not run fr, owner skills, or MCP servers/);
   assert.equal(deep.inspection.command, `git diff --no-ext-diff --no-textconv ${deep.delegation.baseHead} ${deep.delegation.head} --`);
   const sol = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "correctness", "--model", "gpt-5.6-sol"], repo, state));
   assert.equal(sol.delegation.model, "gpt-5.6-sol");
@@ -198,7 +198,7 @@ test("mrr native route isolates a fresh subagent", async () => {
   const native = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "correctness", "--route", "native"], repo, state));
   assert.equal(native.execution.route, "native");
   assert.match(native.execution.launch, /fresh native gpt-6-astra subagent/);
-  assert.match(native.execution.launch, /no MCP servers, including agent-fixes/);
+  assert.match(native.execution.launch, /no MCP servers; do not pass the owner conversation/);
   const nativeFable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "intent", "--route", "native"], repo, state));
   assert.equal(nativeFable.execution.route, "native");
   assert.match(nativeFable.execution.launch, /fresh native claude-opus-5-5 subagent/);
@@ -269,7 +269,7 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /rerun only the seat that said NO_GO/);
   assert.match(shared, /does not record provider failure/);
   assert.match(shared, /Do not auto-open a pull request/);
-  assert.match(shared, /Reviewers must not use MCP servers or AF/);
+  assert.match(shared, /Reviewers must not use MCP servers/);
   assert.match(shared, /empty user-level MCP file/);
   assert.match(shared, /does not hide repository-scoped Cursor MCP/);
   assert.match(shared, /Do not wrap `git commit`/);
@@ -430,35 +430,37 @@ test("record refuses conflicting provenance, pass, and lossy evidence instead of
   assert.equal((await createStore(state).reviews("outcome"))[0].verdict, "GO");
 });
 
-test("context and identity print the project's todo tracker", async () => {
+test("context and identity print where todos and plans go, and the session title", async () => {
   const { repo, state } = await fixture();
-  assert.match(await run(["context", "outcome"], repo, state), /Todos: AF issues in namespace sample/);
-  assert.match(await run(["context", "outcome"], repo, state), /Session name: sample\/owner/);
-  await assert.rejects(run(["project", "update", "sample", "--linear-team", "ENG"], repo, state), /require --tracker linear/);
-  await assert.rejects(run(["project", "update", "sample", "--tracker"], repo, state), /Specify --tracker <value>/);
-  await run(["project", "update", "sample", "--tracker", "linear", "--linear-team", "ENG", "--linear-label", "agent-todo"], repo, state);
-  assert.match(await run(["context", "outcome"], repo, state), /Todos: Linear team ENG, label agent-todo/);
-  assert.equal(JSON.parse(await run(["identity", "--role", "owner"], repo, state)).todos, "Linear team ENG, label agent-todo");
-  assert.match(await run(["project", "list"], repo, state), /\tlinear:ENG\/agent-todo\tplans:repo\n$/);
-  await run(["project", "update", "sample", "--plans", "ref", "--plans-reference", "Engineering plans"], repo, state);
-  assert.match(await run(["context", "outcome"], repo, state), /Plans: Ref: Engineering plans, through this host's Ref MCP connector/);
-  assert.equal(JSON.parse(await run(["identity", "--role", "owner"], repo, state)).plans, "Ref: Engineering plans, through this host's Ref MCP connector");
-  assert.match(await run(["project", "list"], repo, state), /\tplans:ref\/Engineering plans\n$/);
-  await assert.rejects(run(["project", "update", "sample", "--plans"], repo, state), /Specify --plans <value>/);
-  await assert.rejects(run(["project", "update", "sample", "--clear-linear-label", "yes"], repo, state), /takes no value/);
-  await run(["project", "update", "sample", "--clear-linear-label"], repo, state);
-  assert.match(await run(["context", "outcome"], repo, state), /Todos: Linear team ENG\n/);
-  assert.match(await run(["project", "list"], repo, state), /\tlinear:ENG\tplans:ref\/Engineering plans\n$/);
-  await run(["project", "update", "sample", "--linear-label", "agent-todo"], repo, state);
-  await run(["project", "update", "sample", "--linear-team", "OPS"], repo, state);
-  assert.match(await run(["project", "list"], repo, state), /\tlinear:OPS\tplans:ref\/Engineering plans\n$/, "a team change drops the old label");
+  const context = await run(["context", "outcome"], repo, state);
+  assert.match(context, /Todos: GitHub issues in [^\n]+ \(gh issue create\)/);
+  assert.match(context, /Plans: docs\/plans\/ in this repository/);
+  assert.match(context, /Session title: sample\/owner \(fallback sample\/owner-2\)/);
+  assert.doesNotMatch(context, /\bAF\b/);
+  await assert.rejects(run(["project", "update", "sample", "--todos"], repo, state), /Specify --todos <value>/);
+  await assert.rejects(run(["project", "update", "sample", "--todos", "af"], repo, state), /Todos must be github, linear, notion, ref/);
+  await run(["project", "update", "sample", "--todos", "linear", "--todos-reference", "ENG, label agent-todo", "--plans", "ref", "--plans-reference", "Engineering plans"], repo, state);
+  assert.match(await run(["context", "outcome"], repo, state), /Todos: Linear: ENG, label agent-todo, through this host's Linear MCP connector/);
+  const identity = JSON.parse(await run(["identity", "--role", "owner"], repo, state));
+  assert.equal(identity.todos, "Linear: ENG, label agent-todo, through this host's Linear MCP connector");
+  assert.equal(identity.plans, "Ref: Engineering plans, through this host's Ref MCP connector");
+  assert.match(identity.instruction, /session's title/);
+  assert.doesNotMatch(identity.instruction, /\bAF\b/);
+  assert.match(await run(["project", "list"], repo, state), /\ttodos:linear:ENG, label agent-todo\tplans:ref:Engineering plans\n$/);
+  await assert.rejects(run(["project", "update", "sample", "--clear-todos-reference", "yes"], repo, state), /takes no value/);
+  await run(["project", "update", "sample", "--clear-todos-reference"], repo, state);
+  assert.match(await run(["project", "list"], repo, state), /\ttodos:linear\tplans:ref:Engineering plans\n$/);
+  await run(["project", "update", "sample", "--todos-reference", "ENG"], repo, state);
+  await run(["project", "update", "sample", "--todos", "notion"], repo, state);
+  assert.match(await run(["project", "list"], repo, state), /\ttodos:notion\tplans:/, "a service change drops the old reference");
 });
 
-test("project add accepts a Linear tracker", async () => {
+test("project add takes a todo service and plan home", async () => {
   const { repo, state } = await fixture();
   const other = await mkdtemp(path.join(os.tmpdir(), "fr-cli-add-"));
-  await run(["project", "add", "linear-sample", "--label", "Linear", "--repo", other, "--tracker", "linear", "--linear-team", "ENG", "--linear-label", "agent-todo"], repo, state);
-  assert.match(await run(["project", "list"], repo, state), /^linear-sample\tmain\t.*\tlinear:ENG\/agent-todo\tplans:repo$/m);
-  assert.match(await run(["project", "list"], repo, state), /^sample\tmain\t.*\taf\tplans:repo$/m);
-  await assert.rejects(run(["project", "add", "broken", "--label", "Broken", "--repo", other, "--tracker", "linear"], repo, state), /needs --linear-team/);
+  await run(["project", "add", "linear-sample", "--label", "Linear", "--repo", other, "--todos", "linear", "--todos-reference", "ENG"], repo, state);
+  assert.match(await run(["project", "list"], repo, state), /^linear-sample\tmain\t.*\ttodos:linear:ENG\tplans:repo$/m);
+  assert.match(await run(["project", "list"], repo, state), /^sample\tmain\t.*\ttodos:github\tplans:repo$/m);
+  await assert.rejects(run(["project", "add", "broken", "--label", "Broken", "--repo", other, "--plans", "repo", "--plans-reference", "x"], repo, state), /takes no reference/);
 });
+

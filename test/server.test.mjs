@@ -108,13 +108,13 @@ test("projects can be edited and removed from the settings page, removal deletes
   try {
     const listed = (await (await fetch(`${url}/api/projects`)).json()).projects;
     assert.deepEqual(listed.map((project) => [project.id, project.repoExists, project.workstreams]), [["live", true, 0], ["stale", false, 1]]);
-    const updated = await post("/api/projects/update", { id: "live", baseBranch: "develop", tracker: { kind: "linear", team: "ENG", label: "agent-todo" } });
+    const updated = await post("/api/projects/update", { id: "live", baseBranch: "develop", todos: { service: "linear", reference: "ENG, label agent-todo" } });
     assert.equal(updated.status, 200);
-    assert.deepEqual((await store.project("live")).tracker, { kind: "linear", team: "ENG", label: "agent-todo" });
-    assert.equal((await post("/api/projects/update", { id: "live", tracker: { kind: "linear", team: "ENG TEAM" } })).status, 400);
-    await post("/api/projects/update", { id: "live", plans: { home: "ref", reference: "Engineering plans" } });
-    assert.deepEqual((await store.project("live")).plans, { home: "ref", reference: "Engineering plans" });
-    assert.equal((await post("/api/projects/update", { id: "live", plans: { home: "repo", reference: "x" } })).status, 400);
+    assert.deepEqual((await store.project("live")).todos, { service: "linear", reference: "ENG, label agent-todo" });
+    assert.equal((await post("/api/projects/update", { id: "live", todos: { service: "af" } })).status, 400);
+    await post("/api/projects/update", { id: "live", plans: { service: "ref", reference: "Engineering plans" } });
+    assert.deepEqual((await store.project("live")).plans, { service: "ref", reference: "Engineering plans" });
+    assert.equal((await post("/api/projects/update", { id: "live", plans: { service: "repo", reference: "x" } })).status, 400);
     const stale = await post("/api/projects/remove", { id: "stale", withWorkstreams: true, expectedWorkstreams: 0 });
     assert.equal(stale.status, 400);
     assert.match((await stale.json()).error, /now has 1 workstreams, not 0; reload/);

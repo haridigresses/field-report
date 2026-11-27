@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
-import { createStore, defaultStateRoot, describePlans, describeTracker, plansFor, trackerFor, trackerTarget } from "../src/store.mjs";
+import { createStore, defaultStateRoot, describePlans, describeTodos, destinationTarget, plansFor, todosFor } from "../src/store.mjs";
 import { assertSeatOpen, botsReasons, CRR_ROLE, evaluateGate, findingLedger, identityKey, latestClaimReviews, openReasons, reviewKind, REVIEW_ROLES, seatingFor, seatStatus, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { ancestorHeads, checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookManagerPath, hookState, hookText, isManagedHook, quote, shouldRunPreserved } from "../src/hooks.mjs";
@@ -20,9 +20,9 @@ const REVIEW_EXECUTION = Object.freeze({ conversationInheritance: "none", mcp: "
 
 function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = {}) {
   if (seated.role === CRR_ROLE && seated.route === "native") {
-    return `Launch a fresh ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes. Prefer a local model; use cloud only if local cannot produce an envelope. Do not pass the owner conversation.`;
+    return `Launch a fresh ${seated.model} subagent with conversationInheritance=none and no MCP servers. Prefer a local model; use cloud only if local cannot produce an envelope. Do not pass the owner conversation.`;
   }
-  if (seated.route === "native") return `Launch a fresh native ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes; do not pass the owner conversation.`;
+  if (seated.route === "native") return `Launch a fresh native ${seated.model} subagent with conversationInheritance=none and no MCP servers; do not pass the owner conversation.`;
   // The config's cliModel decides the exact launch id.
   const model = seated.requested || seated.model;
   const launch = launchEntry(model)?.launch;
@@ -39,8 +39,8 @@ fr version
 fr ui [--port <n>]
 fr init
 fr doctor
-fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label] [--plans repo|linear|notion|ref] [--plans-reference <text>|--clear-plans-reference]
-fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label] [--plans repo|linear|notion|ref] [--plans-reference <text>|--clear-plans-reference]
+fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main] [--todos github|linear|notion|ref] [--todos-reference <text>|--clear-todos-reference] [--plans repo|linear|notion|ref] [--plans-reference <text>|--clear-plans-reference]
+fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main] [--todos github|linear|notion|ref] [--todos-reference <text>|--clear-todos-reference] [--plans repo|linear|notion|ref] [--plans-reference <text>|--clear-plans-reference]
 fr project list
 fr project remove <id> [--with-workstreams]
 fr identity --role coordinator|owner
@@ -67,20 +67,13 @@ fr workflow [shared|coordinator|workstream|reviewer]
 Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge. Config (fr seats) chooses the model for each MRR seat. Cursor Cloud Agents reach the host codex and claude CLIs through My Machines when a worker for that checkout is online.`;
 }
 
-function plansFlags(flags) {
-  for (const name of ["plans", "plans-reference"]) if (flags[name] === true) throw new Error(`Specify --${name} <value>`);
-  const clear = flags["clear-plans-reference"];
-  if (clear != null && clear !== true) throw new Error("--clear-plans-reference takes no value");
-  if (flags.plans == null && flags["plans-reference"] == null && !clear) return null;
-  return { home: flags.plans, reference: flags["plans-reference"], clearReference: Boolean(clear) };
-}
-
-function trackerFlags(flags) {
-  for (const name of ["tracker", "linear-team", "linear-label"]) if (flags[name] === true) throw new Error(`Specify --${name} <value>`);
-  const clear = flags["clear-linear-label"];
-  if (clear != null && clear !== true) throw new Error("--clear-linear-label takes no value");
-  if (flags.tracker == null && flags["linear-team"] == null && flags["linear-label"] == null && !clear) return null;
-  return { kind: flags.tracker, team: flags["linear-team"], label: flags["linear-label"], clearLabel: Boolean(clear) };
+// --todos/--plans pick a service; --<name>-reference says where in it.
+function destinationFlags(flags, name) {
+  for (const flag of [name, `${name}-reference`]) if (flags[flag] === true) throw new Error(`Specify --${flag} <value>`);
+  const clear = flags[`clear-${name}-reference`];
+  if (clear != null && clear !== true) throw new Error(`--clear-${name}-reference takes no value`);
+  if (flags[name] == null && flags[`${name}-reference`] == null && !clear) return null;
+  return { service: flags[name], reference: flags[`${name}-reference`], clearReference: Boolean(clear) };
 }
 
 function parse(values) {
@@ -171,7 +164,7 @@ function reviewPrompt(stream, delegation, inventory) {
   const mrr = kind === "mrr"
     ? " Review the complete changed authority boundary and judge the accumulated mechanism, not only the latest repair. Do not defer to the owner's framing, passing tests, or other reviewers. Findings are defects in the candidate that should block it: bugs, broken invariants, security or data problems, or a candidate too broad to assess. Weigh likelihood and blast radius; an unlikely edge case that fails safely belongs in the summary, not findings. If accepting the change depends on a product choice the user has not settled and the user decisions above do not cover, put it in questions as a plain question for the user; a question alone is not a NO_GO, and you must not pick the answer."
     : "";
-  return `Independently review Field Report workstream ${stream.id} as ${delegation.role} using model ${delegation.model}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim JSON string: ${JSON.stringify(delegation.claim)}\n${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run fr, owner skills, MCP servers, or AF. Inspect repository files and the inspect command only. Do not inherit or request the owner's conversation. A fresh subagent is independent even when it uses the builder's model. Return only the substantive JSON envelope below and echo delegationId. Target and routing identity are supplied by this brief and the task binding when recording; do not duplicate them.\n\nThe claim describes the intended outcome; it does not limit review scope.${mrr} Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings. A GO with observations is valid. Do not modify the candidate.${decisions}${prior}\n\n${envelope}`;
+  return `Independently review Field Report workstream ${stream.id} as ${delegation.role} using model ${delegation.model}. Target ${target}. Stated outcome: ${stream.outcome}. Current claim JSON string: ${JSON.stringify(delegation.claim)}\n${rubric}\n\nInspect the exact target with this read-only command:\n${inspectCommand(delegation)}\n\nChanged files (${inventory.files.length}; +${inventory.additions} −${inventory.deletions}):\n${files}\n\nDo not run fr, owner skills, or MCP servers. Inspect repository files and the inspect command only. Do not inherit or request the owner's conversation. A fresh subagent is independent even when it uses the builder's model. Return only the substantive JSON envelope below and echo delegationId. Target and routing identity are supplied by this brief and the task binding when recording; do not duplicate them.\n\nThe claim describes the intended outcome; it does not limit review scope.${mrr} Put deferred scope, optional improvements, and other nonblocking observations in the summary, not findings. A GO with observations is valid. Do not modify the candidate.${decisions}${prior}\n\n${envelope}`;
 }
 
 async function gateFor(stream, kind) {
@@ -281,18 +274,18 @@ async function main() {
   if (command === "init") { const root = await store.init(); return process.stdout.write(`Initialized Field Report state at ${root}\n`); }
 
   if (command === "project" && positional[0] === "add") {
-    const record = await store.saveProject({ id: positional[1], label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base, tracker: trackerFlags(flags), plans: plansFlags(flags) });
+    const record = await store.saveProject({ id: positional[1], label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base, todos: destinationFlags(flags, "todos"), plans: destinationFlags(flags, "plans") });
     return process.stdout.write(`Saved project ${record.id}. Install its checkout hook explicitly with: fr hook install ${record.id}\n`);
   }
   if (command === "project" && positional[0] === "update") {
-    const record = await store.updateProject(positional[1], { label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base, tracker: trackerFlags(flags), plans: plansFlags(flags) });
+    const record = await store.updateProject(positional[1], { label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base, todos: destinationFlags(flags, "todos"), plans: destinationFlags(flags, "plans") });
     return process.stdout.write(`Updated project ${record.id}.\n`);
   }
   if (command === "project" && positional[0] === "remove") {
     const removed = await store.removeProject(requireValue(positional[1], "Specify a project ID"), { withWorkstreams: flags["with-workstreams"] === true });
     return process.stdout.write(`Removed project ${removed.project}${removed.workstreams.length ? ` and its workstreams: ${removed.workstreams.join(", ")}` : ""}.\n`);
   }
-  if (command === "project" && positional[0] === "list") return process.stdout.write(`${(await store.projects()).map((project) => `${project.id}\t${project.baseBranch}\t${project.repoPath}\t${trackerTarget(trackerFor(project))}\tplans:${plansFor(project).home}${plansFor(project).reference ? `/${plansFor(project).reference}` : ""}`).join("\n")}\n`);
+  if (command === "project" && positional[0] === "list") return process.stdout.write(`${(await store.projects()).map((project) => `${project.id}\t${project.baseBranch}\t${project.repoPath}\ttodos:${destinationTarget(todosFor(project))}\tplans:${destinationTarget(plansFor(project))}`).join("\n")}\n`);
 
   if (command === "identity") {
     const role = requireValue(flags.role, "Specify --role coordinator|owner");
@@ -302,9 +295,9 @@ async function main() {
       project: project.id,
       role,
       ...identity,
-      todos: describeTracker(trackerFor(project), project.id),
+      todos: describeTodos(todosFor(project), project),
       plans: describePlans(plansFor(project)),
-      instruction: "If AF is installed and AF whoami has no name, save this session as key. If that name is held by a live session, use fallback. If AF is not installed, skip naming and continue. Do not ask the user to name you. Reviewers must not save."
+      instruction: "Use key as this session's title where the host lets you set one, so the user can find it; if another open session already has that title, use fallback. It is a label only; nothing looks sessions up by it. Do not ask the user to name you. Reviewers do not take a title."
     }, null, 2)}\n`);
   }
 
@@ -329,7 +322,7 @@ async function main() {
     let mrr;
     try { mrr = await gateFor(stream, "mrr"); } catch (error) { mrr = { gate: { ready: false, notes: [], reasons: [error.message] } }; }
     const reviews = await store.reviews(stream.id);
-    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nTodos: ${describeTracker(trackerFor(project), project.id)}\nPlans: ${describePlans(plansFor(project))}\nSession name: ${identity.key} (fallback ${identity.fallback}; AF-save if AF is installed)\nMRR: ${printMrr(mrr.gate)}\n${(stream.decisions || []).length ? `Decisions: ${stream.decisions.join(" | ")}\n` : ""}${scoreLines(reviews, stream, state.head).join("\n")}\nReviews never require permission. Do not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; earlier seat reviews carry forward, and the user asks for final MRR. Product and domain questions go to the user; do not infer them from schema or code.\n`);
+    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nTodos: ${describeTodos(todosFor(project), project)}\nPlans: ${describePlans(plansFor(project))}\nSession title: ${identity.key} (fallback ${identity.fallback})\nMRR: ${printMrr(mrr.gate)}\n${(stream.decisions || []).length ? `Decisions: ${stream.decisions.join(" | ")}\n` : ""}${scoreLines(reviews, stream, state.head).join("\n")}\nReviews never require permission. Do not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; earlier seat reviews carry forward, and the user asks for final MRR. Product and domain questions go to the user; do not infer them from schema or code.\n`);
   }
   if (command === "update") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
