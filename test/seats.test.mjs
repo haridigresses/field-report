@@ -42,6 +42,13 @@ test("config file rejects malformed seats", () => {
   assert.throws(broken((raw) => { raw.providers = {}; }), /unknown key "providers"/);
 });
 
+test("plans default to the repository and accept one line of free text", () => {
+  assert.equal(parseSeatConfig(clone()).plans, null);
+  assert.equal(parseSeatConfig({ ...clone(), plans: " ref: Engineering plans " }).plans, "ref: Engineering plans");
+  assert.throws(() => parseSeatConfig({ ...clone(), plans: { home: "ref" } }), /plans must be a single line of text/);
+  assert.throws(() => parseSeatConfig({ ...clone(), plans: "a\nb" }), /plans must be a single line of text/);
+});
+
 test("any model, from any lab, can fill any seat the config lists it in", () => {
   const sameEverywhere = { schemaVersion: 1, seats: Object.fromEntries(["deep-code-review", "structural-challenge", "fable-challenge"].map((role) => [role, neon])) };
   try {

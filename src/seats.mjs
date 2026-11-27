@@ -57,10 +57,19 @@ function parseModel(entry, label) {
   return { id, launch: entry.launch, cliModel: entry.cliModel?.trim() || id };
 }
 
+// Where BRR plans live, as free text the agent reads (for example
+// "ref: Engineering plans"). Field Report only prints it; the agent reads and
+// writes the plan through its host's MCP connector for that service.
+function parsePlans(raw) {
+  if (raw == null) return null;
+  if (typeof raw !== "string" || !raw.trim() || /[\u0000-\u001f\u007f]/.test(raw)) fail("plans must be a single line of text, such as \"ref: Engineering plans\"");
+  return raw.trim();
+}
+
 export function parseSeatConfig(raw) {
   object(raw, "the config");
   if (raw.schemaVersion !== 1) fail("schemaVersion must be 1");
-  onlyKeys(raw, ["schemaVersion", "seats"], "the config");
+  onlyKeys(raw, ["schemaVersion", "seats", "plans"], "the config");
   const rawSeats = object(raw.seats, "seats");
   const unknown = Object.keys(rawSeats).find((role) => !REVIEW_ROLES.includes(role));
   if (unknown) fail(`seats has unknown seat ${unknown}; seats are ${REVIEW_ROLES.join(", ")}`);
@@ -82,7 +91,7 @@ export function parseSeatConfig(raw) {
     }
     seats[role] = { role, models };
   }
-  return { seats };
+  return { seats, plans: parsePlans(raw.plans) };
 }
 
 // Tests can inject a parsed config; the CLI reads the file once per process.
@@ -118,4 +127,8 @@ export function launchEntry(model) {
 
 export function modelsLaunchedBy(launch) {
   return REVIEW_ROLES.flatMap((role) => seatFor(role).models).filter((entry) => entry.launch === launch);
+}
+
+export function describePlans() {
+  return seatConfig().plans || "docs/plans/ in this repository";
 }
