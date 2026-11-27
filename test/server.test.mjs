@@ -37,7 +37,7 @@ test("settings page shows the shipped defaults until a config is saved, then sav
     assert.deepEqual(initial.roles, ["correctness", "design", "intent"]);
     assert.deepEqual(Object.keys(initial.purposes), initial.roles, "every seat has a purpose to show");
 
-    const config = { ...initial.raw, plans: { home: "ref", reference: "Engineering plans" } };
+    const config = { ...initial.raw, seats: { ...initial.raw.seats, design: { models: [{ id: "gemini-4-neon", launch: "cursor", cliModel: "gemini-4-neon-high" }] } } };
     const saved = await post(JSON.stringify(config));
     assert.equal(saved.status, 200);
     assert.equal((await saved.json()).exists, true);
@@ -84,10 +84,11 @@ test("saving writes through a symlinked config instead of replacing the link", a
   await writeFile(real, await readFile(EXAMPLE_SEATS, "utf8"));
   await symlink(real, link);
   const { saveSeatConfig } = await import("../src/seats.mjs");
-  const raw = { ...JSON.parse(await readFile(EXAMPLE_SEATS, "utf8")), plans: { home: "notion", reference: "Plans" } };
+  const example = JSON.parse(await readFile(EXAMPLE_SEATS, "utf8"));
+  const raw = { ...example, seats: { ...example.seats, design: { models: [{ id: "gemini-4-neon", launch: "cursor" }] } } };
   await saveSeatConfig(raw, link);
   assert.equal((await lstat(link)).isSymbolicLink(), true);
-  assert.equal(JSON.parse(await readFile(real, "utf8")).plans.reference, "Plans");
+  assert.equal(JSON.parse(await readFile(real, "utf8")).seats.design.models[0].id, "gemini-4-neon");
 });
 
 test("projects can be edited and removed from the settings page, removal deletes their workstreams only when asked", async () => {
@@ -111,6 +112,9 @@ test("projects can be edited and removed from the settings page, removal deletes
     assert.equal(updated.status, 200);
     assert.deepEqual((await store.project("live")).tracker, { kind: "linear", team: "ENG", label: "agent-todo" });
     assert.equal((await post("/api/projects/update", { id: "live", tracker: { kind: "linear", team: "ENG TEAM" } })).status, 400);
+    await post("/api/projects/update", { id: "live", plans: { home: "ref", reference: "Engineering plans" } });
+    assert.deepEqual((await store.project("live")).plans, { home: "ref", reference: "Engineering plans" });
+    assert.equal((await post("/api/projects/update", { id: "live", plans: { home: "repo", reference: "x" } })).status, 400);
     const stale = await post("/api/projects/remove", { id: "stale", withWorkstreams: true, expectedWorkstreams: 0 });
     assert.equal(stale.status, 400);
     assert.match((await stale.json()).error, /now has 1 workstreams, not 0; reload/);

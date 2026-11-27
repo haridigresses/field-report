@@ -183,3 +183,18 @@ test("reading a project saved before trackers existed yields the AF tracker shap
   assert.deepEqual((await store.projects())[0].tracker, { kind: "af" });
   assert.equal(JSON.parse(await readFile(path.join(root, "projects", "legacy.json"), "utf8")).tracker, undefined, "reads do not rewrite the record");
 });
+
+test("each project has a plan home: repo by default, or a service with an optional reference", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-plans-"));
+  const store = createStore(root);
+  assert.deepEqual((await store.saveProject({ id: "sample", label: "Sample", repoPath: root })).plans, { home: "repo", reference: null });
+  assert.deepEqual((await store.updateProject("sample", { plans: { home: "notion", reference: "Plans DB" } })).plans, { home: "notion", reference: "Plans DB" });
+  assert.deepEqual((await store.updateProject("sample", { baseBranch: "develop" })).plans, { home: "notion", reference: "Plans DB" }, "other updates keep the plan home");
+  assert.deepEqual((await store.updateProject("sample", { plans: { home: "ref" } })).plans, { home: "ref", reference: null }, "changing the service drops the old reference");
+  await assert.rejects(store.updateProject("sample", { plans: { home: "jira" } }), /Plan home must be repo, linear, notion, ref/);
+  await assert.rejects(store.updateProject("sample", { plans: { home: "repo", reference: "x" } }), /takes no reference/);
+  await assert.rejects(store.updateProject("sample", { plans: { reference: "a\nb" } }), /control characters/);
+  const { plansFor, describePlans } = await import("../src/store.mjs");
+  assert.deepEqual(plansFor({ id: "old" }), { home: "repo", reference: null });
+  assert.equal(describePlans({ home: "ref", reference: "Eng" }), "Ref: Eng, through this host's Ref MCP connector");
+});

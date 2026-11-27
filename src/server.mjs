@@ -3,9 +3,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { collect } from "./collect.mjs";
-import { createStore } from "./store.mjs";
+import { createStore, PLAN_HOMES } from "./store.mjs";
 import { access } from "node:fs/promises";
-import { LAUNCHERS, normalizeId, PLAN_HOMES, readRawConfig, REVIEW_ROLES, saveSeatConfig, SEAT_PURPOSES } from "./seats.mjs";
+import { LAUNCHERS, normalizeId, readRawConfig, REVIEW_ROLES, saveSeatConfig, SEAT_PURPOSES } from "./seats.mjs";
 import { cursorModelIds, defaultProbe } from "./doctor.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -92,13 +92,13 @@ export function createServer({ port, store = createStore(), probe = defaultProbe
       try { input = JSON.parse(await body(req)); } catch (error) { return json(res, 400, { error: error.message }); }
       try {
         if (pathname === "/api/projects/remove") await store.removeProject(input.id, { withWorkstreams: input.withWorkstreams === true, expectedWorkstreams: Number.isInteger(input.expectedWorkstreams) ? input.expectedWorkstreams : null });
-        else await store.updateProject(input.id, { label: input.label, githubRepo: input.githubRepo, baseBranch: input.baseBranch, tracker: input.tracker });
-        return json(res, 200, { projects: await projectList(store) });
+        else await store.updateProject(input.id, { label: input.label, githubRepo: input.githubRepo, baseBranch: input.baseBranch, tracker: input.tracker, plans: input.plans });
+        return json(res, 200, { projects: await projectList(store), planHomes: PLAN_HOMES });
       } catch (error) { return json(res, 400, { error: error.message }); }
     }
     if (req.method !== "GET") return send(res, 405, "Method not allowed", "text/plain");
     if (pathname === "/api/projects") {
-      try { return json(res, 200, { projects: await projectList(store) }); }
+      try { return json(res, 200, { projects: await projectList(store), planHomes: PLAN_HOMES }); }
       catch (error) { return json(res, 500, { error: error.message }); }
     }
     if (pathname === "/api/models") {
@@ -109,7 +109,7 @@ export function createServer({ port, store = createStore(), probe = defaultProbe
       } catch (error) { return json(res, 500, { error: error.message }); }
     }
     if (pathname === "/api/config") {
-      try { return json(res, 200, { ...(await readRawConfig()), roles: REVIEW_ROLES, purposes: SEAT_PURPOSES, launchers: LAUNCHERS, planHomes: PLAN_HOMES }); }
+      try { return json(res, 200, { ...(await readRawConfig()), roles: REVIEW_ROLES, purposes: SEAT_PURPOSES, launchers: LAUNCHERS }); }
       catch (error) { return json(res, 500, { error: error.message }); }
     }
     if (pathname === "/api/state") {

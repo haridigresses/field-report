@@ -36,7 +36,7 @@ Field Report binds a delivery unit and records review evidence. The owner launch
 
 - Build-ready review is for work that spans several pull requests, run when the user asks for it or agrees to it. It is not a Field Report kind: no brief, record, or gate. The user's sign-off is the only gate. Follow the `brr` skill.
 - Sign off on direction, not detail: sketch the arcs, plan only the arc that starts now as PRs, and investigate later arcs just enough to find landmines (one-way decisions, feasibility unknowns, conflicts with user decisions). Each later arc gets its own short pass when it starts.
-- The plan is one markdown document in the plan home that `fr seats` prints on its `Plans:` line: `docs/plans/` in the repository by default, or the service (Linear, Notion, or Ref) and reference the user sets with `plans` in the config file, reached through the host's MCP connector. Keep one copy.
+- The plan is one markdown document in the project's plan home, which `fr project list` shows and `fr context` prints on its `Plans:` line: `docs/plans/` in the repository by default, or the service (Linear, Notion, or Ref) and reference the user sets per project (`fr project update <id> --plans`, or the settings page), reached through the host's MCP connector. Keep one copy.
 - The user's directional answers go in the plan's Decisions section. When a PR's workstream is created, record the ones that bind it with `fr decide`; reviewers read their brief, not the plan.
 
 ### TRR

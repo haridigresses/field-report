@@ -45,7 +45,7 @@ Use `fr-grill-me` on the open directional choices, one question at a time with a
 
 ## 7. Write the plan and get sign-off
 
-Write the plan as plain markdown in the plan home that `fr seats` prints on its `Plans:` line. If that is `docs/plans/`, write `docs/plans/<build>.md` in the target repository. If it names a service (Linear, Notion, or Ref) and a reference, write and read the plan there through this host's MCP connector for it. If the host has no connector for it, say so and ask the user where to put the plan; do not silently write it somewhere else.
+Write the plan as plain markdown in the project's plan home: `fr project list` shows it before any workstream exists, and `fr context` prints it on its `Plans:` line. If that is `docs/plans/`, write `docs/plans/<build>.md` in the target repository. If it names a service (Linear, Notion, or Ref) and a reference, write and read the plan there through this host's MCP connector for it. If the host has no connector for it, say so and ask the user where to put the plan; do not silently write it somewhere else.
 
 Keep one copy. The plan home holds the plan and the user's comments; do not keep a second copy in the repo that can drift.
 

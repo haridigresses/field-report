@@ -66,6 +66,35 @@ export function normalizeTracker(value, previous = null) {
 
 export function trackerFor(project) { return normalizeTracker(null, project?.tracker); }
 
+// Where this project's BRR plans live: a service plus an optional free-text
+// reference (team, page, parent document). Field Report only prints it; the
+// agent reaches the service through its host's MCP connector. Projects saved
+// before plans existed read as repo. Changing the service drops the old
+// reference unless the same update names one.
+export const PLAN_HOMES = ["repo", "linear", "notion", "ref"];
+const PLAN_HOME_NAMES = { linear: "Linear", notion: "Notion", ref: "Ref" };
+
+export function normalizePlans(value, previous = null) {
+  const prior = previous || { home: "repo", reference: null };
+  if (value == null) return prior;
+  const home = value.home == null ? prior.home : String(value.home).toLowerCase();
+  if (!PLAN_HOMES.includes(home)) throw new Error(`Plan home must be ${PLAN_HOMES.join(", ")}`);
+  if (value.clearReference && value.reference != null) throw new Error("Use --plans-reference or --clear-plans-reference, not both");
+  let reference = value.clearReference || home !== prior.home ? null : prior.reference ?? null;
+  if (value.reference != null) reference = requiredString(value.reference, "Plan reference", 200);
+  if (reference != null && CONTROL.test(reference)) throw new Error("Plan reference cannot contain control characters or line breaks");
+  if (home === "repo" && reference != null) throw new Error("A repo plan home takes no reference; plans go in docs/plans/");
+  return { home, reference };
+}
+
+export function plansFor(project) { return normalizePlans(null, project?.plans); }
+
+export function describePlans(plans) {
+  if (plans.home === "repo") return "docs/plans/ in this repository";
+  const name = PLAN_HOME_NAMES[plans.home];
+  return `${name}${plans.reference ? `: ${plans.reference}` : ""}, through this host's ${name} MCP connector`;
+}
+
 // One-token form for list output: af, linear:ENG, or linear:ENG/agent-todo.
 export function trackerTarget(tracker) {
   if (tracker.kind !== "linear") return tracker.kind;
@@ -133,6 +162,7 @@ export function createStore(root = defaultStateRoot()) {
       githubRepo: optionalString(value.githubRepo, "GitHub repository", 300),
       baseBranch: optionalString(value.baseBranch, "Base branch", 200) || "main",
       tracker: normalizeTracker(value.tracker),
+      plans: normalizePlans(value.plans),
       updatedAt: new Date().toISOString()
     };
     await locked(async () => {
@@ -155,6 +185,7 @@ export function createStore(root = defaultStateRoot()) {
         githubRepo: value.githubRepo == null ? previous.githubRepo : optionalString(value.githubRepo, "GitHub repository", 300),
         baseBranch: value.baseBranch == null ? previous.baseBranch : requiredString(value.baseBranch, "Base branch", 200),
         tracker: normalizeTracker(value.tracker, previous.tracker),
+        plans: normalizePlans(value.plans, plansFor(previous)),
         updatedAt: new Date().toISOString()
       };
       await writeJson(file, project);
@@ -170,7 +201,7 @@ export function createStore(root = defaultStateRoot()) {
 
   // Projects saved before trackers existed read as AF, so every consumer sees
   // one tracker shape without rewriting the stored record.
-  function withTracker(value) { return { ...value, tracker: trackerFor(value) }; }
+  function withTracker(value) { return { ...value, tracker: trackerFor(value), plans: plansFor(value) }; }
 
   // One-time v2 claim migration: records saved before the dedicated delivery
   // claim existed used summary as the implicit claim; preserve that reading
