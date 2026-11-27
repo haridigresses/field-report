@@ -2,7 +2,7 @@ import "./support/seats.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { normalizeReview } from "../src/envelope.mjs";
 import { normalizeId, seatFor } from "../src/seats.mjs";
 
@@ -168,6 +168,11 @@ test("a review counts only when its model is on the list its brief pinned", () =
   const oldNoGo = { ...mrrComplete("structural-challenge", "old-grok", { verdict: "NO_GO", findings: ["Old finding"] }), seatModels: undefined };
   const pinnedNoGo = mrrComplete("fable-challenge", "new-fable", { verdict: "NO_GO", findings: ["New finding"] });
   assert.deepEqual(outstandingFindings([oldNoGo, pinnedNoGo], claim).map((item) => [item.id, item.text]), [["F1", "Old finding"], ["F2", "New finding"]]);
+  // The replacement deep review receives the old same-head finding so it can be reconciled.
+  assert.deepEqual(outstandingForDeep([oldNoGo, pinnedNoGo], claim, mrrTarget).map((item) => item.id), ["F1"]);
+  const deepBrief = { ...mrrDelegation("deep-code-review"), outstanding: [{ id: "F1", category: "finding", text: "Old finding" }] };
+  const deep = validateReview(mrrEnvelope(deepBrief, "deep-run", { reconciled: [{ findingId: "F1", disposition: "resolved", rationale: "Fixed in this target." }] }), deepBrief);
+  assert.deepEqual(outstandingFindings([oldNoGo, deep], claim), []);
 });
 
 test("one model may fill every seat when the config lists it there", () => {

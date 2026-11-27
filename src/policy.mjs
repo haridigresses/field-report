@@ -200,7 +200,9 @@ export function findingLedger(reviews) {
           baseHead: review.baseHead,
           delegationId: review.delegationId,
           reviewerTaskId: review.reviewerTaskId,
-          model: review.model
+          model: review.model,
+          // Briefed before seat lists existed, so it never occupies a job.
+          ...(REVIEW_ROLES.includes(review.role) && !Array.isArray(review.seatModels) ? { prePinned: true } : {})
         });
       }
     }
@@ -246,7 +248,8 @@ export function outstandingForDeep(reviews, claim, target, claimRevision = 1) {
   return outstandingFindings(reviews, claim, target, claimRevision).filter((finding) => {
     const sameTarget = Boolean(finding.head) && sameReviewTarget({ kind: "mrr", head: finding.head, baseHead: finding.baseHead }, "mrr", target);
     const sameUnit = (finding.claimRevision ?? 1) === claimRevision;
-    return !sameTarget || !sameUnit;
+    // A pre-list review cannot be courted, so deep carries its findings even on this target.
+    return !sameTarget || !sameUnit || finding.prePinned === true;
   });
 }
 
