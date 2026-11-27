@@ -196,8 +196,9 @@ export function createStore(root = defaultStateRoot()) {
   }
 
   async function saveWorkstream(value, event = null) {
-    await project(value.project);
     return locked(async () => {
+      // Under the lock, so a project removed meanwhile can't gain an orphan.
+      await project(value.project);
       const previous = await readJson(path.join(root, "workstreams", `${id(value.id, "Workstream ID")}.json`), {});
       if (previous.id && value.revision == null) throw new Error(`Workstream already exists: ${value.id}`);
       if (value.revision != null && value.revision !== previous.revision) throw new Error(`Workstream ${value.id} changed since it was read; reload before updating`);

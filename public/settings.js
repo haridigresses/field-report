@@ -24,7 +24,7 @@ function load(data) {
   purposes = data.purposes || purposes;
   launchers = data.launchers || launchers;
   const raw = data.raw || { seats: {} };
-  seats = Object.fromEntries(roles.map((role) => [role, (raw.seats?.[role]?.models || []).map((model) => ({ id: model.id || "", launch: model.launch || launchers[0], cliModel: model.cliModel || "" }))]));
+  seats = Object.fromEntries(roles.map((role) => [role, (Array.isArray(raw.seats?.[role]?.models) ? raw.seats[role].models : []).filter((model) => model && typeof model === "object").map((model) => ({ id: model.id || "", launch: model.launch || launchers[0], cliModel: model.cliModel || "" }))]));
   sourceEl.textContent = data.exists ? `Editing ${data.path}` : `No config at ${data.path} yet. These are the shipped defaults; Save creates the file.`;
   render();
   if (data.error) status(`The file on disk has a problem: ${data.error}`, "warn");
@@ -60,7 +60,8 @@ seatsEl.addEventListener("input", (event) => {
   const model = seats[row.dataset.role][Number(row.dataset.index)];
   model[event.target.dataset.field] = event.target.value;
   // Suggestions follow the launch; picking a suggested id fills its CLI model.
-  if (event.target.dataset.field === "launch") return render();
+  // CLI model names belong to one launcher; a new launcher starts from the id.
+  if (event.target.dataset.field === "launch") { model.cliModel = ""; return render(); }
   if (event.target.dataset.field === "id") {
     // Fill the CLI model from a suggestion, and drop one filled for an earlier id.
     const known = suggestions[model.launch] || [];
