@@ -347,6 +347,6 @@ test("bots gate blocks unresolved review threads from bots and humans", () => {
     { resolved: true, path: "README.md", line: 5, author: "hari", body: "done" }
   ] } });
   assert.equal(reasons.length, 1);
-  assert.match(reasons[0], /^1 unresolved review thread; fix each or reply why not, then resolve it: src\/doctor.mjs:43 \(chatgpt-codex-connector\) Check the wrapper$/);
+  assert.match(reasons[0], /^1 unresolved review thread; fix each or reply why not; resolve bot threads, and leave a person's thread for them to resolve: src\/doctor.mjs:43 \(chatgpt-codex-connector\) Check the wrapper$/);
   assert.deepEqual(botsReasons({ ...base, pr: { ...pr, reviewThreads: [{ resolved: true, path: "a", line: 1, author: "x", body: "y" }] } }), []);
 });
