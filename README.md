@@ -116,7 +116,7 @@ fr gate open aon-example
 
 # Earlier seat reviews carry forward. When the user asks for final MRR, rerun the seats on the current HEAD.
 # Only when the user explicitly accepts a finding:
-# fr review accept aon-example --finding F3 --reason "<the user's reason>"
+# fr review accept aon-example --finding F3 --reason "<the user's reason>" --actor user
 
 fr gate bots aon-example
 ```
