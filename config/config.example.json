@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "seats": {
-    "deep-code-review": {
+    "correctness": {
       "models": [
         {
           "id": "gpt-6-astra",
@@ -13,7 +13,7 @@
         }
       ]
     },
-    "structural-challenge": {
+    "design": {
       "models": [
         {
           "id": "grok-4.6",
@@ -22,7 +22,7 @@
         }
       ]
     },
-    "fable-challenge": {
+    "intent": {
       "models": [
         {
           "id": "claude-opus-5-5",

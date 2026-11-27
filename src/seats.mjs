@@ -7,7 +7,9 @@ import path from "node:path";
 // The shipped example seats three labs; that is a suggestion, not a rule. A
 // model may serve several seats.
 
-export const REVIEW_ROLES = ["deep-code-review", "structural-challenge", "fable-challenge"];
+export const REVIEW_ROLES = ["correctness", "design", "intent"];
+// Only for the error message after the rename; old keys are never accepted.
+const RENAMED_SEATS = { "deep-code-review": "correctness", "structural-challenge": "design", "fable-challenge": "intent" };
 // Each launcher runs reviewers without MCP servers.
 export const LAUNCHERS = ["codex", "claude", "cursor"];
 const NAME = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
@@ -72,6 +74,7 @@ export function parseSeatConfig(raw) {
   onlyKeys(raw, ["schemaVersion", "seats", "plans"], "the config");
   const rawSeats = object(raw.seats, "seats");
   const unknown = Object.keys(rawSeats).find((role) => !REVIEW_ROLES.includes(role));
+  if (unknown && RENAMED_SEATS[unknown]) fail(`seats were renamed (${Object.entries(RENAMED_SEATS).map(([old, now]) => `${old} → ${now}`).join(", ")}); rename the keys in ${configPath()}`);
   if (unknown) fail(`seats has unknown seat ${unknown}; seats are ${REVIEW_ROLES.join(", ")}`);
   const seats = {};
   const launches = new Map();
