@@ -1,18 +1,18 @@
 # Field Report
 
-Field Report is a thin control loop around a delivery unit. It binds repo, branch, claim, and owner session; records CRR and mixed-provider MRR; and gates readiness for CI bots. It does not launch reviewers, open pull requests, or merge.
+Field Report is a thin control loop around a delivery unit. It binds repo, branch, claim, and owner session; records CRR and three-seat MRR; and gates readiness for CI bots. It does not launch reviewers, open pull requests, or merge.
 
-Agent Fixes, when installed, owns sessions and names. Each project's tracker — AF issues or a Linear team — owns todos. Field Report stores only that pointer. Each target repository's `merge-ready-review.md` owns merge quality. Cursor Cloud Agents reach Astra and Fable on this host through My Machines when a worker for that checkout is online.
+Agent Fixes, when installed, owns sessions and names. Each project's tracker — AF issues or a Linear team — owns todos. Field Report stores only that pointer. Each target repository's `merge-ready-review.md` owns merge quality. Your config file chooses the reviewer models (see [Seats](#seats)). Cursor Cloud Agents reach the host `codex` and `claude` CLIs through My Machines when a worker for that checkout is online.
 
 ## Core loop
 
-- Coordinators and owners name themselves (`fr identity`, then AF save). The user does not name agents. Reviewers stay unnamed and off AF.
+- When AF is installed, coordinators and owners name themselves (`fr identity`, then AF save); without AF they skip naming. The user does not name agents. Reviewers stay unnamed and off AF.
 - Before you run `git commit` on a commit you intend to keep, stop and run CRR (1–2 subagents, local models first, scores required). A green checkout hook is not CRR. WIP or amend is owner judgment. Findings are for the owner on that staged tree, not a durable ledger. CRR records still persist; they do not enter the SHA-by-SHA finding ledger. `fr context` always prints the latest scores and structural risk (higher = more risk), even when the gate is blocked.
 - Keep a one-line next action with `fr update <id> --next`. It is a sticky note, not a todo ledger.
-- MRR (a Codex model, Grok 4.6, and an Anthropic model) before a PR is opened. Prefer Astra then Sol 5.6, and Opus 5.5 then Fable 5.1 then Fable 5. Any model in that Codex or Anthropic family fills its seat. READY is exact head + exact base + three finding-free GOs. A completed envelope occupies the job; substitute only before that, with `--substitution-reason`. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR.
+- MRR (three seats whose valid models come from your config file; see [Seats](#seats)) before a PR is opened. READY is exact head + exact base + three finding-free GOs from distinct reviewers, each by a model its seat listed when briefed. A completed envelope occupies the job. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR.
 - Do not auto-open a PR. After `fr gate open`, the owner or the user may open one.
 - After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission. An empty GitHub check rollup keeps that gate blocked.
-- Borderline CI flake vs real: consult Astra or Grok once. Not a hard gate.
+- Borderline CI flake vs real: consult one seated model (`fr seats`) once. Not a hard gate.
 - Field Report never merges.
 
 ## State
@@ -58,7 +58,7 @@ Todos default to AF issues in the project namespace. To file them in Linear inst
 fr project update aon --tracker linear --linear-team ENG --linear-label agent-todo
 ```
 
-`fr context` prints the tracker on its `Todos:` line. Owners need the Linear MCP or CLI authorized; reviewers never touch the tracker.
+Changing `--linear-team` drops the old label unless the same command passes `--linear-label`; `--clear-linear-label` removes it. `fr context` prints the tracker on its `Todos:` line and `fr project list` shows it as `linear:<team>[/<label>]`. Owners need the Linear MCP or CLI authorized; reviewers never touch the tracker.
 
 Agents may self-register an unbound branch with `fr create`, or bind the correct existing outcome with `fr update --branch <current> --owner-task <current-task>`. The checkout hook only checks that the branch is bound. It does not run a review panel and must not grow one.
 
@@ -66,13 +66,30 @@ Repo `.cursor/permissions.json` is Auto-review classifier steering so review CLI
 
 Do not wrap `git commit`, add `fr catchup` / heartbeat, collapse MRR into a family panel, or put product questions in Field Report. Those were previous iterations.
 
+## Seats
+
+Field Report hardcodes no model names. Your config file lists the models valid for each MRR seat and how each model launches. The installer creates it from [`config/config.example.json`](config/config.example.json) at `~/.config/field-report/config.json` (override the path with `FIELD_REPORT_CONFIG`) and never overwrites it.
+
+```json
+"structural-challenge": {
+  "models": [{ "id": "gemini-4-neon", "launch": "cursor", "cliModel": "gemini-4-neon-high" }]
+}
+```
+
+- Each seat lists its valid models. The first is the default; `--model` picks another listed one. A model not listed for a seat cannot review it; add it to the config first.
+- The shipped example seats three labs (OpenAI, xAI, Anthropic). That is a suggestion for diversity of thought, not a rule: one model may serve every seat.
+- Model ids match through a `cursor-` prefix and effort suffixes, so `cursor-grok-4.6-high` is `grok-4.6`. A model listed in two seats launches the same way in both.
+- `launch` is `codex`, `claude`, or `cursor` (through `fr-cursor-review`). `--route native` runs any seat as a native subagent instead. `cliModel` is the id that launcher expects, when it differs (Cursor ids carry effort suffixes).
+
+When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
+
 ## My Machines
 
-Cursor Cloud Agents can invoke Astra (`codex`) and Fable (`claude`) on this host when a My Machines worker is running for the target checkout. Field Report prints the CLI recipe; Cursor owns the worker.
+Cursor Cloud Agents can invoke the host `codex` and `claude` CLIs on this host when a My Machines worker is running for the target checkout. Field Report prints the CLI recipe; Cursor owns the worker.
 
 ```bash
 agent worker start --name local --worker-dir /path/to/this/repo
-fr machines invoke astra --prompt-file /tmp/astra.txt --cwd /path/to/this/repo --kind review
+fr machines invoke codex --prompt-file /tmp/brief.txt --cwd /path/to/this/repo --kind review
 ```
 
 Start that worker for this checkout only. Route a Cloud Agent from the environment picker, or with `worker=local` / `machine=local`. See `docs/mymachines.md`. Prefer native same-type launch; Cloud Agents use the CLI. Use ordinary `claude`, never `claude-aws`.

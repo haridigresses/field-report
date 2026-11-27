@@ -1,3 +1,4 @@
+import "./support/seats.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { hookText, isManagedHook, marker, shouldRunPreserved } from "../src/hooks.mjs";

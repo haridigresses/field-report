@@ -1,3 +1,4 @@
+import "./support/seats.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
@@ -122,22 +123,6 @@ test("normalizeReview takes occupancy flags from the brief, not the envelope", (
   });
   assert.equal(court.reconciliationOnly, true);
   assert.equal(court.jobRole, "structural-challenge");
-});
-
-test("normalizeReview takes substitutionReason from the brief, not the envelope", () => {
-  const invented = normalizeReview({
-    substitutionReason: "invented", findings: [], unresolved: []
-  }, {
-    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
-    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-6-astra", route: "cli"
-  });
-  assert.equal("substitutionReason" in invented, false);
-  const attested = normalizeReview({ findings: [], unresolved: [] }, {
-    id: "11111111-1111-1111-1111-111111111111", kind: "mrr", role: "structural-challenge",
-    claim: "Claim", head: "a".repeat(40), baseHead: "b".repeat(40), model: "gpt-6-astra", route: "cli",
-    substitutionReason: "cursor-agent not on PATH"
-  });
-  assert.equal(attested.substitutionReason, "cursor-agent not on PATH");
 });
 
 test("normalizeReview preserves a supplied MRR tree for validation to reject", () => {

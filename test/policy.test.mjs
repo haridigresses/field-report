@@ -1,8 +1,10 @@
+import "./support/seats.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { botsReasons, canonicalReviewModel, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, modelFamily, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, providerForModel, seatingFor, satisfiesIntended, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { botsReasons, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, noGoHasEvidence, NO_GITHUB_CHECKS_REASON, occupyingReview, openReasons, outstandingFindings, REVIEW_ROLES, seatingFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { normalizeReview } from "../src/envelope.mjs";
+import { normalizeId, seatFor } from "../src/seats.mjs";
 
 const head = "a".repeat(40), baseHead = "b".repeat(40), tree = "c".repeat(40);
 const claim = "Ship the stated delivery unit";
@@ -18,7 +20,7 @@ const models = {
 const mrrDelegation = (role, id = randomUUID(), extras = {}) => ({
   id, event: "created", type: "review", role, kind: "mrr", claim, claimRevision: 1, head, baseHead,
   model: extras.model || models[role]?.model || extras.model, route: extras.route || "cli", ownerTaskIdAtBrief: "owner",
-  ...(extras.substitutionReason ? { substitutionReason: extras.substitutionReason } : {}),
+  ...(REVIEW_ROLES.includes(role) ? { seatModels: extras.seatModels || seatFor(role).models.map((entry) => entry.id) } : {}),
   ...(extras.reconciliationOnly ? { reconciliationOnly: true, jobRole: extras.jobRole } : {})
 });
 
@@ -37,7 +39,6 @@ function mrrEnvelope(d, reviewerTaskId, extras = {}) {
     scores: { mergeReadiness: 90, structuralRisk: 10, implementationQuality: 88, evidenceConfidence: 92, outcomeConfidence: 91 },
     scoreRationale: { mergeReadiness: "Ready", structuralRisk: "Low risk", implementationQuality: "Strong", evidenceConfidence: "Direct evidence", outcomeConfidence: "Outcome supported" },
     necessity: "necessary", simplerPath: "No simpler reliable path was found.", scopeDrift: "none", contractIntegrity: "sound", evidenceQuality: "strong",
-    ...(extras.substitutionReason ? { substitutionReason: extras.substitutionReason } : {}),
     ...("reconciled" in extras ? { reconciled: extras.reconciled } : {})
   };
 }
@@ -63,80 +64,38 @@ const crrComplete = (id, extras = {}) => {
   return validateReview(crrEnvelope(d, id, extras), d);
 };
 
-test("provider is derived from the seated model and a supplied label does not fail the review", () => {
-  assert.equal(providerForModel("gpt-6-astra"), "openai");
-  assert.equal(providerForModel("gpt-5.6-sol"), "openai");
-  assert.equal(providerForModel("claude-fable-5"), "anthropic");
-  assert.equal(providerForModel("claude-opus-5-5"), "anthropic");
-  assert.equal(providerForModel("claude-sonnet-5"), "anthropic");
-  assert.equal(providerForModel("gpt-5.6-terra"), "openai");
-  assert.equal(providerForModel("grok-4.6"), "xai");
-  assert.equal(providerForModel("composer-2"), null);
+test("a supplied provider label neither fails nor gets recorded", () => {
   const astra = mrrDelegation("deep-code-review");
-  const omitted = { ...mrrEnvelope(astra, "astra-omit") };
-  delete omitted.provider;
-  const recorded = validateReview(omitted, astra);
-  assert.equal(recorded.provider, "openai");
+  const recorded = validateReview(mrrEnvelope(astra, "astra-label", { provider: "OpenAI" }), astra);
   assert.equal(recorded.verdict, "GO");
-  assert.equal(validateReview(mrrEnvelope(astra, "astra-label", { provider: "OpenAI" }), astra).provider, "openai");
-  assert.equal(validateReview(mrrEnvelope(astra, "astra-other", { provider: "Codex" }), astra).provider, "openai");
-  const grok = mrrDelegation("structural-challenge");
-  assert.equal(validateReview(mrrEnvelope(grok, "grok-cursor", { provider: "cursor" }), grok).provider, "xai");
-  assert.equal(validateReview(mrrEnvelope(grok, "grok-wrong", { provider: "OpenAI" }), grok).provider, "xai");
-  const fable = mrrDelegation("fable-challenge");
-  assert.equal(validateReview(mrrEnvelope(fable, "fable-label", { provider: "Claude" }), fable).provider, "anthropic");
+  assert.equal("provider" in recorded, false);
   const crr = crrDelegation();
   const crrRecorded = validateReview(crrEnvelope(crr, "crr-free", { provider: "OpenAI/Codex" }), crr);
   assert.equal("provider" in crrRecorded, false);
   assert.equal(crrRecorded.model, "composer-2");
-  const crrOmitted = { ...crrEnvelope(crr, "crr-omit") };
-  delete crrOmitted.provider;
-  assert.equal("provider" in validateReview(crrOmitted, crr), false);
 });
 
-test("canonical models accept Cursor Grok aliases and reject unknown ids", () => {
-  assert.equal(canonicalReviewModel("cursor-grok-4.6-high"), "grok-4.6");
-  assert.equal(canonicalReviewModel("grok-4.6"), "grok-4.6");
-  assert.equal(canonicalReviewModel("gpt-6-astra"), "gpt-6-astra");
-  assert.equal(canonicalReviewModel("gpt-5.6-sol"), "gpt-5.6-sol");
-  assert.equal(canonicalReviewModel("claude-fable-5"), "claude-fable-5");
-  assert.equal(canonicalReviewModel("claude-opus-5-5-medium"), "claude-opus-5-5");
-  assert.equal(canonicalReviewModel("claude-fable-5-1-thinking-high"), "claude-fable-5-1");
-  assert.equal(canonicalReviewModel("claude-sonnet-5-5-high"), "claude-sonnet-5-5");
-  assert.equal(canonicalReviewModel("gpt-5.6-sol-medium"), "gpt-5.6-sol");
-  assert.equal(canonicalReviewModel("gpt-5.6-terra"), "gpt-5.6-terra");
-  assert.equal(canonicalReviewModel("codex-auto-review"), "codex-auto-review");
-  assert.equal(modelFamily("claude-sonnet-5"), "anthropic");
-  assert.equal(modelFamily("gpt-5.5"), "codex");
-  assert.equal(canonicalReviewModel("anthropic.claude-fable-5"), null);
-  assert.equal(canonicalReviewModel("composer-2"), null);
-  assert.equal(canonicalReviewModel("grok-4.65"), null);
+test("model ids strip Cursor prefixes and effort variants", () => {
+  assert.equal(normalizeId("cursor-grok-4.6-high"), "grok-4.6");
+  assert.equal(normalizeId("cursor-grok-4.6-high-fast"), "grok-4.6");
+  assert.equal(normalizeId("claude-opus-5-5-medium"), "claude-opus-5-5");
+  assert.equal(normalizeId("claude-fable-5-1-thinking-high"), "claude-fable-5-1");
+  assert.equal(normalizeId("gpt-5.6-sol-medium"), "gpt-5.6-sol");
+  assert.equal(normalizeId("gemini-4-neon-high"), "gemini-4-neon");
+  assert.equal(normalizeId("composer-2"), "composer-2");
+  assert.equal(normalizeId("grok 4.6"), null);
 });
 
-test("crr seating accepts local models; mrr seating is Astra/Grok/Fable", () => {
+test("crr seating accepts local models; mrr seating takes only the seat's listed models", () => {
   assert.equal(seatingFor(CRR_ROLE).model, "local");
   assert.equal(seatingFor(CRR_ROLE, "composer-2").model, "composer-2");
   assert.equal(seatingFor("deep-code-review").model, "gpt-6-astra");
-  assert.equal(seatingFor("structural-challenge").model, "grok-4.6");
-  assert.equal(seatingFor("fable-challenge").model, "claude-opus-5-5");
-  assert.equal(seatingFor("fable-challenge").intended, "claude-opus-5-5");
-  assert.throws(() => seatingFor("fable-challenge", "anthropic.claude-fable-5"), /Unknown review model/);
-  const sameFamily = seatingFor("fable-challenge", "claude-fable-5");
-  assert.equal(sameFamily.model, "claude-fable-5");
-  assert.equal(sameFamily.substituted, false);
-  assert.equal(sameFamily.intended, "claude-opus-5-5");
-  assert.equal(seatingFor("fable-challenge", "claude-sonnet-5").substituted, false);
-  assert.equal(satisfiesIntended("claude-opus-5-5-medium", "claude-fable-5"), true);
-  const substituted = seatingFor("fable-challenge", "gpt-6-astra");
-  assert.equal(substituted.model, "gpt-6-astra");
-  assert.equal(substituted.substituted, true);
-  assert.equal(substituted.intended, "claude-opus-5-5");
-  const sol = seatingFor("deep-code-review", "gpt-5.6-sol");
-  assert.equal(sol.model, "gpt-5.6-sol");
-  assert.equal(sol.substituted, false);
-  assert.equal(sol.intended, "gpt-6-astra");
-  assert.equal(seatingFor("deep-code-review", "gpt-5.6-terra").substituted, false);
-  assert.equal(seatingFor("deep-code-review", "claude-opus-5-5").substituted, true);
+  assert.deepEqual(seatingFor("deep-code-review").seatModels, ["gpt-6-astra", "gpt-5.6-sol"]);
+  assert.equal(seatingFor("structural-challenge", "cursor-grok-4.6-high").model, "grok-4.6");
+  const fable = seatingFor("fable-challenge", "claude-fable-5");
+  assert.deepEqual([fable.model, fable.intended], ["claude-fable-5", "claude-opus-5-5"]);
+  assert.throws(() => seatingFor("fable-challenge", "claude-sonnet-5"), /claude-sonnet-5 is not a valid fable-challenge model \(valid: claude-opus-5-5, claude-fable-5-1, claude-fable-5\)\. Add it to seats\.fable-challenge\.models/);
+  assert.throws(() => seatingFor("fable-challenge", "gpt-6-astra"), /not a valid fable-challenge model/);
   assert.throws(() => seatingFor("cheap-review"), /Unknown review role/);
 });
 
@@ -189,91 +148,45 @@ test("mrr gate requires three finding-free persona GOs", () => {
   assert.throws(() => evaluateGate({ kind: "coverage", target: mrrTarget, workstream, reviews }), /crr or mrr/);
 });
 
-test("a substituted mrr GO fills its job and does not require a provider failure", () => {
-  const reviews = [
-    mrrComplete("deep-code-review", "sol-run"),
-    mrrComplete("structural-challenge", "sol-sub", { model: "gpt-6-astra", provider: "openai", substitutionReason: "cursor-agent not on PATH" }),
-    mrrComplete("fable-challenge", "fable-run")
-  ];
-  const ready = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews });
-  assert.equal(ready.ready, true);
-  assert.match(ready.notes.join(" "), /structural-challenge: GO via Astra; intended Grok was substituted: cursor-agent not on PATH/);
-  const unattested = { ...mrrComplete("structural-challenge", "grok-run"), model: "gpt-6-astra", provider: "openai" };
-  const blocked = evaluateGate({
-    kind: "mrr",
-    target: mrrTarget,
-    workstream,
-    reviews: [mrrComplete("deep-code-review", "sol-run"), unattested, mrrComplete("fable-challenge", "fable-run")]
-  });
+test("a review counts only when its model is on the list its brief pinned", () => {
+  const neon = mrrDelegation("structural-challenge", undefined, { model: "gemini-4-neon", seatModels: ["gemini-4-neon"] });
+  const recorded = validateReview(mrrEnvelope(neon, "neon-run", { model: "gemini-4-neon-high" }), neon);
+  assert.deepEqual([recorded.model, recorded.seatModels], ["gemini-4-neon", ["gemini-4-neon"]]);
+  const others = [mrrComplete("deep-code-review", "astra-run"), mrrComplete("fable-challenge", "fable-run")];
+  assert.equal(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [others[0], recorded, others[1]], delegations: [neon] }).ready, true);
+  const grokBrief = mrrDelegation("structural-challenge");
+  assert.throws(() => validateReview(mrrEnvelope(grokBrief, "swap", { model: "gpt-6-astra" }), grokBrief), /Review model must match its exact delegation/);
+  const offList = { ...grokBrief, model: "gpt-6-astra" };
+  assert.throws(() => validateReview(mrrEnvelope(offList, "off-list"), offList), /structural-challenge review model gpt-6-astra is not on its brief's valid list/);
+  // A review whose brief pinned no list never counts.
+  const forged = { ...recorded, seatModels: undefined };
+  const unpinned = { ...neon, seatModels: undefined };
+  const blocked = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [others[0], forged, others[1]], delegations: [unpinned] });
   assert.equal(blocked.ready, false);
   assert.match(blocked.reasons.join(" "), /structural-challenge is not a finding-free GO/);
-  const bare = mrrDelegation("structural-challenge", undefined, { model: "gpt-6-astra" });
-  assert.throws(
-    () => validateReview(mrrEnvelope(bare, "sol-bare", { model: "gpt-6-astra", provider: "openai" }), bare),
-    /substitution requires a non-empty substitutionReason/
-  );
-  const forged = mrrComplete("structural-challenge", "sol-forged", { model: "gpt-6-astra", provider: "openai", substitutionReason: "cursor-agent not on PATH" });
-  const silent = { id: forged.delegationId, event: "created", type: "review", role: "structural-challenge", kind: "mrr", model: "gpt-6-astra" };
-  const invented = evaluateGate({
-    kind: "mrr",
-    target: mrrTarget,
-    workstream,
-    reviews: [mrrComplete("deep-code-review", "sol-run"), forged, mrrComplete("fable-challenge", "fable-run")],
-    delegations: [silent]
-  });
-  assert.equal(invented.ready, false);
-  assert.match(invented.reasons.join(" "), /structural-challenge is not a finding-free GO/);
 });
 
-test("historical Sol and initial Astra panels retain readiness, churn, and skip eligibility", () => {
-  for (const model of ["gpt-5.6-sol", "gpt-6-astra"]) {
-    const deep = mrrDelegation("deep-code-review", undefined, { model });
-    const delegations = [deep, mrrDelegation("structural-challenge"), mrrDelegation("fable-challenge")];
-    // These are the original persisted envelopes, not normalized by new code.
-    const reviews = delegations.map((d, i) => mrrEnvelope(d, `historical-${i}`));
-    const snapshot = JSON.stringify({ reviews, delegations });
-    const args = { target: mrrTarget, workstream, reviews, delegations };
-    assert.equal(evaluateGate({ ...args, kind: "mrr" }).ready, true, model);
-    assert.deepEqual(lastReadyMrr(reviews, workstream, delegations), { head, baseHead });
-    const target = { ...mrrTarget, head: "d".repeat(40) };
-    assert.equal(evaluateMergeReady({ ...args, target }).phase, "churn");
-    const waivers = [{ ...target, claim, claimRevision: 1, actor: "user", reason: "Explicitly approved skip", priorHead: head }];
-    assert.equal(evaluateMergeReady({ ...args, target, waivers }).phase, "waived");
-    assert.equal(validateReview(reviews[0], deep).intendedModel, model);
-    assert.equal(JSON.stringify({ reviews, delegations }), snapshot, "reading evidence must not rewrite history");
-  }
+test("one model may fill every seat when the config lists it there", () => {
+  const brief = (role) => mrrDelegation(role, undefined, { model: "gemini-4-neon", seatModels: ["gemini-4-neon"] });
+  const delegations = REVIEW_ROLES.map(brief);
+  const reviews = delegations.map((d, i) => validateReview(mrrEnvelope(d, `neon-${i}`), d));
+  assert.equal(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews, delegations }).ready, true);
+  const shared = delegations.map((d) => validateReview(mrrEnvelope(d, "neon-same"), d));
+  assert.match(evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: shared, delegations }).reasons.join(" "), /distinct reviewer task IDs/);
 });
 
-test("a Codex model satisfies an Astra-intended brief without a substitution attestation", () => {
-  const original = { ...mrrDelegation("deep-code-review", undefined, { model: "gpt-5.6-sol" }), intendedModel: "gpt-5.6-sol" };
-  const historical = validateReview(mrrEnvelope(original, "original-sol"), original);
-  assert.equal(historical.intendedModel, "gpt-5.6-sol");
-  const newBrief = { ...original, id: randomUUID(), model: "gpt-5.6-sol", intendedModel: "gpt-6-astra" };
-  const recorded = validateReview(normalizeReview(mrrEnvelope(newBrief, "new-sol"), newBrief), newBrief);
-  assert.equal(recorded.model, "gpt-5.6-sol");
-  assert.equal(recorded.intendedModel, "gpt-6-astra");
-  assert.equal(recorded.substitutionReason, undefined);
-  const others = [mrrComplete("structural-challenge", "grok"), mrrComplete("fable-challenge", "fable")];
-  const ready = evaluateGate({ kind: "mrr", target: mrrTarget, workstream, reviews: [recorded, ...others], delegations: [newBrief] });
-  assert.equal(ready.ready, true);
-  assert.equal(ready.notes.join(" "), "");
-  const attested = { ...newBrief, substitutionReason: "Astra unavailable before launch" };
-  assert.throws(() => validateReview(normalizeReview(mrrEnvelope(attested, "attested-sol"), attested), attested), /substitutionReason is only valid/);
-  const cross = { ...newBrief, id: randomUUID(), model: "claude-opus-5-5" };
-  assert.throws(() => validateReview(normalizeReview(mrrEnvelope(cross, "cross", { model: "claude-opus-5-5", provider: "anthropic" }), cross), cross), /substitution requires/);
-  const invalid = { ...newBrief, intendedModel: "unknown" };
-  assert.throws(() => validateReview(normalizeReview(mrrEnvelope(invalid, "invalid"), invalid), invalid), /invalid intendedModel/);
-});
-
-test("an Anthropic model satisfies an Opus-intended fable brief", () => {
-  const brief = { ...mrrDelegation("fable-challenge", undefined, { model: "claude-sonnet-5" }), intendedModel: "claude-opus-5-5" };
-  const recorded = validateReview(mrrEnvelope(brief, "sonnet", { model: "claude-sonnet-5", provider: "anthropic" }), brief);
-  assert.equal(recorded.model, "claude-sonnet-5");
-  assert.equal(recorded.intendedModel, "claude-opus-5-5");
-  assert.equal(recorded.provider, "anthropic");
-  assert.equal(recorded.substitutionReason, undefined);
-  const legacy = mrrDelegation("fable-challenge");
-  assert.equal(validateReview(mrrEnvelope(legacy, "legacy-fable"), legacy).intendedModel, "claude-fable-5");
+test("editing the config later does not reinterpret recorded reviews", () => {
+  const delegations = REVIEW_ROLES.map((role) => mrrDelegation(role));
+  const reviews = delegations.map((d, i) => validateReview(mrrEnvelope(d, `run-${i}`), d));
+  const snapshot = JSON.stringify({ reviews, delegations });
+  const args = { target: mrrTarget, workstream, reviews, delegations };
+  assert.equal(evaluateGate({ ...args, kind: "mrr" }).ready, true);
+  assert.deepEqual(lastReadyMrr(reviews, workstream, delegations), { head, baseHead });
+  const target = { ...mrrTarget, head: "d".repeat(40) };
+  assert.equal(evaluateMergeReady({ ...args, target }).phase, "churn");
+  const waivers = [{ ...target, claim, claimRevision: 1, actor: "user", reason: "Explicitly approved skip", priorHead: head }];
+  assert.equal(evaluateMergeReady({ ...args, target, waivers }).phase, "waived");
+  assert.equal(JSON.stringify({ reviews, delegations }), snapshot, "reading evidence must not rewrite history");
 });
 
 test("the first completed envelope occupies its persona job", () => {

@@ -1,3 +1,4 @@
+import "./support/seats.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -110,11 +111,9 @@ test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", asy
   const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
   const fable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
   assert.equal(deep.delegation.model, "gpt-6-astra");
-  assert.equal(deep.delegation.intendedModel, "gpt-6-astra");
+  assert.deepEqual(deep.delegation.seatModels, ["gpt-6-astra", "gpt-5.6-sol"]);
   assert.equal(structural.delegation.model, "grok-4.6");
   assert.equal(fable.delegation.model, "claude-opus-5-5");
-  assert.equal(fable.delegation.intendedModel, "claude-opus-5-5");
-  assert.equal(fable.execution.substituted, false);
   assert.equal(deep.execution.mcp, "none");
   assert.match(deep.execution.launch, /codex exec -m gpt-6-astra/);
   assert.match(deep.execution.launch, /--ignore-user-config/);
@@ -135,16 +134,13 @@ test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", asy
   for (const brief of [deep, structural, fable]) assert.doesNotMatch(brief.prompt, /\bprovider\b/);
   assert.match(deep.prompt, /Do not run fr, owner skills, MCP servers, or AF/);
   assert.equal(deep.inspection.command, `git diff --no-ext-diff --no-textconv ${deep.delegation.baseHead} ${deep.delegation.head} --`);
-  const sol = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--model", "gpt-5.6-terra"], repo, state));
-  assert.equal(sol.delegation.model, "gpt-5.6-terra");
-  assert.equal(sol.delegation.intendedModel, "gpt-6-astra");
-  assert.equal(sol.execution.substituted, false);
-  assert.equal(sol.delegation.substitutionReason, undefined);
-  assert.match(sol.execution.launch, /codex exec -m gpt-5.6-terra /);
+  const sol = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--model", "gpt-5.6-sol"], repo, state));
+  assert.equal(sol.delegation.model, "gpt-5.6-sol");
+  assert.equal(sol.execution.intended, "gpt-6-astra");
+  assert.match(sol.execution.launch, /codex exec -m gpt-5.6-sol /);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--model", "gpt-5.6-terra"], repo, state), /gpt-5.6-terra is not a valid deep-code-review model/);
   const fable5 = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge", "--model", "claude-fable-5"], repo, state));
   assert.equal(fable5.delegation.model, "claude-fable-5");
-  assert.equal(fable5.delegation.intendedModel, "claude-opus-5-5");
-  assert.equal(fable5.execution.substituted, false);
   assert.match(fable5.execution.launch, /--model claude-fable-5 /);
 });
 
@@ -239,10 +235,7 @@ test("a completed envelope occupies the job; fail and shopping are not escapes",
   const second = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
   assert.notEqual(unused.delegation.id, second.delegation.id);
   await assert.rejects(run(["review", "fail", "outcome", "--delegation", unused.delegation.id, "--task-id", "never-started", "--reason", "no envelope"], repo, state), /does not record provider failure/);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra"], repo, state), /substitution requires a non-empty substitutionReason/);
-  const substitute = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "cursor-agent not on PATH"], repo, state));
-  assert.equal(substitute.delegation.model, "gpt-6-astra");
-  assert.equal(substitute.delegation.substitutionReason, "cursor-agent not on PATH");
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra"], repo, state), /gpt-6-astra is not a valid structural-challenge model \(valid: grok-4\.6\)/);
   await run(["review", "bind", "outcome", "--delegation", unused.delegation.id, "--task-id", "grok-run"], repo, state);
   const review = {
     reviewComplete: true, independent: true, delegationId: unused.delegation.id, reviewerTaskId: "grok-run",
@@ -254,35 +247,11 @@ test("a completed envelope occupies the job; fail and shopping are not escapes",
   const file = path.join(repo, "review.json");
   await writeFile(file, JSON.stringify(review));
   await run(["review", "record", "outcome", "--file", file], repo, state);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "shop for GO"], repo, state), /occupied by Grok NO_GO/);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "grok-4.6-high"], repo, state), /occupied by grok-4.6 NO_GO/);
   await assert.rejects(run(["gate", "open", "outcome"], repo, state), /not a finding-free GO/);
   const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
   assert.match(status, /BLOCKED/);
   assert.match(status, /structural-challenge is not a finding-free GO/);
-});
-
-test("attested substitution fills the job and prints on status", async () => {
-  const { repo, state } = await fixture();
-  await featureBranch({ repo, state });
-  await recordMrrLane(repo, state, "deep-code-review", "sol-run");
-  await recordMrrLane(repo, state, "fable-challenge", "fable-run");
-  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "gpt-6-astra", "--substitution-reason", "cursor-agent not on PATH"], repo, state));
-  assert.equal(brief.execution.substituted, true);
-  await run(["review", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "sol-sub"], repo, state);
-  const review = {
-    reviewComplete: true, independent: true, delegationId: brief.delegation.id, reviewerTaskId: "sol-sub",
-    claim: brief.delegation.claim, kind: "mrr", role: "structural-challenge",
-    head: brief.delegation.head, baseHead: brief.delegation.baseHead,
-    provider: "openai", model: "gpt-6-astra", route: "cli", verdict: "GO", findings: [], unresolved: [],
-    substitutionReason: "cursor-agent not on PATH", summary: "Complete adversarial review", ...scores("GO")
-  };
-  const file = path.join(path.dirname(repo), "sol-sub.json");
-  await writeFile(file, JSON.stringify(review));
-  await run(["review", "record", "outcome", "--file", file], repo, state);
-  const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
-  assert.match(status, /READY/);
-  assert.match(status, /structural-challenge: GO via Astra; intended Grok was substituted: cursor-agent not on PATH/);
-  assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
 });
 
 test("coordinator workflow keeps user-owned collaborators and the thin loop", async () => {
@@ -310,7 +279,7 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /Do not add `kind=trr`/);
   assert.match(shared, /Do not commission MRR because the user asked for TRR/);
   assert.match(shared, /do not infer them from the repo/);
-  assert.match(shared, /Those questions never go to Astra or Grok/);
+  assert.match(shared, /Those questions never go to a reviewer model/);
   assert.match(shared, /Do not dispatch a worker to settle a product or domain question/);
 
   assert.match(shared, /fr review waive/);
@@ -354,11 +323,11 @@ async function recordMrrLane(repo, state, role, taskId, stream = "outcome") {
   return brief;
 }
 
-test("a historical Sol NO_GO can be recorded, courted, and rerun without inventing a substitution", async () => {
+test("a Sol NO_GO can be recorded, courted, and rerun with the same model", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
   const target = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state)).delegation;
-  const { id, event, createdAt, intendedModel, ...fields } = target;
+  const { id, event, createdAt, ...fields } = target;
   const old = await createStore(state).addDelegation("outcome", { ...fields, model: "gpt-5.6-sol" });
   const record = async (d, task, extra) => {
     await run(["review", "bind", "outcome", "--delegation", d.id, "--task-id", task], repo, state);
@@ -376,9 +345,8 @@ test("a historical Sol NO_GO can be recorded, courted, and rerun without inventi
     verdict: "GO", reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Independent evidence disproves the finding." }]
   });
   const rerun = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--model", "gpt-5.6-sol", "--route", "native"], repo, state));
-  assert.equal(rerun.delegation.intendedModel, "gpt-5.6-sol");
-  assert.equal(rerun.delegation.substitutionReason, undefined);
-  assert.equal(rerun.execution.substituted, false);
+  assert.equal(rerun.delegation.model, "gpt-5.6-sol");
+  assert.deepEqual(rerun.delegation.seatModels, ["gpt-6-astra", "gpt-5.6-sol"]);
   await record(rerun.delegation, "sol-rerun", { verdict: "GO" });
   await recordMrrLane(repo, state, "structural-challenge", "grok-persona");
   await recordMrrLane(repo, state, "fable-challenge", "fable-persona");
@@ -497,5 +465,21 @@ test("context and identity print the project's todo tracker", async () => {
   await run(["project", "update", "sample", "--tracker", "linear", "--linear-team", "ENG", "--linear-label", "agent-todo"], repo, state);
   assert.match(await run(["context", "outcome"], repo, state), /Todos: Linear team ENG, label agent-todo/);
   assert.equal(JSON.parse(await run(["identity", "--role", "owner"], repo, state)).todos, "Linear team ENG, label agent-todo");
-  assert.match(await run(["project", "list"], repo, state), /\tlinear\n$/);
+  assert.match(await run(["project", "list"], repo, state), /\tlinear:ENG\/agent-todo\n$/);
+  await assert.rejects(run(["project", "update", "sample", "--clear-linear-label", "yes"], repo, state), /takes no value/);
+  await run(["project", "update", "sample", "--clear-linear-label"], repo, state);
+  assert.match(await run(["context", "outcome"], repo, state), /Todos: Linear team ENG\n/);
+  assert.match(await run(["project", "list"], repo, state), /\tlinear:ENG\n$/);
+  await run(["project", "update", "sample", "--linear-label", "agent-todo"], repo, state);
+  await run(["project", "update", "sample", "--linear-team", "OPS"], repo, state);
+  assert.match(await run(["project", "list"], repo, state), /\tlinear:OPS\n$/, "a team change drops the old label");
+});
+
+test("project add accepts a Linear tracker", async () => {
+  const { repo, state } = await fixture();
+  const other = await mkdtemp(path.join(os.tmpdir(), "fr-cli-add-"));
+  await run(["project", "add", "linear-sample", "--label", "Linear", "--repo", other, "--tracker", "linear", "--linear-team", "ENG", "--linear-label", "agent-todo"], repo, state);
+  assert.match(await run(["project", "list"], repo, state), /^linear-sample\tmain\t.*\tlinear:ENG\/agent-todo$/m);
+  assert.match(await run(["project", "list"], repo, state), /^sample\tmain\t.*\taf$/m);
+  await assert.rejects(run(["project", "add", "broken", "--label", "Broken", "--repo", other, "--tracker", "linear"], repo, state), /needs --linear-team/);
 });

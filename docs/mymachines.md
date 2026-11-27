@@ -1,8 +1,8 @@
-# My Machines for Astra and Fable
+# My Machines for host CLI reviewers
 
-Cursor Cloud Agents run their model loop in Cursor's cloud. My Machines makes their tool calls execute on a specific checkout on this host, so `codex` (Astra) and ordinary `claude` (Fable) can use the user's existing login-shell credentials.
+Cursor Cloud Agents run their model loop in Cursor's cloud. My Machines makes their tool calls execute on a specific checkout on this host, so `codex` and ordinary `claude` can use the user's existing login-shell credentials.
 
-Field Report prints the Astra and Fable CLI recipes. It does not probe host accessibility, start workers, or enumerate other repositories. Cursor owns worker lifecycle, authentication, and connectivity. See [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines).
+Field Report prints the `codex` and `claude` CLI recipes for the models your config file launches with them. It does not probe host accessibility, start workers, or enumerate other repositories. Cursor owns worker lifecycle, authentication, and connectivity. See [My Machines](https://cursor.com/docs/cloud-agent/self-hosted-guides/my-machines).
 
 ## Host setup for one checkout
 
@@ -20,15 +20,15 @@ Route work to this host while it is online: choose `local` in the Cloud Agent en
 
 ## Invocation
 
-Prefer a native same-type path when the invoking agent is that family. Cloud Agents are third-party: write the Field Report brief to a prompt file, then print the exact host command:
+Prefer a native same-type path when the invoking agent is that provider. Cloud Agents are third-party: write the Field Report brief to a prompt file, then print the exact host command:
 
 ```bash
-fr machines invoke astra --prompt-file /tmp/astra.txt --cwd /path/to/repo --kind review
-fr machines invoke fable --prompt-file /tmp/fable.txt --cwd /path/to/repo --base <40-char-sha> --head <40-char-sha>
+fr machines invoke codex --prompt-file /tmp/brief.txt --cwd /path/to/repo --kind review
+fr machines invoke claude --prompt-file /tmp/brief.txt --cwd /path/to/repo --base <40-char-sha> --head <40-char-sha>
 ```
 
-Codex CLI reviews prefer `gpt-6-astra`, then `gpt-5.6-sol`, then any other Codex model, through `codex exec -m`. Anthropic CLI reviews prefer `claude-opus-5-5`, then `claude-fable-5-1`, then `claude-fable-5`, then any other `claude-*` model, through ordinary `claude --model` after confirming `HEAD` matches the brief and the worktree is clean, with Bash limited to the exact `git diff` of the brief SHAs. Pass `--model` to `fr machines invoke` to select another model in that family. The default invoke models are Astra and Opus 5.5.
+Without `--model`, each launcher uses the first seated model that the config file launches with it (`fr seats` shows them). Pass `--model` to pick another; the config file must launch that model with the same CLI. `codex` reviews run through `codex exec -m`. `claude` reviews run through ordinary `claude --model` after confirming `HEAD` matches the brief and the worktree is clean, with Bash limited to the exact `git diff` of the brief SHAs.
 
-If that command fails, report the failure. Do not treat a missing binary, a failed login, or a disconnected worker as a reason to substitute Cursor-hosted Astra/Fable models. Use ordinary `claude`, never `claude-aws`.
+If that command fails, report the failure. Do not treat a missing binary, a failed login, or a disconnected worker as a reason to substitute Cursor-hosted models. Use ordinary `claude`, never `claude-aws`.
 
 Bind the provider-run ID or last-message path with `fr review bind` before `fr review record`.

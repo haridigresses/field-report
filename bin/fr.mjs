@@ -5,27 +5,30 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
-import { createStore, describeTracker, trackerFor } from "../src/store.mjs";
-import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, intendedModelFor, lastReadyMrr, latestClaimReviews, matchingWaiver, modelFamily, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, satisfiesIntended, seatingFor, substitutionLine, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
+import { createStore, describeTracker, trackerFor, trackerTarget } from "../src/store.mjs";
+import { assertCourtJobAvailable, assertPersonaJobAvailable, botsReasons, COURT_ROLE, CRR_ROLE, evaluateGate, evaluateMergeReady, identityKey, lastReadyMrr, latestClaimReviews, matchingWaiver, noGoHasEvidence, occupyingReview, openReasons, outstandingFindings, outstandingForDeep, outstandingOccupantPacket, reviewKind, REVIEW_ROLES, seatingFor, seatModelsFor, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
-import { astraInvokeCommand, fableInvokeCommand } from "../src/machines.mjs";
+import { claudeInvokeCommand, codexInvokeCommand, cursorReviewCommand, HOST_LAUNCHERS } from "../src/machines.mjs";
+import { configSource, launchEntry, REVIEW_ROLES as SEATS, seatFor } from "../src/seats.mjs";
 
 const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const store = createStore();
 const REVIEW_EXECUTION = Object.freeze({ conversationInheritance: "none", mcp: "none" });
-const GROK_LAUNCH = "fr-cursor-review --model cursor-grok-4.6-high --print --output-format stream-json --sandbox enabled --trust -- \"$(< <prompt>)\"";
 
 function launchFor(seated, { cwd, promptFile = "<prompt>", baseSha, headSha } = {}) {
   if (seated.role === CRR_ROLE && seated.route === "native") {
     return `Launch a fresh ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes. Prefer a local model; use cloud only if local cannot produce an envelope. Do not pass the owner conversation.`;
   }
   if (seated.route === "native") return `Launch a fresh native ${seated.model} subagent with conversationInheritance=none and no MCP servers, including agent-fixes; do not pass the owner conversation.`;
-  if (modelFamily(seated.model) === "codex") return astraInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review", model: seated.model });
-  if (modelFamily(seated.model) === "anthropic") return fableInvokeCommand({ promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA", model: seated.model });
-  if (seated.model === "grok-4.6") return GROK_LAUNCH;
-  return `Launch ${seated.model} without MCP servers or AF. Prefer local; cloud only if needed.`;
+  // The config's cliModel decides the exact launch id.
+  const model = seated.requested || seated.model;
+  const launch = launchEntry(model)?.launch;
+  if (!launch) throw new Error(`${seated.model} has no launcher in ${configSource()}. List it in a seat's models there, or use --route native.`);
+  if (launch === "codex") return codexInvokeCommand({ promptFile, cwd: cwd || "<repo>", kind: "review", model });
+  if (launch === "claude") return claudeInvokeCommand({ promptFile, cwd: cwd || "<repo>", baseSha: baseSha || "BASE_SHA", headSha: headSha || "HEAD_SHA", model });
+  return cursorReviewCommand({ promptFile, model });
 }
 
 function usage() {
@@ -33,8 +36,8 @@ function usage() {
 
 fr version
 fr init
-fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>]
-fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>]
+fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label]
+fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label]
 fr project list
 fr identity --role coordinator|owner
 fr create <id> --project <id> --title <title> --outcome <text> [--branch <branch>] [--owner-task <id>]
@@ -42,7 +45,7 @@ fr list [--project <id>]
 fr show <id> [--json]
 fr context [id]
 fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--claim <text>] [--next <text>] [--branch <branch>] [--owner-task <id>] [--prs 1,2]
-fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli] [--substitution-reason <text>]
+fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review record <id> --file <review.json> [--delegation <uuid>]
 fr review adjudicate <id> --role deep-code-review|structural-challenge|fable-challenge --model <id> [--route native|cli]
@@ -53,16 +56,19 @@ fr gate crr [id]
 fr gate open [id]
 fr gate bots <id>
 fr hook install|status|uninstall <project-id>
-fr machines invoke astra|fable --prompt-file <path> [--cwd <path>] [--kind review|work] [--base <sha>] [--head <sha>] [--model <id>]
+fr seats
+fr machines invoke codex|claude --prompt-file <path> [--cwd <path>] [--kind review|work] [--base <sha>] [--head <sha>] [--model <id>]
 fr workflow [shared|coordinator|workstream|reviewer]
 
-Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge. Cursor Cloud Agents reach Astra and Fable on this host through My Machines when a worker for that checkout is online.`;
+Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge. Config (fr seats) chooses the model for each MRR seat. Cursor Cloud Agents reach the host codex and claude CLIs through My Machines when a worker for that checkout is online.`;
 }
 
 function trackerFlags(flags) {
   for (const name of ["tracker", "linear-team", "linear-label"]) if (flags[name] === true) throw new Error(`Specify --${name} <value>`);
-  if (flags.tracker == null && flags["linear-team"] == null && flags["linear-label"] == null) return null;
-  return { kind: flags.tracker, team: flags["linear-team"], label: flags["linear-label"] };
+  const clear = flags["clear-linear-label"];
+  if (clear != null && clear !== true) throw new Error("--clear-linear-label takes no value");
+  if (flags.tracker == null && flags["linear-team"] == null && flags["linear-label"] == null && !clear) return null;
+  return { kind: flags.tracker, team: flags["linear-team"], label: flags["linear-label"], clearLabel: Boolean(clear) };
 }
 
 function parse(values) {
@@ -140,7 +146,7 @@ function reviewPrompt(stream, delegation, inventory) {
       : delegation.role === "structural-challenge"
         ? "Inspect necessity, simplicity, authority boundaries, scope, maintainability, and whether you would select the mechanism from scratch."
         : delegation.role === COURT_ROLE
-          ? "Court is evidence-only. You cannot fill a persona job or substitute a model. Adjudicate only the delivered occupying packet. Use rejected when the finding is inapplicable to this claim and target; still_present when it remains. Do not resolve. Do not add findings or unresolved items. Do not invent product or design decisions."
+          ? "Court is evidence-only. You cannot fill a persona job. Adjudicate only the delivered occupying packet. Use rejected when the finding is inapplicable to this claim and target; still_present when it remains. Do not resolve. Do not add findings or unresolved items. Do not invent product or design decisions."
           : "Inspect the candidate as the independent challenge lane.";
   const productBasis = delegation.role === COURT_ROLE
     ? ""
@@ -176,8 +182,6 @@ function evidenceLines(gate) {
     if (review.findings?.length) lines.push(`  Findings: ${review.findings.join(" | ")}`);
     if (review.unresolved?.length) lines.push(`  Unresolved: ${review.unresolved.join(" | ")}`);
     if (review.reconciled?.length) lines.push(`  Reconciled: ${review.reconciled.map((entry) => `${entry.findingId} ${entry.disposition} — ${entry.rationale}`).join(" | ")}`);
-    const substitution = substitutionLine(review);
-    if (substitution) lines.splice(1, 0, `  ${substitution}`);
     return lines;
   });
 }
@@ -262,7 +266,7 @@ async function main() {
     const record = await store.updateProject(positional[1], { label: flags.label, repoPath: flags.repo, githubRepo: flags.github, baseBranch: flags.base, tracker: trackerFlags(flags) });
     return process.stdout.write(`Updated project ${record.id}.\n`);
   }
-  if (command === "project" && positional[0] === "list") return process.stdout.write(`${(await store.projects()).map((project) => `${project.id}\t${project.baseBranch}\t${project.repoPath}\t${trackerFor(project).kind}`).join("\n")}\n`);
+  if (command === "project" && positional[0] === "list") return process.stdout.write(`${(await store.projects()).map((project) => `${project.id}\t${project.baseBranch}\t${project.repoPath}\t${trackerTarget(trackerFor(project))}`).join("\n")}\n`);
 
   if (command === "identity") {
     const role = requireValue(flags.role, "Specify --role coordinator|owner");
@@ -319,21 +323,21 @@ async function main() {
     if (kind === "mrr" && !REVIEW_ROLES.includes(role)) throw new Error("MRR briefs use a persona role");
     if (flags.reconcile) throw new Error("Exact-head packets go through fr review adjudicate; do not attach them to a persona brief");
     if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");
-    const seated = seatingFor(role, flags.model, flags.route);
+    const seated = { ...seatingFor(role, flags.model, flags.route), requested: flags.model || null };
     const target = await targetFor(stream, kind);
     const reviews = kind === "mrr" ? await store.reviews(stream.id) : [];
     const delegations = kind === "mrr" ? await store.delegations(stream.id) : [];
-    let substitutionReason = String(flags["substitution-reason"] || "").trim();
     if (kind === "mrr") {
-      assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, substitutionReason, delegations });
+      assertPersonaJobAvailable(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, delegations });
       const occupant = occupyingReview(reviews, { role, target, claim: stream.claim, claimRevision: stream.claimRevision }, delegations);
       if (occupant) {
-        // An authorized same-model court rerun keeps the original job's seating.
-        seated.intended = intendedModelFor(occupant);
-        seated.substituted = !satisfiesIntended(seated.model, seated.intended);
-        substitutionReason = occupant.substitutionReason || "";
+        // An authorized same-model court rerun keeps the original job's list.
+        const source = delegations.find((item) => item.id === occupant.delegationId && item.event === "created") || occupant;
+        seated.seatModels = seatModelsFor(source) || seated.seatModels;
       }
     }
+    // Resolve the launch before writing anything, so an unlaunchable model leaves no brief.
+    const launch = launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head });
     const outstanding = kind === "mrr" && role === "deep-code-review"
       ? outstandingForDeep(reviews, stream.claim, target, stream.claimRevision).map(({ id, category, text }) => ({ id, category, text }))
       : [];
@@ -341,13 +345,12 @@ async function main() {
     const project = await store.project(stream.project);
     const delegation = await store.addDelegation(stream.id, {
       type: "review", kind, role, model: seated.model, route: seated.route, claim: stream.claim, claimRevision: stream.claimRevision,
-      ...(kind === "mrr" ? { intendedModel: seated.intended } : {}),
+      ...(kind === "mrr" ? { seatModels: seated.seatModels } : {}),
       head: target.head, baseHead: target.baseHead, ...(target.tree ? { tree: target.tree } : {}),
       ...(outstanding.length ? { outstanding } : {}),
-      ...(substitutionReason && seated.substituted ? { substitutionReason } : {}),
       ownerTaskIdAtBrief: stream.ownerTaskId || null
     });
-    const execution = { ...REVIEW_EXECUTION, intended: seated.intended, substituted: seated.substituted, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
+    const execution = { ...REVIEW_EXECUTION, intended: seated.intended, model: seated.model, route: seated.route, launch };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "bind") {
@@ -356,20 +359,21 @@ async function main() {
     return process.stdout.write(`Bound review ${event.id} to ${event.taskId}.\n`);
   }
   if (command === "review" && positional[0] === "fail") {
-    throw new Error("Field Report does not record provider failure. Repair or resume a started run. Substitute with --substitution-reason only before any envelope occupies the job, and only when the intended model cannot start (missing binary, authentication failure, or unavailable model).");
+    throw new Error("Field Report does not record provider failure. Repair or resume a started run. If a model cannot start before any envelope occupies the job, brief another model from the seat's valid list.");
   }
   if (command === "review" && positional[0] === "adjudicate") {
     const stream = await store.workstream(positional[1]);
     const jobRole = requireValue(flags.role, "Specify --role deep-code-review|structural-challenge|fable-challenge");
     if (!REVIEW_ROLES.includes(jobRole)) throw new Error("Court requires the persona job being adjudicated");
     if (flags.route && !["native", "cli"].includes(flags.route)) throw new Error("Review route must be native or cli");
-    const seated = seatingFor(COURT_ROLE, flags.model, flags.route);
+    const seated = { ...seatingFor(COURT_ROLE, flags.model, flags.route), requested: flags.model || null };
     const target = await targetFor(stream, "mrr");
     const reviews = await store.reviews(stream.id);
     assertCourtJobAvailable(reviews, { jobRole, target, claim: stream.claim, claimRevision: stream.claimRevision, model: seated.model, ownerTaskId: stream.ownerTaskId });
     const occupant = occupyingReview(reviews, { role: jobRole, target, claim: stream.claim, claimRevision: stream.claimRevision });
     const outstanding = outstandingOccupantPacket(reviews, occupant, stream.claim).map(({ id, category, text }) => ({ id, category, text }));
     if (!outstanding.length) throw new Error(`${jobRole} occupying NO_GO has no outstanding packet to adjudicate`);
+    const launch = launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head });
     const inventory = await diffInventory(target);
     const project = await store.project(stream.project);
     const delegation = await store.addDelegation(stream.id, {
@@ -377,7 +381,7 @@ async function main() {
       claim: stream.claim, claimRevision: stream.claimRevision, head: target.head, baseHead: target.baseHead, outstanding,
       ownerTaskIdAtBrief: stream.ownerTaskId || null
     });
-    const execution = { ...REVIEW_EXECUTION, intended: null, substituted: false, model: seated.model, route: seated.route, launch: launchFor(seated, { cwd: target.repoRoot, baseSha: target.baseHead, headSha: target.head }) };
+    const execution = { ...REVIEW_EXECUTION, intended: null, model: seated.model, route: seated.route, launch };
     return process.stdout.write(`${JSON.stringify({ delegation, execution, inspection: inspection(delegation, inventory), prompt: reviewPrompt(stream, delegation, inventory) }, null, 2)}\n`);
   }
   if (command === "review" && positional[0] === "record") {
@@ -415,7 +419,7 @@ async function main() {
       if (validated.role === COURT_ROLE) {
         assertCourtJobAvailable(prior, { jobRole: delegation.jobRole, ...scope, model: validated.model, reviewerTaskId: validated.reviewerTaskId, ownerTaskId: stream.ownerTaskId });
       } else if (reviewKind(delegation.kind) === "mrr") {
-        assertPersonaJobAvailable(prior, { role: validated.role, ...scope, model: validated.model, substitutionReason: validated.substitutionReason, reviewerTaskId: validated.reviewerTaskId, delegations: delegationEvents, currentDelegation: delegation });
+        assertPersonaJobAvailable(prior, { role: validated.role, ...scope, model: validated.model, reviewerTaskId: validated.reviewerTaskId, delegations: delegationEvents, currentDelegation: delegation });
       }
     } });
     return process.stdout.write(`Recorded ${review.role} ${review.verdict} for ${review.kind} target ${(review.tree || review.head).slice(0, 12)}.${assigned.length ? ` Assigned finding IDs: ${assigned.join(", ")}.` : ""}\n`);
@@ -511,20 +515,31 @@ async function main() {
     throw new Error("Use fr hook install|status|uninstall <project-id>");
   }
 
+  if (command === "seats") {
+    const lines = [`Config: ${configSource()}`];
+    for (const role of SEATS) {
+      const seat = seatFor(role);
+      lines.push(`${role}:`);
+      seat.models.forEach((model, index) => lines.push(`  ${index === 0 ? "default" : "also valid"}: ${model.id} via ${model.launch}${model.cliModel !== model.id ? ` (${model.cliModel})` : ""}`));
+    }
+    lines.push("A seat accepts only the models listed for it; the first is the default. Edit the config file to change them; no code change is needed.");
+    return process.stdout.write(`${lines.join("\n")}\n`);
+  }
+
   if (command === "machines") {
     const action = positional[0];
     const cwd = flags.cwd ? path.resolve(flags.cwd) : process.cwd();
     if (action === "status" || action === "worker") {
-      throw new Error("Field Report does not probe host accessibility or start My Machines workers. Start a worker for this checkout with Cursor's agent CLI. Print an Astra or Fable command with fr machines invoke.");
+      throw new Error("Field Report does not probe host accessibility or start My Machines workers. Start a worker for this checkout with Cursor's agent CLI. Print a host codex or claude command with fr machines invoke.");
     }
     if (action === "invoke") {
-      const provider = requireValue(positional[1], "Specify astra or fable");
+      const launcher = requireValue(positional[1], "Specify codex or claude");
       const promptFile = path.resolve(requireValue(flags["prompt-file"], "Specify --prompt-file"));
-      if (provider === "astra") return process.stdout.write(`${astraInvokeCommand({ promptFile, cwd, kind: flags.kind || "review", model: flags.model })}\n`);
-      if (provider === "fable") return process.stdout.write(`${fableInvokeCommand({ promptFile, cwd, baseSha: requireValue(flags.base, "Specify --base <sha>"), headSha: requireValue(flags.head, "Specify --head <sha>"), model: flags.model })}\n`);
-      throw new Error("Invoke provider must be astra or fable");
+      if (launcher === "codex") return process.stdout.write(`${codexInvokeCommand({ promptFile, cwd, kind: flags.kind || "review", model: flags.model })}\n`);
+      if (launcher === "claude") return process.stdout.write(`${claudeInvokeCommand({ promptFile, cwd, baseSha: requireValue(flags.base, "Specify --base <sha>"), headSha: requireValue(flags.head, "Specify --head <sha>"), model: flags.model })}\n`);
+      throw new Error(`Invoke launcher must be ${HOST_LAUNCHERS.join(" or ")}`);
     }
-    throw new Error("Use fr machines invoke astra|fable --prompt-file <path>");
+    throw new Error(`Use fr machines invoke ${HOST_LAUNCHERS.join("|")} --prompt-file <path>`);
   }
 
   if (command === "workflow") {

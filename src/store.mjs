@@ -38,27 +38,40 @@ async function writeJson(file, value) {
 
 export const TRACKER_KINDS = ["af", "linear"];
 
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
 // Where agents file todos for a project. Field Report stores only this pointer;
 // the tracker itself owns the issues. Projects saved before trackers existed
-// read as AF.
+// read as AF. Linear labels are often team-scoped, so changing the team drops
+// the old label unless the same update names one.
 export function normalizeTracker(value, previous = null) {
   const prior = previous || { kind: "af" };
   if (value == null) return prior;
   const kind = value.kind == null ? prior.kind : requiredString(value.kind, "Tracker", 20).toLowerCase();
   if (!TRACKER_KINDS.includes(kind)) throw new Error(`Tracker must be ${TRACKER_KINDS.join(" or ")}`);
   if (kind === "af") {
-    if (value.team != null || value.label != null) throw new Error("--linear-team and --linear-label require --tracker linear");
+    if (value.team != null || value.label != null || value.clearLabel) throw new Error("--linear-team, --linear-label, and --clear-linear-label require --tracker linear");
     return { kind };
   }
+  if (value.clearLabel && value.label != null) throw new Error("Use --linear-label or --clear-linear-label, not both");
   const carried = prior.kind === "linear" ? prior : {};
   const team = value.team == null ? carried.team : requiredString(value.team, "Linear team key", 50);
   if (!team) throw new Error("A Linear tracker needs --linear-team <team key>");
-  if (!/^[A-Za-z0-9_-]+$/.test(team)) throw new Error("Linear team key uses letters, numbers, underscores, and hyphens");
-  const label = value.label == null ? carried.label ?? null : optionalString(value.label, "Linear label", 100);
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(team)) throw new Error("Linear team key starts with a letter or number and uses letters, numbers, underscores, and hyphens");
+  const teamChanged = carried.team != null && team !== carried.team;
+  let label = value.clearLabel || teamChanged ? null : carried.label ?? null;
+  if (value.label != null) label = requiredString(value.label, "Linear label", 100);
+  if (label != null && CONTROL.test(label)) throw new Error("Linear label cannot contain control characters or line breaks");
   return { kind, team, label };
 }
 
 export function trackerFor(project) { return normalizeTracker(null, project?.tracker); }
+
+// One-token form for list output: af, linear:ENG, or linear:ENG/agent-todo.
+export function trackerTarget(tracker) {
+  if (tracker.kind !== "linear") return tracker.kind;
+  return `linear:${tracker.team}${tracker.label ? `/${tracker.label}` : ""}`;
+}
 
 export function describeTracker(tracker, projectId) {
   if (tracker.kind === "linear") return `Linear team ${tracker.team}${tracker.label ? `, label ${tracker.label}` : ""}`;
@@ -108,7 +121,7 @@ export function createStore(root = defaultStateRoot()) {
   async function projects() {
     await init();
     const files = (await readdir(path.join(root, "projects"))).filter((file) => file.endsWith(".json")).sort();
-    return Promise.all(files.map((file) => readJson(path.join(root, "projects", file))));
+    return (await Promise.all(files.map((file) => readJson(path.join(root, "projects", file))))).map(withTracker);
   }
 
   async function saveProject(value) {
@@ -153,8 +166,12 @@ export function createStore(root = defaultStateRoot()) {
   async function project(projectId) {
     const value = await readJson(path.join(root, "projects", `${id(projectId, "Project ID")}.json`), null);
     if (!value) throw new Error(`Unknown project: ${projectId}`);
-    return value;
+    return withTracker(value);
   }
+
+  // Projects saved before trackers existed read as AF, so every consumer sees
+  // one tracker shape without rewriting the stored record.
+  function withTracker(value) { return { ...value, tracker: trackerFor(value) }; }
 
   // One-time v2 claim migration: records saved before the dedicated delivery
   // claim existed used summary as the implicit claim; preserve that reading

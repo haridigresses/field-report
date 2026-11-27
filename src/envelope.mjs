@@ -85,10 +85,6 @@ export function normalizeReview(input, delegation, binding) {
     if (Object.hasOwn(next, key) && next[key] !== value) throw new Error(`Review ${key} conflicts with its delegation binding`);
     next[key] = value;
   }
-  delete next.intendedModel;
-  if (delegation.intendedModel != null) next.intendedModel = delegation.intendedModel;
-  delete next.substitutionReason;
-  if (delegation.substitutionReason) next.substitutionReason = delegation.substitutionReason;
   delete next.reconciliationOnly;
   delete next.jobRole;
   delete next.legacy;
