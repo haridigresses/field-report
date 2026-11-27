@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { collect } from "./collect.mjs";
 import { createStore } from "./store.mjs";
-import { LAUNCHERS, PLAN_HOMES, readRawConfig, REVIEW_ROLES, saveSeatConfig } from "./seats.mjs";
+import { LAUNCHERS, PLAN_HOMES, readRawConfig, REVIEW_ROLES, saveSeatConfig, SEAT_PURPOSES } from "./seats.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PAGES = { "/": ["index.html", "text/html"], "/index.html": ["index.html", "text/html"], "/settings": ["settings.html", "text/html"], "/app.js": ["app.js", "text/javascript"], "/settings.js": ["settings.js", "text/javascript"], "/styles.css": ["styles.css", "text/css"] };
@@ -54,7 +54,7 @@ export function createServer({ port, store = createStore() }) {
     }
     if (req.method !== "GET") return send(res, 405, "Method not allowed", "text/plain");
     if (pathname === "/api/config") {
-      try { return json(res, 200, { ...(await readRawConfig()), roles: REVIEW_ROLES, launchers: LAUNCHERS, planHomes: PLAN_HOMES }); }
+      try { return json(res, 200, { ...(await readRawConfig()), roles: REVIEW_ROLES, purposes: SEAT_PURPOSES, launchers: LAUNCHERS, planHomes: PLAN_HOMES }); }
       catch (error) { return json(res, 500, { error: error.message }); }
     }
     if (pathname === "/api/state") {

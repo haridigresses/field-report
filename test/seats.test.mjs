@@ -41,7 +41,7 @@ test("config file rejects malformed seats", () => {
   assert.throws(broken((raw) => { raw.seats["design"].accept = "listed"; }), /unknown key "accept"/);
   assert.throws(broken((raw) => { raw.seats["design"].models[0].cliModel = "grok; rm -rf ~"; }), /cliModel must be one token/);
   assert.throws(broken((raw) => { raw.providers = {}; }), /unknown key "providers"/);
-  assert.throws(broken((raw) => { raw.seats["structural-challenge"].models[0].id = " "; }), /models\[0\]\.id is missing/);
+  assert.throws(broken((raw) => { raw.seats["design"].models[0].id = " "; }), /models\[0\]\.id is missing/);
 });
 
 test("plans default to the repository and take a service plus an optional reference", () => {

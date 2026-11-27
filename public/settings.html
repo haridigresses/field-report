@@ -12,11 +12,20 @@
     <button class="primary save">Save</button>
   </header>
   <main>
+    <section class="intro">
+      <p><strong>Field Report</strong> keeps AI coding agents honest about review. Before a pull request opens, three reviewers check the change from three angles, each in a fresh context with no memory of how the work was done. Field Report records each verdict against the exact commit and tells the agent whether the work is ready. It never merges; that stays with you.</p>
+      <p>Here you choose <strong>which models review each angle</strong> and <strong>where multi-PR build plans live</strong>. Repositories and where todos go are set with <code>fr project</code> in the terminal.</p>
+    </section>
     <p id="source" class="quiet"></p>
     <p id="status" role="status"></p>
     <section>
       <h2>Review seats</h2>
-      <p class="quiet">Each seat accepts only the models listed for it. The first is the default; the rest are fallbacks, tried in order.</p>
+      <p class="quiet">Each seat accepts only the models listed for it. The first is the default; the others are fallbacks, tried in order if the default can't start. Using different models across seats gives different perspectives, but one model may fill every seat.</p>
+      <dl class="launchers">
+        <div><dt>Launch</dt><dd>Which command-line tool runs the reviewer: <code>codex</code> (OpenAI's Codex CLI), <code>claude</code> (Claude Code), or <code>cursor</code> (Cursor's agent CLI, which offers models from several labs). It must be installed and signed in; <code>fr doctor</code> checks.</dd></div>
+        <div><dt>Model id</dt><dd>The model's plain name, without a <code>cursor-</code> prefix or an effort suffix like <code>-high</code>.</dd></div>
+        <div><dt>CLI model</dt><dd>Only when the tool expects a different name. Cursor ids usually add an effort level, for example <code>cursor-grok-4.6-high</code>.</dd></div>
+      </dl>
       <div id="seats"></div>
     </section>
     <section>

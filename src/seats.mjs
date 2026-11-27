@@ -10,6 +10,12 @@ import { fileURLToPath } from "node:url";
 // model may serve several seats.
 
 export const REVIEW_ROLES = ["correctness", "design", "intent"];
+// What each seat checks; shown on the settings page.
+export const SEAT_PURPOSES = {
+  correctness: "Bugs, security, data integrity, error paths, and whether the tests cover them.",
+  design: "How it is built: whether it is needed, whether it is the simplest mechanism, and whether it respects boundaries.",
+  intent: "What it does: whether it matches the stated outcome, claim, and your decisions, and nothing more."
+};
 // Only for the error message after the rename; old keys are never accepted.
 const RENAMED_SEATS = { "deep-code-review": "correctness", "structural-challenge": "design", "fable-challenge": "intent" };
 // Each launcher runs reviewers without MCP servers.

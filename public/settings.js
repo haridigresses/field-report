@@ -5,6 +5,7 @@ const HOME_LABELS = { repo: "Repository (docs/plans/)", linear: "Linear", notion
 const statusEl = document.querySelector("#status");
 const sourceEl = document.querySelector("#source");
 let roles = [];
+let purposes = {};
 let launchers = [];
 let planHomes = [];
 let seats = {};
@@ -15,6 +16,7 @@ function status(text, kind = "") { statusEl.textContent = text; statusEl.classNa
 
 function load(data) {
   roles = data.roles || roles;
+  purposes = data.purposes || purposes;
   launchers = data.launchers || launchers;
   const raw = data.raw || { seats: {} };
   seats = Object.fromEntries(roles.map((role) => [role, (raw.seats?.[role]?.models || []).map((model) => ({ id: model.id || "", launch: model.launch || launchers[0], cliModel: model.cliModel || "" }))]));
@@ -39,6 +41,7 @@ homeEl.addEventListener("change", syncReference);
 function render() {
   seatsEl.innerHTML = roles.map((role) => `
     <h3>${escape(role)}</h3>
+    <p class="quiet">${escape(purposes[role] || "")}</p>
     <table>
       <thead><tr><th></th><th>Model id</th><th>Launch</th><th>CLI model (optional)</th><th></th></tr></thead>
       <tbody>${seats[role].map((model, index) => `
@@ -95,7 +98,7 @@ async function save() {
   const response = await fetch("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft()) });
   const data = await response.json();
   if (!response.ok) { status(`Not saved: ${data.error}`, "warn"); return statusEl.scrollIntoView({ block: "nearest" }); }
-  load({ ...data, roles, launchers, planHomes });
+  load({ ...data, roles, purposes, launchers, planHomes });
   status("Saved. New review briefs use these models; recorded reviews keep theirs.", "good");
   statusEl.scrollIntoView({ block: "nearest" });
 }

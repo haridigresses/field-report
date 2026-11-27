@@ -34,7 +34,8 @@ test("settings page shows the shipped defaults until a config is saved, then sav
     const initial = await (await fetch(`${url}/api/config`)).json();
     assert.equal(initial.exists, false);
     assert.deepEqual(initial.raw, JSON.parse(await readFile(EXAMPLE_SEATS, "utf8")));
-    assert.deepEqual(initial.roles, ["deep-code-review", "structural-challenge", "fable-challenge"]);
+    assert.deepEqual(initial.roles, ["correctness", "design", "intent"]);
+    assert.deepEqual(Object.keys(initial.purposes), initial.roles, "every seat has a purpose to show");
 
     const config = { ...initial.raw, plans: { home: "ref", reference: "Engineering plans" } };
     const saved = await post(JSON.stringify(config));
@@ -42,10 +43,10 @@ test("settings page shows the shipped defaults until a config is saved, then sav
     assert.equal((await saved.json()).exists, true);
     assert.deepEqual(JSON.parse(await readFile(file, "utf8")), config);
 
-    const broken = { ...config, seats: { ...config.seats, "fable-challenge": { models: [] } } };
+    const broken = { ...config, seats: { ...config.seats, "intent": { models: [] } } };
     const rejected = await post(JSON.stringify(broken));
     assert.equal(rejected.status, 400);
-    assert.match((await rejected.json()).error, /fable-challenge needs a non-empty models list/);
+    assert.match((await rejected.json()).error, /intent needs a non-empty models list/);
     assert.deepEqual(JSON.parse(await readFile(file, "utf8")), config, "a rejected save leaves the file alone");
   } finally { server.close(); }
 });
