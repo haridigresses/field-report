@@ -5,12 +5,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { parseEnvelope, normalizeReview } from "../src/envelope.mjs";
-import { createStore, describeTracker, trackerFor, trackerTarget } from "../src/store.mjs";
+import { createStore, defaultStateRoot, describeTracker, trackerFor, trackerTarget } from "../src/store.mjs";
 import { assertSeatOpen, botsReasons, CRR_ROLE, evaluateGate, findingLedger, identityKey, latestClaimReviews, openReasons, reviewKind, REVIEW_ROLES, seatingFor, seatStatus, validateReview, workstreamBotsReasons } from "../src/policy.mjs";
 import { ancestorHeads, checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 import { claudeInvokeCommand, codexInvokeCommand, cursorReviewCommand, HOST_LAUNCHERS } from "../src/machines.mjs";
-import { configSource, launchEntry, REVIEW_ROLES as SEATS, seatFor } from "../src/seats.mjs";
+import { configSource, launchEntry, REVIEW_ROLES as SEATS, seatConfig, seatFor } from "../src/seats.mjs";
+import { doctor, formatDoctor } from "../src/doctor.mjs";
 
 const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -36,6 +37,7 @@ function usage() {
 
 fr version
 fr init
+fr doctor
 fr project add <id> --label <label> --repo <path> [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label]
 fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main] [--tracker af|linear] [--linear-team <key>] [--linear-label <name>|--clear-linear-label]
 fr project list
@@ -252,6 +254,16 @@ async function main() {
     let revision = "unavailable (runtime has no Git revision)";
     try { revision = (await exec("git", ["rev-parse", "HEAD"], { cwd: runtimeRoot, timeout: 10_000 })).stdout.trim(); } catch {}
     return process.stdout.write(`Field Report ${version}\nRuntime source: ${runtimeRoot}\nGit revision: ${revision}\n`);
+  }
+  if (command === "doctor") {
+    // store.projects() initializes state, so only list projects once state exists; doctor stays read-only.
+    const stateRoot = path.resolve(defaultStateRoot());
+    let projects = [];
+    try { await access(path.join(stateRoot, "config.json")); projects = await store.projects(); } catch {}
+    const results = await doctor({ runtimeRoot, stateRoot, loadConfig: seatConfig, projects });
+    process.stdout.write(`${formatDoctor(results)}\n`);
+    if (results.some((item) => item.level === "fail")) process.exitCode = 1;
+    return;
   }
   if (command === "init") { const root = await store.init(); return process.stdout.write(`Initialized Field Report state at ${root}\n`); }
 

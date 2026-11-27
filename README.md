@@ -35,9 +35,28 @@ Override this location in tests or isolated environments with `FIELD_REPORT_STAT
 
 ## Install
 
+Prerequisites: Node 20+, git, `gh` (signed in; `fr gate bots` uses it), and the CLI for each launcher your seat config uses: `codex`, `claude`, or `cursor-agent`, installed and signed in.
+
 ```bash
-node scripts/install.mjs
-fr init
+git clone https://github.com/haridigresses/field-report ~/field-report
+cd ~/field-report && node scripts/install.mjs && fr init
+fr doctor
+```
+
+Keep the clone where it is: the launchers and skill links point into it, and `git pull` updates Field Report. `fr doctor` only reads. It checks Node, git, the `fr` launcher and `PATH`, the skill links, the state root, the seat config, the CLI for each configured model (and, for Cursor, that each model id is in `cursor-agent --list-models`; `codex` and `claude` cannot list models, so those are checked at first launch), `gh`, and each registered project's hook. It exits nonzero while anything is FAIL. Rerun it after editing the config or adding a project.
+
+### Install with your agent
+
+Paste this into Claude Code, Codex, or Cursor:
+
+```text
+Install Field Report for me.
+1. Clone https://github.com/haridigresses/field-report to ~/field-report (or git pull if it exists), then run: node scripts/install.mjs && fr init
+2. Run fr doctor and fix what it reports. For each seat in ~/.config/field-report/config.json, ask me which models I have access to and edit the config so every seat's first model is one I can run. Do not guess model ids; for Cursor, use ids from cursor-agent --list-models.
+3. Ask me which repositories to register. For each, run fr project add <id> --label <label> --repo <path> --github <owner/repo>. Ask whether todos go to Agent Fixes or Linear; for Linear, ask for the team key and label and run fr project update <id> --tracker linear --linear-team <key> [--linear-label <label>].
+4. Run fr doctor again. For each project: if doctor says a hook manager (husky, lefthook) owns the pre-commit hook, do not run fr hook install; tell me, and suggest adding `fr gate checkout` to that hook manager. Otherwise run fr hook install <id>.
+5. Finish with fr doctor and fr seats, and show me both outputs.
+Do not change anything inside my repositories except the git hook in step 4.
 ```
 
 The installer writes `~/.local/bin/fr` and links the same canonical skill sources into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. It refuses to replace a real directory at any of those paths.
@@ -51,6 +70,8 @@ fr project add aon --label AON --repo /path/to/aon --github owner/aon
 fr hook install aon
 fr hook status aon
 ```
+
+If the repository uses a hook manager (`core.hooksPath`, as husky and lefthook set), `fr doctor` warns instead of suggesting `fr hook install`, because that would write into the manager's hook file. Add `fr gate checkout` to the manager's pre-commit hook instead.
 
 Todos default to AF issues in the project namespace. To file them in Linear instead (no AF required):
 
