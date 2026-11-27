@@ -32,6 +32,13 @@ Field Report binds a delivery unit and records review evidence. The owner launch
 - MRR findings live on the review that raised them, with workspace-wide IDs (`F1`, `F2`, ...). A finding blocks until the seat's rerun on a fixed head says GO, or until the user accepts it: `fr review accept <id> --finding <F-id> --reason <text> --actor <who>`. Record an acceptance only when the user explicitly accepted that finding; `--actor` is required and names who accepted it, and the gate prints it. CRR findings never block MRR.
 - `fr gate open` is the pre-CI / ready-for-bots check. It does not open the PR. `fr gate bots` is the post-CI merge-readiness check on an open PR. An already-ready PR with that evidence is fine; do not convert it to draft. An empty GitHub check rollup is not evidence that CI ran; `fr gate bots` stays BLOCKED until checks are observed.
 
+### BRR
+
+- Build-ready review is for work that spans several pull requests, run when the user asks for it or agrees to it. It is not a Field Report kind: no brief, record, or gate. The user's sign-off is the only gate. Follow the `brr` skill.
+- Sign off on direction, not detail: sketch the arcs, plan only the arc that starts now as PRs, and investigate later arcs just enough to find landmines (one-way decisions, feasibility unknowns, conflicts with user decisions). Each later arc gets its own short pass when it starts.
+- The plan is one markdown document in the plan home that `fr seats` prints on its `Plans:` line: `docs/plans/` in the repository by default, or the service the user names with `plans` in the config file, reached through the host's MCP connector. Keep one copy.
+- The user's directional answers go in the plan's Decisions section. When a PR's workstream is created, record the ones that bind it with `fr decide`; reviewers read their brief, not the plan.
+
 ### TRR
 
 - Tabula Rasa Review is an informational pass, not a Field Report kind. It does not use `fr review brief`, `record`, or `gate`. Do not mint unused delegations.

@@ -59,7 +59,7 @@ Install Field Report for me.
 Do not change anything inside my repositories except the git hook in step 4.
 ```
 
-The installer writes `~/.local/bin/fr` and links the same canonical skill sources into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. It refuses to replace a real directory at any of those paths.
+The installer writes `~/.local/bin/fr` and links the same canonical skill sources into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. The skills are `field-report`, `repo-coordinator`, `workstream-orchestrator`, `brr`, `fr-grill-me`, and `fr-ask-questions`; the last two are adapted from published skills, with attribution in each file, and carry an `fr-` prefix so they never collide with your own copies. It refuses to replace a real directory at any of those paths.
 
 Run `fr version` to see the running package version, runtime source directory, and that source checkout's Git revision. This identifies which checkout an installed launcher uses, regardless of the current working directory. A runtime without Git metadata reports the revision as unavailable.
 
@@ -104,6 +104,16 @@ Field Report hardcodes no model names. Your config file lists the models valid f
 
 When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
 
+### Plan home
+
+`plans` in the same config file says where build-ready review (BRR) plans live, as one line of free text. Leave it out to keep plans in `docs/plans/` in each repository.
+
+```json
+"plans": "ref: Engineering plans"
+```
+
+Field Report only prints it, on the `Plans:` line of `fr seats` and `fr context`. The agent reads and writes the plan through its host's MCP connector for that service (Linear, Notion, Ref, or another), and asks the user if it has none.
+
 ## My Machines
 
 Cursor Cloud Agents can invoke the host `codex` and `claude` CLIs on this host when a My Machines worker is running for the target checkout. Field Report prints the CLI recipe; Cursor owns the worker.
@@ -141,3 +151,7 @@ fr gate open aon-example
 
 fr gate bots aon-example
 ```
+
+## License
+
+MIT; see [LICENSE](LICENSE). Two adapted skills keep their own licenses: `skills/fr-grill-me` (MIT, Matt Pocock) and `skills/fr-ask-questions` (CC BY-SA 4.0, Trail of Bits).
