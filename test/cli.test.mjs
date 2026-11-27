@@ -323,10 +323,13 @@ test("the user's acceptance of a finding unblocks its seat and is printed", asyn
   assert.match(await run(["review", "status", "outcome", "--kind", "mrr"], repo, state), /Questions for the user: Should the edge be handled at all\?/);
   await assert.rejects(run(["review", "accept", "outcome", "--finding", "F9", "--reason", "x"], repo, state), /Unknown MRR finding: F9/);
   await assert.rejects(run(["review", "accept", "outcome", "--finding", "F1"], repo, state), /Specify --reason/);
-  assert.match(await run(["review", "accept", "outcome", "--finding", "F1", "--reason", "Fails safe; not worth a fix"], repo, state), /Recorded acceptance of F1 \(structural-challenge\) by owner-1/);
+  await assert.rejects(run(["review", "accept", "outcome", "--finding", "F1", "--reason", "Fails safe; not worth a fix"], repo, state), /Specify --actor/);
+  await assert.rejects(run(["review", "accept", "outcome", "--finding", "F1", "--reason", "Fails safe; not worth a fix", "--actor"], repo, state), /Specify --actor/);
+  await assert.rejects(run(["review", "accept", "outcome", "--finding", "F1", "--reason", "--actor", "user"], repo, state), /Specify --reason/);
+  assert.match(await run(["review", "accept", "outcome", "--finding", "F1", "--reason", "Fails safe; not worth a fix", "--actor", "user"], repo, state), /Recorded acceptance of F1 \(structural-challenge\) by user/);
   const open = await run(["gate", "open", "outcome"], repo, state);
   assert.match(open, /READY/);
-  assert.match(open, /structural-challenge F1 accepted by owner-1: Fails safe; not worth a fix/);
+  assert.match(open, /structural-challenge F1 accepted by user: Fails safe; not worth a fix/);
 });
 
 test("user decisions travel with every review brief", async () => {
@@ -351,9 +354,9 @@ test("later commits carry earlier seat reviews forward and print the unreviewed 
   await writeFile(path.join(repo, "README.md"), "churn\n");
   await exec("git", ["commit", "-am", "churn"], { cwd: repo });
   const carried = await run(["context", "outcome"], repo, state);
-  assert.match(carried, /MRR: READY on this HEAD; deep-code-review: GO at [0-9a-f]{12} carried; [0-9a-f]{12}\.\.[0-9a-f]{12} not reviewed by this seat/);
+  assert.match(carried, /MRR: READY \(carried; not reviewed on this HEAD by: deep-code-review, structural-challenge, fable-challenge\); deep-code-review: GO at [0-9a-f]{12} carried; [0-9a-f]{12}\.\.[0-9a-f]{12} not reviewed by this seat/);
   assert.match(carried, /not this HEAD/);
-  assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
+  assert.match(await run(["gate", "open", "outcome"], repo, state), /open gate at [0-9a-f]{12}: READY \(carried; not reviewed on this HEAD by: deep-code-review/);
   await assert.rejects(run(["gate", "bots", "outcome"], repo, state), /GitHub lookup failed:/);
 });
 

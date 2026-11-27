@@ -48,7 +48,7 @@ fr update <id> [--status planned|active|blocked|complete] [--summary <text>] [--
 fr review brief <id> --kind crr|mrr --role crr|deep-code-review|structural-challenge|fable-challenge [--model <id>] [--route native|cli]
 fr review bind <id> --delegation <uuid> --task-id <native-task-or-provider-run-id>
 fr review record <id> --file <review.json> [--delegation <uuid>]
-fr review accept <id> --finding <F-id> --reason <text> [--actor <id>]
+fr review accept <id> --finding <F-id> --reason <text> --actor <who>
 fr decide <id> <decision text>
 fr review status <id> --kind crr|mrr
 fr gate checkout [id]
@@ -198,8 +198,15 @@ function scoreLines(reviews, workstream, currentHead) {
   return ["Scores (latest per seat on this claim; structural risk is higher = more risk):", ...latest.map((review) => scoreLine(review, currentHead))];
 }
 
+// Agents act on the first word, so a READY that rests on carried reviews must say so there.
+function readyLabel(gate) {
+  if (!gate.ready) return "BLOCKED";
+  const carried = Object.values(gate.seats || {}).filter((seat) => seat.carried).map((seat) => seat.role);
+  return carried.length ? `READY (carried; not reviewed on this HEAD by: ${carried.join(", ")})` : "READY on this HEAD";
+}
+
 function printMrr(gate) {
-  if (gate.ready) return ["READY on this HEAD", ...gate.notes].join("; ");
+  if (gate.ready) return [readyLabel(gate), ...gate.notes].join("; ");
   return `BLOCKED — ${gate.reasons.join("; ")}`;
 }
 
@@ -378,11 +385,13 @@ async function main() {
   if (command === "review" && positional[0] === "accept") {
     const stream = await store.workstream(positional[1]);
     const findingId = requireValue(flags.finding, "Specify --finding <F-id>");
-    const reason = requireValue(flags.reason, "Specify --reason");
+    // A bare flag parses as `true`; only a real string counts.
+    const text = (value) => (typeof value === "string" ? value.trim() : "");
+    const reason = requireValue(text(flags.reason), "Specify --reason");
     const finding = findingLedger(await store.reviews(stream.id)).find((item) => item.id === findingId);
     if (!finding) throw new Error(`Unknown MRR finding: ${findingId}`);
-    const actor = String(flags.actor || process.env.CODEX_THREAD_ID || stream.ownerTaskId || "").trim();
-    if (!actor) throw new Error("An acceptance requires a recorded actor: pass --actor, set CODEX_THREAD_ID, or bind an owner session");
+    // No default: the agent's own task ID would make every acceptance self-vouched.
+    const actor = requireValue(text(flags.actor), "Specify --actor: who accepted the finding (normally the user)");
     const disposition = await store.addDisposition(stream.id, { findingId, reason, actor });
     return process.stdout.write(`Recorded acceptance of ${disposition.findingId} (${finding.role}) by ${disposition.actor}. Record it only when the user explicitly accepted the finding.\n`);
   }
@@ -411,7 +420,7 @@ async function main() {
     if (action === "open") {
       const stream = await streamForCheckout(streamId);
       const result = await openGate(stream);
-      const lines = [`${stream.id} open gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, "Field Report does not open the pull request.", ...result.reasons.map((reason) => `- ${reason}`), ...result.gate.notes.map((note) => `- ${note}`), ...evidenceLines(result.gate)];
+      const lines = [`${stream.id} open gate at ${result.target.head.slice(0, 12)}: ${result.ready ? readyLabel(result.gate) : "BLOCKED"}`, "Field Report does not open the pull request.", ...result.reasons.map((reason) => `- ${reason}`), ...result.gate.notes.map((note) => `- ${note}`), ...evidenceLines(result.gate)];
       if (!result.ready) throw new Error(lines.join("\n"));
       return process.stdout.write(`${lines.join("\n")}\n`);
     }
@@ -419,7 +428,7 @@ async function main() {
       const stream = await store.workstream(requireValue(streamId, "Specify a workstream ID"));
       const result = await botsGate(stream);
       const prLine = result.pr ? `PR #${result.pr.number}: ${result.pr.isDraft ? "draft" : "ready"}` : result.githubError ? `GitHub lookup failed: ${result.githubError}` : "No pull request";
-      const lines = [`${stream.id} bots gate at ${result.target.head.slice(0, 12)}: ${result.ready ? "READY" : "BLOCKED"}`, prLine, ...result.reasons.map((reason) => `- ${reason}`), ...result.gate.notes.map((note) => `- ${note}`), ...evidenceLines(result.gate)];
+      const lines = [`${stream.id} bots gate at ${result.target.head.slice(0, 12)}: ${result.ready ? readyLabel(result.gate) : "BLOCKED"}`, prLine, ...result.reasons.map((reason) => `- ${reason}`), ...result.gate.notes.map((note) => `- ${note}`), ...evidenceLines(result.gate)];
       if (!result.ready) throw new Error(lines.join("\n"));
       return process.stdout.write(`${lines.join("\n")}\n`);
     }
