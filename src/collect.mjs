@@ -3,7 +3,8 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createStore } from "./store.mjs";
-import { botsReasons, evaluateMergeReady } from "./policy.mjs";
+import { botsReasons, evaluateGate } from "./policy.mjs";
+import { ancestorHeads } from "./repository.mjs";
 
 const exec = promisify(execFile);
 const store = createStore();
@@ -56,18 +57,21 @@ async function checkoutMrrTarget(stream, projectView) {
   return { kind: "mrr", head: checkout.head, baseHead: base.value };
 }
 
-function mrrStatus(stream, projectView, reviews, delegations, waivers, preOpenTarget) {
+async function mrrGate(target, stream, projectView, reviews, dispositions) {
+  const ancestors = await ancestorHeads(projectView.repoPath, reviews.map((review) => review.head), target.head);
+  return evaluateGate({ kind: "mrr", target, workstream: stream, reviews, dispositions, ancestors });
+}
+
+async function mrrStatus(stream, projectView, reviews, dispositions, preOpenTarget) {
   const pr = projectView?.pullRequests.find((item) => stream.pullRequests.includes(item.number) || item.headRefName === stream.branch);
   if (!pr) {
     const reasons = ["no current pull request"];
-    if (preOpenTarget) {
-      const gate = evaluateMergeReady({ target: preOpenTarget, workstream: stream, reviews, delegations, waivers });
-      reasons.push(...(gate.reasons || []));
-    }
+    if (preOpenTarget) reasons.push(...(await mrrGate(preOpenTarget, stream, projectView, reviews, dispositions)).reasons);
     return { ready: false, phase: "pre-open", reasons: [...new Set(reasons)] };
   }
   if (!pr.baseHead) return { ready: false, phase: "blocked", reasons: ["current PR base SHA could not be derived"] };
-  return evaluateMergeReady({ target: { kind: "mrr", head: pr.headRefOid, baseHead: pr.baseHead }, workstream: stream, reviews, delegations, waivers });
+  const gate = await mrrGate({ kind: "mrr", head: pr.headRefOid, baseHead: pr.baseHead }, stream, projectView, reviews, dispositions);
+  return { ...gate, phase: gate.ready ? "ready" : "blocked" };
 }
 
 function botsStatus(stream, projectView, mrr) {
@@ -80,19 +84,18 @@ function botsStatus(stream, projectView, mrr) {
   const target = { head: pr.headRefOid, branch: stream.branch };
   const ci = botsReasons({ project: projectView, target, checkout, pr });
   const observed = [...(mrr.reasons || []), ...ci];
-  if (mrr.phase === "churn") return { ready: false, reasons: [...new Set(observed)] };
   return { ready: mrr.ready && observed.length === 0, reasons: [...new Set(observed)] };
 }
 
 export async function collect(output = process.env.FIELD_REPORT_PROJECTION || path.join(store.root, "projection.json")) {
   const projects = await Promise.all((await store.projects()).map(collectProject));
   const workstreams = await Promise.all((await store.workstreams()).map(async (stream) => {
-    const [reviews, delegations, waivers] = await Promise.all([store.reviews(stream.id), store.delegations(stream.id), store.waivers(stream.id)]);
+    const [reviews, delegations, dispositions] = await Promise.all([store.reviews(stream.id), store.delegations(stream.id), store.dispositions(stream.id)]);
     const projectView = projects.find((project) => project.id === stream.project);
     const preOpenTarget = await checkoutMrrTarget(stream, projectView);
-    const mrr = mrrStatus(stream, projectView, reviews, delegations, waivers, preOpenTarget);
+    const mrr = await mrrStatus(stream, projectView, reviews, dispositions, preOpenTarget);
     const bots = botsStatus(stream, projectView, mrr);
-    return { ...stream, reviews, delegations: delegationState(delegations, reviews), waivers, events: (await store.events(stream.id)).slice(-20).reverse(), projectView, mrr, bots };
+    return { ...stream, reviews, delegations: delegationState(delegations, reviews), dispositions, events: (await store.events(stream.id)).slice(-20).reverse(), projectView, mrr, bots };
   }));
   const projection = { schemaVersion: 6, generatedAt: new Date().toISOString(), projects, workstreams };
   await mkdir(path.dirname(output), { recursive: true });
