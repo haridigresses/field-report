@@ -14,7 +14,7 @@
   <main>
     <section class="intro">
       <p><strong>Field Report</strong> keeps AI coding agents honest about review. Before a pull request opens, three reviewers check the change from three angles, each in a fresh context with no memory of how the work was done. Field Report records each verdict against the exact commit and tells the agent whether the work is ready. It never merges; that stays with you.</p>
-      <p>Here you choose <strong>which models review each angle</strong> and <strong>where multi-PR build plans live</strong>. Repositories and where todos go are set with <code>fr project</code> in the terminal.</p>
+      <p>Here you choose <strong>which models review each angle</strong>, <strong>where multi-PR build plans live</strong>, and, for each repository Field Report knows, <strong>where agents file todos</strong>. Add a repository with <code>fr project add</code> in the terminal.</p>
     </section>
     <p id="source" class="quiet"></p>
     <p id="status" role="status"></p>
@@ -37,7 +37,15 @@
       </div>
     </section>
     <p><button class="primary save">Save</button></p>
+    <section>
+      <h2>Projects</h2>
+      <p class="quiet">Repositories Field Report knows. Each project's changes save on their own. Removing a project also deletes its workstreams and their review records.</p>
+      <p id="project-status" role="status"></p>
+      <div id="projects"></div>
+    </section>
   </main>
+  <datalist id="ids-codex"></datalist><datalist id="ids-claude"></datalist><datalist id="ids-cursor"></datalist>
+  <datalist id="cli-codex"></datalist><datalist id="cli-claude"></datalist><datalist id="cli-cursor"></datalist>
   <script type="module" src="/settings.js"></script>
 </body>
 </html>

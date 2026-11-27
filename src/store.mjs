@@ -291,5 +291,23 @@ export function createStore(root = defaultStateRoot()) {
     return disposition;
   }
 
-  return { root, init, projects, project, saveProject, updateProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), dispositions: (id) => lines("dispositions", id), addDelegation, addDelegationEvent, addReview, addDisposition };
+  // Removing a project deletes its record. Its workstreams and their review
+  // records go too, but only when asked: they are review history.
+  async function removeProject(projectId, { withWorkstreams = false, expectedWorkstreams = null } = {}) {
+    const target = await project(projectId);
+    return locked(async () => {
+      const owned = (await workstreams()).filter((stream) => stream.project === target.id).map((stream) => stream.id);
+      // The settings page confirms a count; refuse if workstreams appeared since.
+      if (expectedWorkstreams != null && expectedWorkstreams !== owned.length) throw new Error(`Project ${target.id} now has ${owned.length} workstreams, not ${expectedWorkstreams}; reload and confirm again`);
+      if (owned.length && !withWorkstreams) throw new Error(`Project ${target.id} has ${owned.length} workstream${owned.length === 1 ? "" : "s"} (${owned.join(", ")}); removing it also deletes them and their reviews. Pass --with-workstreams to confirm.`);
+      for (const streamId of owned) {
+        await rm(path.join(root, "workstreams", `${streamId}.json`), { force: true });
+        for (const kind of ["events", "reviews", "delegations", "dispositions"]) await rm(path.join(root, kind, `${streamId}.jsonl`), { force: true });
+      }
+      await rm(path.join(root, "projects", `${target.id}.json`));
+      return { project: target.id, workstreams: owned };
+    });
+  }
+
+  return { root, init, projects, project, saveProject, updateProject, removeProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), dispositions: (id) => lines("dispositions", id), addDelegation, addDelegationEvent, addReview, addDisposition };
 }
