@@ -40,7 +40,7 @@ node scripts/install.mjs
 fr init
 ```
 
-The installer writes `~/.local/bin/fr` and links the same canonical skill sources into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. It refuses to replace a real directory at any of those paths.
+The installer writes `~/.local/bin/fr` and links the same canonical skill sources into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`. The skills are `field-report`, `repo-coordinator`, `workstream-orchestrator`, `brr`, `grill-me`, and `ask-questions-if-underspecified`. It refuses to replace a real directory at any of those paths and links nothing until you move it aside; that includes your own earlier copies of `grill-me` or `ask-questions-if-underspecified`.
 
 Run `fr version` to see the running package version, runtime source directory, and that source checkout's Git revision. This identifies which checkout an installed launcher uses, regardless of the current working directory. A runtime without Git metadata reports the revision as unavailable.
 
@@ -82,6 +82,17 @@ Field Report hardcodes no model names. Your config file lists the models valid f
 - `launch` is `codex`, `claude`, or `cursor` (through `fr-cursor-review`). `--route native` runs any seat as a native subagent instead. `cliModel` is the id that launcher expects, when it differs (Cursor ids carry effort suffixes).
 
 When a new model ships, edit the config. `fr seats` prints the resolved panel. Each brief pins its seat's valid list, so editing the config changes new briefs only, never recorded reviews. Upgrading to seat lists is a hard cut: review evidence recorded before it is discarded, not migrated. Delete the `reviews`, `delegations`, and `waivers` folders under the state root (`~/.local/state/field-report`, or `FIELD_REPORT_STATE_ROOT`), then rerun MRR on open workstreams.
+
+### Plan home
+
+`plans` in the same config file says where build-ready review (BRR) plans live. Leave it out to keep plans in `docs/plans/` in each repository.
+
+```json
+"plans": { "home": "ref", "where": "Engineering plans" }
+```
+
+- `home` is `repo`, `linear`, `notion`, or `ref`. `where` is optional free text naming the team, page, or parent document; it does not apply to `repo`.
+- Field Report stores only this pointer and prints it on the `Plans:` line of `fr seats` and `fr context`. The agent reads and writes the plan through its host's MCP connector for that service, and asks the user if it has none.
 
 ## My Machines
 

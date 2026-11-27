@@ -2,7 +2,7 @@ import { lstat, mkdir, rename, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-export const SKILL_NAMES = ["field-report", "repo-coordinator", "workstream-orchestrator"];
+export const SKILL_NAMES = ["field-report", "repo-coordinator", "workstream-orchestrator", "brr", "grill-me", "ask-questions-if-underspecified"];
 
 export function skillHostDirs(home = os.homedir()) {
   return [

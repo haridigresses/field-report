@@ -10,7 +10,7 @@ import { assertSeatOpen, botsReasons, CRR_ROLE, evaluateGate, findingLedger, ide
 import { ancestorHeads, checkout, crrTarget, diffInventory, mrrTarget, pullRequest } from "../src/repository.mjs";
 import { hookText, isManagedHook, marker, quote, shouldRunPreserved } from "../src/hooks.mjs";
 import { claudeInvokeCommand, codexInvokeCommand, cursorReviewCommand, HOST_LAUNCHERS } from "../src/machines.mjs";
-import { configSource, launchEntry, REVIEW_ROLES as SEATS, seatFor } from "../src/seats.mjs";
+import { configSource, describePlans, launchEntry, REVIEW_ROLES as SEATS, seatFor } from "../src/seats.mjs";
 
 const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -298,8 +298,11 @@ async function main() {
     const identity = identityKey(project.id, stream.ownerTaskId ? "owner" : "coordinator");
     let mrr;
     try { mrr = await gateFor(stream, "mrr"); } catch (error) { mrr = { gate: { ready: false, notes: [], reasons: [error.message] } }; }
+    // A missing or broken config must not stop agents from orienting.
+    let plans;
+    try { plans = describePlans(); } catch (error) { plans = error.message; }
     const reviews = await store.reviews(stream.id);
-    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nTodos: ${describeTracker(trackerFor(project), project.id)}\nSession name: ${identity.key} (fallback ${identity.fallback}; AF-save if AF is installed)\nMRR: ${printMrr(mrr.gate)}\n${(stream.decisions || []).length ? `Decisions: ${stream.decisions.join(" | ")}\n` : ""}${scoreLines(reviews, stream, state.head).join("\n")}\nReviews never require permission. Do not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; earlier seat reviews carry forward, and the user asks for final MRR. Product and domain questions go to the user; do not infer them from schema or code.\n`);
+    return process.stdout.write(`Repository: ${project.label} (${project.id})\nCheckout: ${state.branch} @ ${state.head.slice(0, 12)}${state.dirty ? " · dirty" : ""}\nWorkstream: ${stream.id} — ${stream.title}\nStatus: ${stream.status}\nClaim: ${stream.claim}\nNext: ${stream.next || "not recorded"}\nTodos: ${describeTracker(trackerFor(project), project.id)}\nPlans: ${plans}\nSession name: ${identity.key} (fallback ${identity.fallback}; AF-save if AF is installed)\nMRR: ${printMrr(mrr.gate)}\n${(stream.decisions || []).length ? `Decisions: ${stream.decisions.join(" | ")}\n` : ""}${scoreLines(reviews, stream, state.head).join("\n")}\nReviews never require permission. Do not auto-open a pull request. After pre-open MRR is READY, you may open one or leave that to the user. Do not commission MRR because HEAD moved; earlier seat reviews carry forward, and the user asks for final MRR. Product and domain questions go to the user; do not infer them from schema or code.\n`);
   }
   if (command === "update") {
     const stream = await store.workstream(requireValue(positional[0], "Specify a workstream ID"));
@@ -472,6 +475,7 @@ async function main() {
       seat.models.forEach((model, index) => lines.push(`  ${index === 0 ? "default" : "also valid"}: ${model.id} via ${model.launch}${model.cliModel !== model.id ? ` (${model.cliModel})` : ""}`));
     }
     lines.push("A seat accepts only the models listed for it; the first is the default. Edit the config file to change them; no code change is needed.");
+    lines.push(`Plans: ${describePlans()}`);
     return process.stdout.write(`${lines.join("\n")}\n`);
   }
 

@@ -57,10 +57,23 @@ function parseModel(entry, label) {
   return { id, launch: entry.launch, cliModel: entry.cliModel?.trim() || id };
 }
 
+// Where BRR plans live. Field Report stores only this pointer; the agent reads
+// and writes the plan there through its host's MCP connector.
+export const PLAN_HOMES = ["repo", "linear", "notion", "ref"];
+
+function parsePlans(raw) {
+  if (raw == null) return { home: "repo", where: null };
+  onlyKeys(object(raw, "plans"), ["home", "where"], "plans");
+  if (!PLAN_HOMES.includes(raw.home)) fail(`plans.home must be one of ${PLAN_HOMES.join(", ")}`);
+  if (raw.where != null && (typeof raw.where !== "string" || !raw.where.trim() || /[\u0000-\u001f\u007f]/.test(raw.where))) fail("plans.where must be a single line of text");
+  if (raw.home === "repo" && raw.where != null) fail("plans.where does not apply to repo; plans go in docs/plans/");
+  return { home: raw.home, where: raw.where?.trim() || null };
+}
+
 export function parseSeatConfig(raw) {
   object(raw, "the config");
   if (raw.schemaVersion !== 1) fail("schemaVersion must be 1");
-  onlyKeys(raw, ["schemaVersion", "seats"], "the config");
+  onlyKeys(raw, ["schemaVersion", "seats", "plans"], "the config");
   const rawSeats = object(raw.seats, "seats");
   const unknown = Object.keys(rawSeats).find((role) => !REVIEW_ROLES.includes(role));
   if (unknown) fail(`seats has unknown seat ${unknown}; seats are ${REVIEW_ROLES.join(", ")}`);
@@ -82,7 +95,7 @@ export function parseSeatConfig(raw) {
     }
     seats[role] = { role, models };
   }
-  return { seats };
+  return { seats, plans: parsePlans(raw.plans) };
 }
 
 // Tests can inject a parsed config; the CLI reads the file once per process.
@@ -118,4 +131,11 @@ export function launchEntry(model) {
 
 export function modelsLaunchedBy(launch) {
   return REVIEW_ROLES.flatMap((role) => seatFor(role).models).filter((entry) => entry.launch === launch);
+}
+
+export function describePlans() {
+  const { home, where } = seatConfig().plans;
+  if (home === "repo") return "docs/plans/ in this repository";
+  const name = { linear: "Linear", notion: "Notion", ref: "Ref" }[home];
+  return `${name}${where ? ` (${where})` : ""}, through this host's ${name} MCP connector`;
 }
