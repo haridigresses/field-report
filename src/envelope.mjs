@@ -85,21 +85,9 @@ export function normalizeReview(input, delegation, binding) {
     if (Object.hasOwn(next, key) && next[key] !== value) throw new Error(`Review ${key} conflicts with its delegation binding`);
     next[key] = value;
   }
-  delete next.reconciliationOnly;
-  delete next.jobRole;
   delete next.legacy;
-  delete next.staleAtRecord;
-  if (delegation.reconciliationOnly === true) next.reconciliationOnly = true;
-  if (delegation.jobRole) next.jobRole = delegation.jobRole;
   if (Object.hasOwn(next, "findings")) next.findings = stringList(next.findings, "findings");
   if (Object.hasOwn(next, "unresolved")) next.unresolved = stringList(next.unresolved, "unresolved");
-  if (Object.hasOwn(next, "reconciled")) {
-    if (!Array.isArray(next.reconciled)) throw new Error("reconciled must be an array of finding reconciliations");
-    next.reconciled = next.reconciled.map((entry) => {
-      if (!isObject(entry) || !Object.hasOwn(entry, "id")) return entry;
-      if (Object.hasOwn(entry, "findingId") && entry.findingId !== entry.id) throw new Error("Reconciliation id conflicts with findingId");
-      return { ...entry, findingId: entry.id };
-    });
-  }
+  if (Object.hasOwn(next, "questions")) next.questions = stringList(next.questions, "questions");
   return next;
 }

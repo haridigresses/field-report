@@ -144,7 +144,7 @@ test("mrr briefs seat Astra, Grok, and Fable and isolate reviewers from AF", asy
   assert.match(fable5.execution.launch, /--model claude-fable-5 /);
 });
 
-test("worktree persona and court launches use the reviewed checkout instead of the configured project root", async () => {
+test("worktree persona launches use the reviewed checkout instead of the configured project root", async () => {
   const { root, repo, state } = await fixture();
   const worktree = path.join(root, "review worktree");
   await exec("git", ["worktree", "add", "-b", "feature", worktree], { cwd: repo });
@@ -161,19 +161,6 @@ test("worktree persona and court launches use the reviewed checkout instead of t
     assert.ok(brief.execution.launch.includes(`cd "${worktreeRoot}"`), brief.execution.launch);
     assert.ok(!brief.execution.launch.includes(`cd "${repo}"`), brief.execution.launch);
   }
-  await run(["review", "bind", "outcome", "--delegation", deep.delegation.id, "--task-id", "worktree-astra"], worktree, state);
-  const file = path.join(root, "review.json");
-  await writeFile(file, JSON.stringify({
-    reviewComplete: true, independent: true, delegationId: deep.delegation.id, reviewerTaskId: "worktree-astra",
-    claim: deep.delegation.claim, kind: "mrr", role: "deep-code-review",
-    head: deep.delegation.head, baseHead: deep.delegation.baseHead,
-    provider: "openai", model: "gpt-6-astra", route: "cli", verdict: "NO_GO", findings: ["Review worktree finding"], unresolved: [],
-    summary: "Reviewed", ...scores("NO_GO")
-  }));
-  await run(["review", "record", "outcome", "--file", file], worktree, state);
-  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "deep-code-review", "--model", "claude-fable-5"], worktree, state));
-  assert.ok(court.execution.launch.includes(`cd "${worktreeRoot}"`), court.execution.launch);
-  assert.ok(!court.execution.launch.includes(`cd "${repo}"`), court.execution.launch);
 });
 
 test("version identifies runtime source and revision independently of the current checkout", async () => {
@@ -196,7 +183,7 @@ test("mrr native route isolates a fresh subagent", async () => {
   assert.match(nativeFable.execution.launch, /fresh native claude-opus-5-5 subagent/);
 });
 
-test("deep mrr briefs carry outstanding findings; crr findings do not", async () => {
+test("a seat rerun after a fix carries that seat's own open findings", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
   const structural = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
@@ -210,25 +197,19 @@ test("deep mrr briefs carry outstanding findings; crr findings do not", async ()
   };
   const file = path.join(repo, "review.json");
   await writeFile(file, `\`\`\`json\n${JSON.stringify(review)}\n\`\`\``);
-  const recorded = await run(["review", "record", "outcome", "--file", file], repo, state);
-  assert.match(recorded, /Assigned finding IDs: F1/);
-  const fresh = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
-  assert.equal(fresh.delegation.outstanding, undefined);
+  assert.match(await run(["review", "record", "outcome", "--file", file], repo, state), /Assigned finding IDs: F1/);
+  const fable = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
+  assert.equal(fable.delegation.prior, undefined);
+  await writeFile(path.join(repo, "README.md"), "fixed\n");
+  await exec("git", ["commit", "-am", "fix"], { cwd: repo });
+  const rerun = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
+  assert.deepEqual(rerun.delegation.prior, [{ id: "F1", text: "Finding one" }]);
+  assert.match(rerun.prompt, /This seat's open findings from an earlier head[\s\S]*- F1: Finding one/);
   const deep = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
-  assert.equal(deep.delegation.outstanding, undefined);
-  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "structural-challenge", "--model", "gpt-6-astra"], repo, state));
-  assert.equal(court.delegation.role, "reconciliation");
-  assert.equal(court.delegation.jobRole, "structural-challenge");
-  assert.deepEqual(court.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
-  assert.match(court.prompt, /disposition=rejected when inapplicable/);
-  await writeFile(path.join(repo, "README.md"), "older-head\n");
-  await exec("git", ["add", "README.md"], { cwd: repo });
-  await exec("git", ["commit", "-m", "move head"], { cwd: repo });
-  const deepLater = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state));
-  assert.deepEqual(deepLater.delegation.outstanding, [{ id: "F1", category: "finding", text: "Finding one" }]);
+  assert.equal(deep.delegation.prior, undefined);
 });
 
-test("a completed envelope occupies the job; fail and shopping are not escapes", async () => {
+test("a completed review settles its seat on that head; fail and shopping are not escapes", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
   const unused = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
@@ -247,11 +228,11 @@ test("a completed envelope occupies the job; fail and shopping are not escapes",
   const file = path.join(repo, "review.json");
   await writeFile(file, JSON.stringify(review));
   await run(["review", "record", "outcome", "--file", file], repo, state);
-  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "grok-4.6-high"], repo, state), /occupied by grok-4.6 NO_GO/);
-  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /not a finding-free GO/);
+  await assert.rejects(run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge", "--model", "grok-4.6-high"], repo, state), /already reviewed this head \(NO_GO\)/);
+  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /structural-challenge NO_GO on this head/);
   const status = await run(["review", "status", "outcome", "--kind", "mrr"], repo, state);
   assert.match(status, /BLOCKED/);
-  assert.match(status, /structural-challenge is not a finding-free GO/);
+  assert.match(status, /F1: Unsound boundary/);
 });
 
 test("coordinator workflow keeps user-owned collaborators and the thin loop", async () => {
@@ -260,12 +241,12 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(output, /When the user explicitly asks for an agent they will work with directly, create a user-owned task/);
   const shared = await run(["workflow"], root, path.join(root, "state"));
   assert.match(shared, /CRR against the exact staged tree/);
-  assert.match(shared, /three finding-free persona GOs/i);
+  assert.match(shared, /every seat's deciding review is a GO/);
   assert.match(shared, /Reviews never require permission/);
-  assert.match(shared, /occupying envelope/);
-  assert.match(shared, /fr review adjudicate/);
+  assert.match(shared, /fr review accept/);
+  assert.match(shared, /fr decide/);
+  assert.match(shared, /rerun only the seat that said NO_GO/);
   assert.match(shared, /does not record provider failure/);
-  assert.doesNotMatch(shared, /two finding-free persona GOs/i);
   assert.match(shared, /Do not auto-open a pull request/);
   assert.match(shared, /Reviewers must not use MCP servers or AF/);
   assert.match(shared, /empty user-level MCP file/);
@@ -282,7 +263,7 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   assert.match(shared, /Those questions never go to a reviewer model/);
   assert.match(shared, /Do not dispatch a worker to settle a product or domain question/);
 
-  assert.match(shared, /fr review waive/);
+  assert.doesNotMatch(shared, /fr review (waive|adjudicate)/);
   assert.match(shared, /one-line next action/);
   assert.match(shared, /green checkout hook is not CRR/);
   assert.match(shared, /empty GitHub check rollup is not evidence that CI ran/);
@@ -294,7 +275,9 @@ test("coordinator workflow keeps user-owned collaborators and the thin loop", as
   const help = await run(["help"], root, path.join(root, "state"));
   assert.doesNotMatch(help, /fr question|fr catchup|fr publish|fr delegate/);
   assert.match(help, /fr machines invoke/);
-  assert.match(help, /fr review adjudicate/);
+  assert.match(help, /fr review accept/);
+  assert.match(help, /fr decide/);
+  assert.doesNotMatch(help, /fr review (waive|adjudicate)/);
   assert.doesNotMatch(help, /fr review fail/);
   assert.doesNotMatch(help, /fr machines \[status\|worker\]|fr machines status|fr machines worker/);
 });
@@ -323,87 +306,54 @@ async function recordMrrLane(repo, state, role, taskId, stream = "outcome") {
   return brief;
 }
 
-test("a Sol NO_GO can be recorded, courted, and rerun with the same model", async () => {
+test("the user's acceptance of a finding unblocks its seat and is printed", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
-  const target = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review"], repo, state)).delegation;
-  const { id, event, createdAt, ...fields } = target;
-  const old = await createStore(state).addDelegation("outcome", { ...fields, model: "gpt-5.6-sol" });
-  const record = async (d, task, extra) => {
-    await run(["review", "bind", "outcome", "--delegation", d.id, "--task-id", task], repo, state);
-    const file = path.join(state, `${task}.json`);
-    await writeFile(file, JSON.stringify({
-      ...d, delegationId: d.id, reviewerTaskId: task, reviewComplete: true, independent: true,
-      provider: d.model === "grok-4.6" ? "cursor" : "openai", findings: [], unresolved: [],
-      summary: "Independent evidence", ...scores(), ...extra
-    }));
-    await run(["review", "record", "outcome", "--file", file], repo, state);
-  };
-  await record(old, "old-sol", { verdict: "NO_GO", findings: ["Incorrect finding"] });
-  const court = JSON.parse(await run(["review", "adjudicate", "outcome", "--role", "deep-code-review", "--model", "grok-4.6"], repo, state));
-  await record(court.delegation, "grok-court", {
-    verdict: "GO", reconciled: [{ findingId: "F1", disposition: "rejected", rationale: "Independent evidence disproves the finding." }]
-  });
-  const rerun = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "deep-code-review", "--model", "gpt-5.6-sol", "--route", "native"], repo, state));
-  assert.equal(rerun.delegation.model, "gpt-5.6-sol");
-  assert.deepEqual(rerun.delegation.seatModels, ["gpt-6-astra", "gpt-5.6-sol"]);
-  await record(rerun.delegation, "sol-rerun", { verdict: "GO" });
-  await recordMrrLane(repo, state, "structural-challenge", "grok-persona");
-  await recordMrrLane(repo, state, "fable-challenge", "fable-persona");
-  assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
+  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "structural-challenge"], repo, state));
+  await run(["review", "bind", "outcome", "--delegation", brief.delegation.id, "--task-id", "grok-run"], repo, state);
+  const file = path.join(state, "grok.json");
+  await writeFile(file, JSON.stringify({
+    reviewComplete: true, independent: true, delegationId: brief.delegation.id, provider: "cursor", verdict: "NO_GO",
+    findings: ["Unlikely edge that fails safe"], unresolved: [], questions: ["Should the edge be handled at all?"], summary: "Reviewed", ...scores("NO_GO")
+  }));
+  await run(["review", "record", "outcome", "--file", file], repo, state);
+  await recordMrrLane(repo, state, "deep-code-review", "sol-run");
+  await recordMrrLane(repo, state, "fable-challenge", "fable-run");
+  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /F1: Unlikely edge/);
+  assert.match(await run(["review", "status", "outcome", "--kind", "mrr"], repo, state), /Questions for the user: Should the edge be handled at all\?/);
+  await assert.rejects(run(["review", "accept", "outcome", "--finding", "F9", "--reason", "x"], repo, state), /Unknown MRR finding: F9/);
+  await assert.rejects(run(["review", "accept", "outcome", "--finding", "F1"], repo, state), /Specify --reason/);
+  assert.match(await run(["review", "accept", "outcome", "--finding", "F1", "--reason", "Fails safe; not worth a fix"], repo, state), /Recorded acceptance of F1 \(structural-challenge\) by owner-1/);
+  const open = await run(["gate", "open", "outcome"], repo, state);
+  assert.match(open, /READY/);
+  assert.match(open, /structural-challenge F1 accepted by owner-1: Fails safe; not worth a fix/);
 });
 
-test("a skip without prior MRR is rejected", async () => {
+test("user decisions travel with every review brief", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
-  await assert.rejects(run(["review", "waive", "outcome", "--reason", "Not substantive"], repo, state), /prior finding-free MRR/);
+  assert.match(await run(["decide", "outcome", "Three labs is only a default"], repo, state), /Recorded decision 1/);
+  await assert.rejects(run(["decide", "outcome"], repo, state), /Specify the decision text/);
+  const brief = JSON.parse(await run(["review", "brief", "outcome", "--kind", "mrr", "--role", "fable-challenge"], repo, state));
+  assert.match(brief.prompt, /User decisions\. These are settled product choices; do not re-litigate them:\n- Three labs is only a default/);
+  assert.match(await run(["context", "outcome"], repo, state), /Decisions: Three labs is only a default/);
 });
 
-test("a skip without a recorded actor is rejected", async () => {
-  const previous = process.env.CODEX_THREAD_ID;
-  process.env.CODEX_THREAD_ID = "ambient-thread";
-  try {
-    const { repo, state } = await fixture();
-    await featureBranch({ repo, state });
-    await run(["create", "unbound", "--project", "sample", "--title", "Unbound", "--outcome", "Ship bounded change", "--branch", "feature"], repo, state);
-    await recordMrrLane(repo, state, "deep-code-review", "sol-unbound", "unbound");
-    await recordMrrLane(repo, state, "structural-challenge", "grok-unbound", "unbound");
-    await recordMrrLane(repo, state, "fable-challenge", "fable-unbound", "unbound");
-    await writeFile(path.join(repo, "README.md"), "churn-unbound\n");
-    await exec("git", ["add", "README.md"], { cwd: repo });
-    await exec("git", ["commit", "-m", "churn-unbound"], { cwd: repo });
-    await assert.rejects(run(["review", "waive", "unbound", "--reason", "Not a substantive authority change"], repo, state), /recorded actor/);
-  } finally {
-    if (previous == null) delete process.env.CODEX_THREAD_ID;
-    else process.env.CODEX_THREAD_ID = previous;
-  }
-});
-
-test("later commits are churn until the user skips or asks for final MRR", async () => {
+test("later commits carry earlier seat reviews forward and print the unreviewed delta", async () => {
   const { repo, state } = await fixture();
   await featureBranch({ repo, state });
   await recordMrrLane(repo, state, "deep-code-review", "sol-run");
   await recordMrrLane(repo, state, "structural-challenge", "grok-run");
   await recordMrrLane(repo, state, "fable-challenge", "fable-run");
   const ready = await run(["context", "outcome"], repo, state);
-  assert.match(ready, /READY on this HEAD/);
+  assert.match(ready, /MRR: READY on this HEAD\n/);
   assert.match(ready, /readiness 90%/);
-  assert.match(ready, /structural risk 10%/);
   await writeFile(path.join(repo, "README.md"), "churn\n");
-  await exec("git", ["add", "README.md"], { cwd: repo });
-  await exec("git", ["commit", "-m", "churn"], { cwd: repo });
-  const churn = await run(["context", "outcome"], repo, state);
-  assert.match(churn, /CRR until you ask for final MRR/);
-  assert.match(churn, /not this HEAD/);
-  assert.match(churn, /readiness 90%/);
-  assert.match(churn, /structural risk 10%/);
-  assert.match(await run(["review", "status", "outcome", "--kind", "mrr"], repo, state), /Merge-ready: last MRR/);
-  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /missing deep-code-review review|BLOCKED/);
-  await assert.rejects(run(["gate", "bots", "outcome"], repo, state), /CRR until you ask for final MRR/);
-  await assert.rejects(run(["review", "waive", "outcome"], repo, state), /Specify --reason/);
-  assert.match(await run(["review", "waive", "outcome", "--reason", "Not a substantive authority change"], repo, state), /actor owner-1/);
-  await assert.rejects(run(["review", "waive", "outcome", "--reason", "duplicate"], repo, state), /already recorded for this exact head/);
-  assert.match(await run(["context", "outcome"], repo, state), /merge-ready via skip/);
+  await exec("git", ["commit", "-am", "churn"], { cwd: repo });
+  const carried = await run(["context", "outcome"], repo, state);
+  assert.match(carried, /MRR: READY on this HEAD; deep-code-review: GO at [0-9a-f]{12} carried; [0-9a-f]{12}\.\.[0-9a-f]{12} not reviewed by this seat/);
+  assert.match(carried, /not this HEAD/);
+  assert.match(await run(["gate", "open", "outcome"], repo, state), /READY/);
   await assert.rejects(run(["gate", "bots", "outcome"], repo, state), /GitHub lookup failed:/);
 });
 
@@ -427,7 +377,7 @@ test("raw review recording preserves source and limitations without owner identi
   assert.equal(recorded.reviewerTaskId, "original-fable-run");
   assert.equal(recorded.verdict, "NO_GO");
   assert.deepEqual(recorded.unresolved, raw.unresolved);
-  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /not a finding-free GO/);
+  await assert.rejects(run(["gate", "open", "outcome"], repo, state), /fable-challenge NO_GO on this head/);
 });
 
 test("record refuses conflicting provenance, pass, and lossy evidence instead of manufacturing GO", async () => {

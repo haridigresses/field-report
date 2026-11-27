@@ -7,9 +7,9 @@ Agent Fixes, when installed, owns sessions and names. Each project's tracker —
 ## Core loop
 
 - When AF is installed, coordinators and owners name themselves (`fr identity`, then AF save); without AF they skip naming. The user does not name agents. Reviewers stay unnamed and off AF.
-- Before you run `git commit` on a commit you intend to keep, stop and run CRR (1–2 subagents, local models first, scores required). A green checkout hook is not CRR. WIP or amend is owner judgment. Findings are for the owner on that staged tree, not a durable ledger. CRR records still persist; they do not enter the SHA-by-SHA finding ledger. `fr context` always prints the latest scores and structural risk (higher = more risk), even when the gate is blocked.
+- Before you run `git commit` on a commit you intend to keep, stop and run CRR (1–2 subagents, local models first, scores required). A green checkout hook is not CRR. WIP or amend is owner judgment. Findings are for the owner on that staged tree. `fr context` always prints the latest scores and structural risk (higher = more risk), even when the gate is blocked.
 - Keep a one-line next action with `fr update <id> --next`. It is a sticky note, not a todo ledger.
-- MRR (three seats whose valid models come from your config file; see [Seats](#seats)) before a PR is opened. READY is exact head + exact base + three finding-free GOs from distinct reviewers, each by a model its seat listed when briefed. A completed envelope occupies the job. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules. A skip is `fr review waive` after explicit agreement; it records a nonblank actor and dies if HEAD moves. Durable findings live on MRR.
+- MRR (three seats whose valid models come from your config file; see [Seats](#seats)) before a PR is opened. Each seat is decided by its review of the commit nearest HEAD (HEAD or an ancestor); READY means every seat's deciding review is a GO, or a NO_GO whose findings the user accepted (`fr review accept`). Earlier GOs carry forward and the gate prints what each seat has not seen. After a fix, rerun only the seat that said NO_GO. A seat reviews each exact head once. Reviewers return unsettled product choices as questions; record the user's answers with `fr decide`. The full rules live in `fr workflow`. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules.
 - Do not auto-open a PR. After `fr gate open`, the owner or the user may open one.
 - After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission. An empty GitHub check rollup keeps that gate blocked.
 - Borderline CI flake vs real: consult one seated model (`fr seats`) once. Not a hard gate.
@@ -26,7 +26,7 @@ Canonical mutable state lives outside the source checkout:
   workstreams/
   reviews/
   delegations/
-  waivers/
+  dispositions/
   events/
   projection.json
 ```
@@ -114,8 +114,9 @@ fr gate open aon-example
 # Owner or user may now open a pull request. Field Report does not.
 # Feature work and bot cycles use CRR. Do not re-run MRR because HEAD moved.
 
-# When the user asks for final MRR, commission the panel on the current HEAD — or, only after they agree to skip, record:
-# fr review waive aon-example --reason "<why the delta is not substantive>"
+# Earlier seat reviews carry forward. When the user asks for final MRR, rerun the seats on the current HEAD.
+# Only when the user explicitly accepts a finding:
+# fr review accept aon-example --finding F3 --reason "<the user's reason>"
 
 fr gate bots aon-example
 ```
