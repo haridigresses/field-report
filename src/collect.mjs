@@ -4,7 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { createStore } from "./store.mjs";
 import { botsReasons, evaluateGate } from "./policy.mjs";
-import { ancestorHeads } from "./repository.mjs";
+import { ancestorHeads, reviewThreads } from "./repository.mjs";
 
 const exec = promisify(execFile);
 const store = createStore();
@@ -74,7 +74,7 @@ async function mrrStatus(stream, projectView, reviews, dispositions, preOpenTarg
   return { ...gate, phase: gate.ready ? "ready" : "blocked" };
 }
 
-function botsStatus(stream, projectView, mrr) {
+async function botsStatus(stream, projectView, mrr) {
   const pr = projectView?.pullRequests.find((item) => stream.pullRequests.includes(item.number) || item.headRefName === stream.branch);
   if (!pr) return { ready: false, reasons: ["no current pull request"] };
   const checkout = projectView.worktrees.find((item) => item.branch === stream.branch);
@@ -82,7 +82,10 @@ function botsStatus(stream, projectView, mrr) {
   if (checkout.head !== pr.headRefOid) return { ready: false, reasons: ["workstream checkout head does not match the pull request head"] };
   if (checkout.dirty == null) return { ready: false, reasons: ["workstream checkout cleanliness could not be observed"] };
   const target = { head: pr.headRefOid, branch: stream.branch };
-  const ci = botsReasons({ project: projectView, target, checkout, pr });
+  // Only the workstream's own PR needs its threads; botsReasons fails closed without them.
+  let threads;
+  try { threads = await reviewThreads(projectView, pr.number, projectView.repoPath); } catch {}
+  const ci = botsReasons({ project: projectView, target, checkout, pr: { ...pr, reviewThreads: threads } });
   const observed = [...(mrr.reasons || []), ...ci];
   return { ready: mrr.ready && observed.length === 0, reasons: [...new Set(observed)] };
 }
@@ -94,7 +97,7 @@ export async function collect(output = process.env.FIELD_REPORT_PROJECTION || pa
     const projectView = projects.find((project) => project.id === stream.project);
     const preOpenTarget = await checkoutMrrTarget(stream, projectView);
     const mrr = await mrrStatus(stream, projectView, reviews, dispositions, preOpenTarget);
-    const bots = botsStatus(stream, projectView, mrr);
+    const bots = await botsStatus(stream, projectView, mrr);
     return { ...stream, reviews, delegations: delegationState(delegations, reviews), dispositions, events: (await store.events(stream.id)).slice(-20).reverse(), projectView, mrr, bots };
   }));
   const projection = { schemaVersion: 6, generatedAt: new Date().toISOString(), projects, workstreams };

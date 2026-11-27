@@ -271,7 +271,7 @@ test("bots gate rejects branch, base, and unsuccessful checks without draft cere
 test("an already-ready PR with matching evidence is fine", () => {
   const reasons = botsReasons({
     project: { baseBranch: "main" }, checkout: { dirty: false, head },
-    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [{ conclusion: "SUCCESS", status: "COMPLETED" }] },
+    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [{ conclusion: "SUCCESS", status: "COMPLETED" }], reviewThreads: [] },
     target: { head, branch: "feature" }
   });
   assert.deepEqual(reasons, []);
@@ -282,7 +282,7 @@ test("open and bots gates block when checkout HEAD does not match the reviewed h
   assert.match(openReasons({ checkout: { dirty: false, head: moved }, target: { head } }).join(" "), /does not match reviewed head/);
   const reasons = botsReasons({
     project: { baseBranch: "main" }, checkout: { dirty: false, head: moved },
-    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [{ conclusion: "SUCCESS", status: "COMPLETED" }] },
+    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [{ conclusion: "SUCCESS", status: "COMPLETED" }], reviewThreads: [] },
     target: { head, branch: "feature" }
   });
   assert.match(reasons.join(" "), /does not match reviewed head/);
@@ -291,13 +291,13 @@ test("open and bots gates block when checkout HEAD does not match the reviewed h
 test("bots gate blocks an empty GitHub check rollup", () => {
   const empty = botsReasons({
     project: { baseBranch: "main" }, checkout: { dirty: false, head },
-    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [] },
+    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [], reviewThreads: [] },
     target: { head, branch: "feature" }
   });
   assert.deepEqual(empty, [NO_GITHUB_CHECKS_REASON]);
   const missing = botsReasons({
     project: { baseBranch: "main" }, checkout: { dirty: false, head },
-    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main" },
+    pr: { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", reviewThreads: [] },
     target: { head, branch: "feature" }
   });
   assert.deepEqual(missing, [NO_GITHUB_CHECKS_REASON]);
@@ -337,4 +337,17 @@ test("a verdict must match its findings; questions are recorded and reconciliati
   assert.deepEqual(recorded.questions, ["Should old reviews be discarded?"]);
   assert.equal("reconciled" in recorded, false);
   assert.throws(() => validateReview(mrrEnvelope(d, "sol-bad-q", { questions: [""] }), d), /questions must be a nonblank string array/);
+});
+
+test("bots gate blocks unresolved review threads from bots and humans", () => {
+  const pr = { number: 7, state: "OPEN", isDraft: false, headRefOid: head, headRefName: "feature", baseRefName: "main", statusCheckRollup: [{ conclusion: "SUCCESS", status: "COMPLETED" }] };
+  const base = { project: { baseBranch: "main" }, checkout: { dirty: false, head }, target: { head, branch: "feature" } };
+  const reasons = botsReasons({ ...base, pr: { ...pr, reviewThreads: [
+    { resolved: false, path: "src/doctor.mjs", line: 43, author: "chatgpt-codex-connector", body: "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow)</sub></sub>  Check the wrapper**\n\nDetails" },
+    { resolved: true, path: "README.md", line: 5, author: "hari", body: "done" }
+  ] } });
+  assert.equal(reasons.length, 1);
+  assert.match(reasons[0], /^1 unresolved review thread; fix each or reply why not; resolve bot threads, and leave a person's thread for them to resolve: src\/doctor.mjs:43 \(chatgpt-codex-connector\) Check the wrapper$/);
+  assert.deepEqual(botsReasons({ ...base, pr: { ...pr, reviewThreads: [{ resolved: true, path: "a", line: 1, author: "x", body: "y" }] } }), []);
+  assert.deepEqual(botsReasons({ ...base, pr }), ["review threads were not checked"]);
 });

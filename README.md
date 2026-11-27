@@ -11,7 +11,7 @@ Agent Fixes, when installed, owns sessions and names. Each project's tracker —
 - Keep a one-line next action with `fr update <id> --next`. It is a sticky note, not a todo ledger.
 - MRR (three seats whose valid models come from your config file; see [Seats](#seats)) before a PR is opened. Each seat is decided by its review of the commit nearest HEAD (HEAD or an ancestor); READY means every seat's deciding review is a GO, or a NO_GO whose findings the user accepted (`fr review accept`). Earlier GOs carry forward and the gate prints what each seat has not seen. After a fix, rerun only the seat that said NO_GO. A seat reviews each exact head once. Reviewers return unsettled product choices as questions; record the user's answers with `fr decide`. The full rules live in `fr workflow`. Reviews never require permission. After that, CRR through feature work and bot cycles. Final MRR only when the user asks. The agent may argue that the delta is not substantive enough to re-run the panel (diff size is a proxy for sensitivity, not the test). The user's word always rules.
 - Do not auto-open a PR. After `fr gate open`, the owner or the user may open one.
-- After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission. An empty GitHub check rollup keeps that gate blocked.
+- After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission. An empty GitHub check rollup or an unresolved review thread (bot or human) keeps that gate blocked.
 - Borderline CI flake vs real: consult one seated model (`fr seats`) once. Not a hard gate.
 - Field Report never merges.
 

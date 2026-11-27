@@ -268,7 +268,18 @@ export function botsReasons({ project, target, checkout, pr }) {
   if (!checks.length) reasons.push(NO_GITHUB_CHECKS_REASON);
   if (checks.some((check) => check.conclusion && !accepted.has(check.conclusion))) reasons.push("GitHub checks include an unsuccessful conclusion");
   if (checks.some((check) => !check.conclusion && !accepted.has(check.state))) reasons.push("GitHub checks are incomplete or unsuccessful");
+  // Each review thread, bot or human, is fixed or answered, then resolved.
+  // Threads that were never fetched are not evidence that none are open.
+  if (!Array.isArray(pr.reviewThreads)) { reasons.push("review threads were not checked"); return reasons; }
+  const open = pr.reviewThreads.filter((thread) => !thread.resolved);
+  if (open.length) reasons.push(`${open.length} unresolved review thread${open.length === 1 ? "" : "s"}; fix each or reply why not; resolve bot threads, and leave a person's thread for them to resolve: ${open.map(threadLabel).join(" | ")}`);
   return reasons;
+}
+
+function threadLabel(thread) {
+  // Bot comments lead with badges and markup; keep the first readable words.
+  const title = thread.body.replace(/<[^>]*>|!\[[^\]]*\]\([^)]*\)|[*_`#]/g, "").split("\n").map((line) => line.trim()).find(Boolean) || "";
+  return `${thread.path}${thread.line ? `:${thread.line}` : ""} (${thread.author}) ${title.slice(0, 80)}`;
 }
 
 export function workstreamBotsReasons({ workstream, workstreams, pr }) {
