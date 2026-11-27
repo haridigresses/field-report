@@ -20,9 +20,13 @@ button:disabled { opacity:.35; cursor:default; }
 table { width:100%; border-collapse:collapse; margin:8px 0 10px; } th { text-align:left; color:var(--muted); font-size:11px; font-weight:400; text-transform:uppercase; padding:4px 6px; } td { padding:4px 6px; border-top:1px solid var(--line); } td.actions { white-space:nowrap; text-align:right; }
 input, select { font:inherit; color:inherit; background:#fbf9f4; border:1px solid var(--line); padding:6px 8px; width:100%; } input.wide { max-width:560px; }
 #status { min-height:1.4em; }
-.plans { display:flex; gap:16px; max-width:720px; } .plans label { display:grid; gap:4px; color:var(--muted); font-size:12px; flex:1; } .plans label:first-child { flex:0 0 220px; } input:disabled { opacity:.5; }
+input:disabled { opacity:.5; }
 .intro { max-width:760px; margin:18px 0 6px; } .intro p { margin:0 0 10px; }
 .launchers { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:12px 0 6px; } .launchers dt { color:var(--muted); font-size:11px; text-transform:uppercase; } .launchers dd { margin:3px 0 0; }
 @media(max-width:800px){ .launchers{grid-template-columns:1fr} }
 .project { padding:12px 0; border-top:1px solid var(--line); } .project-head { display:flex; gap:14px; align-items:baseline; flex-wrap:wrap; } .project-head strong { font-family:Georgia,serif; font-size:16px; font-weight:400; } .project-fields { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin:8px 0; } .project-fields label { display:grid; gap:3px; color:var(--muted); font-size:12px; } .project-actions { display:flex; gap:8px; } #project-status { min-height:1.4em; }
 @media(max-width:800px){ .project-fields{grid-template-columns:1fr 1fr} }
+.tabs { display:flex; gap:0; margin:18px 0 8px; border-bottom:1px solid var(--line); } .tabs a { padding:8px 16px; text-decoration:none; color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; } .tabs a[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--ink); }
+.plans-fields { grid-template-columns:1fr 2fr; max-width:60%; }
+@media(max-width:800px){ .plans-fields{grid-template-columns:1fr; max-width:none} }
+[hidden] { display:none !important; }

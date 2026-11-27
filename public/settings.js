@@ -1,13 +1,19 @@
 const seatsEl = document.querySelector("#seats");
-const homeEl = document.querySelector("#plan-home");
-const referenceEl = document.querySelector("#plan-reference");
+// Tabs: #models (default) and #projects.
+function showTab() {
+  const active = location.hash === "#projects" ? "projects" : "models";
+  for (const tab of document.querySelectorAll(".tab")) tab.hidden = tab.id !== `tab-${active}`;
+  for (const link of document.querySelectorAll(".tabs a")) link.setAttribute("aria-selected", String(link.dataset.tab === active));
+}
+addEventListener("hashchange", showTab);
+showTab();
+
 const HOME_LABELS = { repo: "Repository (docs/plans/)", linear: "Linear", notion: "Notion", ref: "Ref" };
 const statusEl = document.querySelector("#status");
 const sourceEl = document.querySelector("#source");
 let roles = [];
 let purposes = {};
 let launchers = [];
-let planHomes = [];
 let seats = {};
 
 const escape = (value = "") => String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
@@ -20,23 +26,11 @@ function load(data) {
   launchers = data.launchers || launchers;
   const raw = data.raw || { seats: {} };
   seats = Object.fromEntries(roles.map((role) => [role, (raw.seats?.[role]?.models || []).map((model) => ({ id: model.id || "", launch: model.launch || launchers[0], cliModel: model.cliModel || "" }))]));
-  planHomes = data.planHomes || planHomes;
-  homeEl.innerHTML = planHomes.map((home) => `<option value="${escape(home)}">${escape(HOME_LABELS[home] || home)}</option>`).join("");
-  homeEl.value = raw.plans?.home || "repo";
-  referenceEl.value = raw.plans?.reference || "";
-  syncReference();
   sourceEl.textContent = data.exists ? `Editing ${data.path}` : `No config at ${data.path} yet. These are the shipped defaults; Save creates the file.`;
   render();
   if (data.error) status(`The file on disk has a problem: ${data.error}`, "warn");
 }
 
-// A repository plan has no reference: it always goes in docs/plans/.
-function syncReference() {
-  const repo = homeEl.value === "repo";
-  referenceEl.disabled = repo;
-  if (repo) referenceEl.value = "";
-}
-homeEl.addEventListener("change", syncReference);
 
 function render() {
   seatsEl.innerHTML = roles.map((role) => `
@@ -115,7 +109,6 @@ function draft() {
       return entry;
     }) };
   }
-  if (homeEl.value !== "repo") raw.plans = referenceEl.value.trim() ? { home: homeEl.value, reference: referenceEl.value.trim() } : { home: homeEl.value };
   return raw;
 }
 
@@ -124,7 +117,7 @@ async function save() {
   const response = await fetch("/api/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft()) });
   const data = await response.json();
   if (!response.ok) { status(`Not saved: ${data.error}`, "warn"); return statusEl.scrollIntoView({ block: "nearest" }); }
-  load({ ...data, roles, purposes, launchers, planHomes });
+  load({ ...data, roles, purposes, launchers });
   status("Saved. New review briefs use these models; recorded reviews keep theirs.", "good");
   statusEl.scrollIntoView({ block: "nearest" });
 }
@@ -135,9 +128,10 @@ const data = await response.json();
 if (!response.ok) status(data.error, "warn"); else load(data);
 
 // Projects
-const projectsEl = document.querySelector("#projects");
+const projectsEl = document.querySelector("#project-list");
 const projectStatusEl = document.querySelector("#project-status");
 let projects = [];
+let planHomes = [];
 
 function projectStatus(text, kind = "") { projectStatusEl.textContent = text; projectStatusEl.className = kind; }
 
@@ -154,17 +148,26 @@ function renderProjects() {
         <label>GitHub repo <input data-field="githubRepo" value="${escape(project.githubRepo || "")}" placeholder="owner/name"></label>
         <label>Base branch <input data-field="baseBranch" value="${escape(project.baseBranch || "main")}"></label>
         <label>Todos go to <select data-field="kind"><option value="af" ${project.tracker.kind === "af" ? "selected" : ""}>AF issues</option><option value="linear" ${project.tracker.kind === "linear" ? "selected" : ""}>Linear</option></select></label>
-        <label>Linear team <input data-field="team" value="${escape(project.tracker.team || "")}" placeholder="e.g. ENG" ${project.tracker.kind === "linear" ? "" : "disabled"}></label>
-        <label>Linear label <input data-field="label" value="${escape(project.tracker.label || "")}" placeholder="optional" ${project.tracker.kind === "linear" ? "" : "disabled"}></label>
+        <label class="linear-only" ${project.tracker.kind === "linear" ? "" : "hidden"}>Linear team <input data-field="team" value="${escape(project.tracker.team || "")}" placeholder="e.g. ENG"></label>
+        <label class="linear-only" ${project.tracker.kind === "linear" ? "" : "hidden"}>Linear label <input data-field="label" value="${escape(project.tracker.label || "")}" placeholder="optional"></label>
+      </div>
+      <div class="project-fields plans-fields">
+        <label>Plans live in <select data-field="planHome">${planHomes.map((home) => `<option value="${escape(home)}" ${home === project.plans.home ? "selected" : ""}>${escape(HOME_LABELS[home] || home)}</option>`).join("")}</select></label>
+        <label class="plan-reference" ${project.plans.home === "repo" ? "hidden" : ""}>Plan reference <input data-field="planReference" value="${escape(project.plans.reference || "")}" placeholder="team, page, or parent document (optional)"></label>
       </div>
       <div class="project-actions"><button data-action="save-project">Save project</button><button data-action="remove-project">Remove</button></div>
     </div>`).join("");
 }
 
 projectsEl.addEventListener("change", (event) => {
-  if (event.target.dataset.field !== "kind") return;
   const card = event.target.closest(".project");
-  for (const field of ["team", "label"]) card.querySelector(`[data-field="${field}"]`).disabled = event.target.value !== "linear";
+  if (event.target.dataset.field === "kind") for (const label of card.querySelectorAll(".linear-only")) label.hidden = event.target.value !== "linear";
+  // A repository plan has no reference: it always goes in docs/plans/.
+  if (event.target.dataset.field === "planHome") {
+    const repo = event.target.value === "repo";
+    card.querySelector(".plan-reference").hidden = repo;
+    if (repo) card.querySelector('[data-field="planReference"]').value = "";
+  }
 });
 
 async function projectRequest(path, payload, done) {
@@ -172,6 +175,7 @@ async function projectRequest(path, payload, done) {
   const data = await response.json();
   if (!response.ok) return projectStatus(`Not saved: ${data.error}`, "warn");
   projects = data.projects;
+  planHomes = data.planHomes || planHomes;
   renderProjects();
   projectStatus(done, "good");
 }
@@ -189,10 +193,11 @@ projectsEl.addEventListener("click", async (event) => {
   }
   const kind = value("kind");
   const tracker = kind === "linear" ? (value("label") ? { kind, team: value("team"), label: value("label") } : { kind, team: value("team"), clearLabel: true }) : { kind };
-  return projectRequest("/api/projects/update", { id: project.id, githubRepo: value("githubRepo"), baseBranch: value("baseBranch"), tracker }, `Saved ${project.id}.`);
+  const plans = value("planReference") ? { home: value("planHome"), reference: value("planReference") } : { home: value("planHome"), clearReference: true };
+  return projectRequest("/api/projects/update", { id: project.id, githubRepo: value("githubRepo"), baseBranch: value("baseBranch"), tracker, plans }, `Saved ${project.id}.`);
 });
 
 const projectResponse = await fetch("/api/projects");
 const projectData = await projectResponse.json();
-if (projectResponse.ok) { projects = projectData.projects; renderProjects(); } else projectStatus(projectData.error, "warn");
+if (projectResponse.ok) { projects = projectData.projects; planHomes = projectData.planHomes; renderProjects(); } else projectStatus(projectData.error, "warn");
 loadSuggestions();

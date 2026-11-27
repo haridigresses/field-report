@@ -68,26 +68,11 @@ function parseModel(entry, label) {
   return { id, launch: entry.launch, cliModel: entry.cliModel?.trim() || id };
 }
 
-// Where BRR plans live: a service, plus an optional free-text reference
-// (team, page, parent document). Field Report only prints it; the agent reads
-// and writes the plan through its host's MCP connector for that service.
-export const PLAN_HOMES = ["repo", "linear", "notion", "ref"];
-const PLAN_HOME_NAMES = { repo: "this repository", linear: "Linear", notion: "Notion", ref: "Ref" };
-
-function parsePlans(raw) {
-  if (raw == null) return null;
-  onlyKeys(object(raw, "plans"), ["home", "reference"], "plans");
-  if (!PLAN_HOMES.includes(raw.home)) fail(`plans.home must be one of ${PLAN_HOMES.join(", ")}`);
-  if (raw.reference == null) return { home: raw.home, reference: null };
-  if (raw.home === "repo") fail("plans.reference does not apply to repo; repo plans go in docs/plans/");
-  if (typeof raw.reference !== "string" || !raw.reference.trim() || /[\u0000-\u001f\u007f]/.test(raw.reference)) fail("plans.reference must be a single line of text");
-  return { home: raw.home, reference: raw.reference.trim() };
-}
-
 export function parseSeatConfig(raw) {
   object(raw, "the config");
   if (raw.schemaVersion !== 1) fail("schemaVersion must be 1");
-  onlyKeys(raw, ["schemaVersion", "seats", "plans"], "the config");
+  if (raw.plans !== undefined) fail(`plans moved to each project; remove it from ${configPath()} and set it with fr project update <id> --plans <home>, or on the settings page`);
+  onlyKeys(raw, ["schemaVersion", "seats"], "the config");
   const rawSeats = object(raw.seats, "seats");
   const unknown = Object.keys(rawSeats).find((role) => !REVIEW_ROLES.includes(role));
   if (unknown && RENAMED_SEATS[unknown]) fail(`seats were renamed (${Object.entries(RENAMED_SEATS).map(([old, now]) => `${old} → ${now}`).join(", ")}); rename the keys in ${configPath()}`);
@@ -110,7 +95,7 @@ export function parseSeatConfig(raw) {
     }
     seats[role] = { role, models };
   }
-  return { seats, plans: parsePlans(raw.plans) };
+  return { seats };
 }
 
 // Tests can inject a parsed config; the CLI reads the file once per process.
@@ -148,12 +133,6 @@ export function modelsLaunchedBy(launch) {
   return REVIEW_ROLES.flatMap((role) => seatFor(role).models).filter((entry) => entry.launch === launch);
 }
 
-export function describePlans() {
-  const plans = seatConfig().plans;
-  if (!plans || plans.home === "repo") return "docs/plans/ in this repository";
-  const name = PLAN_HOME_NAMES[plans.home];
-  return `${name}${plans.reference ? `: ${plans.reference}` : ""}, through this host's ${name} MCP connector`;
-}
 
 // For the settings page: the file as written (or the shipped example when
 // there is none yet), plus any parse error, without throwing.

@@ -9,39 +9,35 @@
 <body>
   <header>
     <div><p class="eyebrow"><a href="/">Field Report</a></p><h1>Settings</h1></div>
-    <button class="primary save">Save</button>
   </header>
   <main>
     <section class="intro">
       <p><strong>Field Report</strong> keeps AI coding agents honest about review. Before a pull request opens, three reviewers check the change from three angles, each in a fresh context with no memory of how the work was done. Field Report records each verdict against the exact commit and tells the agent whether the work is ready. It never merges; that stays with you.</p>
-      <p>Here you choose <strong>which models review each angle</strong>, <strong>where multi-PR build plans live</strong>, and, for each repository Field Report knows, <strong>where agents file todos</strong>. Add a repository with <code>fr project add</code> in the terminal.</p>
     </section>
-    <p id="source" class="quiet"></p>
-    <p id="status" role="status"></p>
-    <section>
-      <h2>Review seats</h2>
+    <nav class="tabs" role="tablist">
+      <a href="#models" role="tab" data-tab="models">Models</a>
+      <a href="#projects" role="tab" data-tab="projects">Projects</a>
+    </nav>
+
+    <section id="tab-models" class="tab" role="tabpanel">
+      <p class="quiet">Which models review each angle. These apply to every project.</p>
+      <p id="source" class="quiet"></p>
+      <p id="status" role="status"></p>
+      <p><button class="primary save">Save models</button></p>
       <p class="quiet">Each seat accepts only the models listed for it. The first is the default; the others are fallbacks, tried in order if the default can't start. Using different models across seats gives different perspectives, but one model may fill every seat.</p>
       <dl class="launchers">
         <div><dt>Launch</dt><dd>Which command-line tool runs the reviewer: <code>codex</code> (OpenAI's Codex CLI), <code>claude</code> (Claude Code), or <code>cursor</code> (Cursor's agent CLI, which offers models from several labs). It must be installed and signed in; <code>fr doctor</code> checks.</dd></div>
-        <div><dt>Model id</dt><dd>The model's plain name, without a <code>cursor-</code> prefix or an effort suffix like <code>-high</code>.</dd></div>
+        <div><dt>Model id</dt><dd>The model's plain name, without a <code>cursor-</code> prefix or an effort suffix like <code>-high</code>. Suggestions come from your Cursor account and your config; any id works.</dd></div>
         <div><dt>CLI model</dt><dd>Only when the tool expects a different name. Cursor ids usually add an effort level, for example <code>cursor-grok-4.6-high</code>.</dd></div>
       </dl>
       <div id="seats"></div>
+      <p><button class="primary save">Save models</button></p>
     </section>
-    <section>
-      <h2>Plan home</h2>
-      <p class="quiet">Where build-ready review plans live. The agent reaches Linear, Notion, or Ref through its own connector for that service.</p>
-      <div class="plans">
-        <label>Service <select id="plan-home" aria-label="Plan service"></select></label>
-        <label>Reference <input id="plan-reference" placeholder="team, page, or parent document (optional)" aria-label="Plan reference"></label>
-      </div>
-    </section>
-    <p><button class="primary save">Save</button></p>
-    <section>
-      <h2>Projects</h2>
-      <p class="quiet">Repositories Field Report knows. Each project's changes save on their own. Removing a project also deletes its workstreams and their review records.</p>
+
+    <section id="tab-projects" class="tab" role="tabpanel" hidden>
+      <p class="quiet">Repositories Field Report knows, each with where agents file todos and where multi-PR build plans live. Each project saves on its own. Add a repository with <code>fr project add</code> in the terminal. Removing a project also deletes its workstreams and their review records.</p>
       <p id="project-status" role="status"></p>
-      <div id="projects"></div>
+      <div id="project-list"></div>
     </section>
   </main>
   <datalist id="ids-codex"></datalist><datalist id="ids-claude"></datalist><datalist id="ids-cursor"></datalist>

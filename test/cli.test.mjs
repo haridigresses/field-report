@@ -439,21 +439,26 @@ test("context and identity print the project's todo tracker", async () => {
   await run(["project", "update", "sample", "--tracker", "linear", "--linear-team", "ENG", "--linear-label", "agent-todo"], repo, state);
   assert.match(await run(["context", "outcome"], repo, state), /Todos: Linear team ENG, label agent-todo/);
   assert.equal(JSON.parse(await run(["identity", "--role", "owner"], repo, state)).todos, "Linear team ENG, label agent-todo");
-  assert.match(await run(["project", "list"], repo, state), /\tlinear:ENG\/agent-todo\n$/);
+  assert.match(await run(["project", "list"], repo, state), /\tlinear:ENG\/agent-todo\tplans:repo\n$/);
+  await run(["project", "update", "sample", "--plans", "ref", "--plans-reference", "Engineering plans"], repo, state);
+  assert.match(await run(["context", "outcome"], repo, state), /Plans: Ref: Engineering plans, through this host's Ref MCP connector/);
+  assert.equal(JSON.parse(await run(["identity", "--role", "owner"], repo, state)).plans, "Ref: Engineering plans, through this host's Ref MCP connector");
+  assert.match(await run(["project", "list"], repo, state), /\tplans:ref\/Engineering plans\n$/);
+  await assert.rejects(run(["project", "update", "sample", "--plans"], repo, state), /Specify --plans <value>/);
   await assert.rejects(run(["project", "update", "sample", "--clear-linear-label", "yes"], repo, state), /takes no value/);
   await run(["project", "update", "sample", "--clear-linear-label"], repo, state);
   assert.match(await run(["context", "outcome"], repo, state), /Todos: Linear team ENG\n/);
-  assert.match(await run(["project", "list"], repo, state), /\tlinear:ENG\n$/);
+  assert.match(await run(["project", "list"], repo, state), /\tlinear:ENG\tplans:ref\/Engineering plans\n$/);
   await run(["project", "update", "sample", "--linear-label", "agent-todo"], repo, state);
   await run(["project", "update", "sample", "--linear-team", "OPS"], repo, state);
-  assert.match(await run(["project", "list"], repo, state), /\tlinear:OPS\n$/, "a team change drops the old label");
+  assert.match(await run(["project", "list"], repo, state), /\tlinear:OPS\tplans:ref\/Engineering plans\n$/, "a team change drops the old label");
 });
 
 test("project add accepts a Linear tracker", async () => {
   const { repo, state } = await fixture();
   const other = await mkdtemp(path.join(os.tmpdir(), "fr-cli-add-"));
   await run(["project", "add", "linear-sample", "--label", "Linear", "--repo", other, "--tracker", "linear", "--linear-team", "ENG", "--linear-label", "agent-todo"], repo, state);
-  assert.match(await run(["project", "list"], repo, state), /^linear-sample\tmain\t.*\tlinear:ENG\/agent-todo$/m);
-  assert.match(await run(["project", "list"], repo, state), /^sample\tmain\t.*\taf$/m);
+  assert.match(await run(["project", "list"], repo, state), /^linear-sample\tmain\t.*\tlinear:ENG\/agent-todo\tplans:repo$/m);
+  assert.match(await run(["project", "list"], repo, state), /^sample\tmain\t.*\taf\tplans:repo$/m);
   await assert.rejects(run(["project", "add", "broken", "--label", "Broken", "--repo", other, "--tracker", "linear"], repo, state), /needs --linear-team/);
 });
