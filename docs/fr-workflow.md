@@ -28,6 +28,9 @@ Field Report mechanically gates commits on a staged-tree **CRR** (`fr crr` + `fr
    - **Human-opened review threads:** Fix or post **at most one** concise reply, then leave the thread for the human reviewer to resolve. Never comment twice when the latest comment is already yours.
    - **Never post `@codex review` or `@bot` triggers** unless the user explicitly asks.
 
-5. **Tabula Rasa Review (TRR) & Build-Ready Review (BRR).**
+5. **Read-Only General's Battlefield (`fr ui`).**
+   - `fr ui` serves the read-only General's Battlefield at `/` (backed by `src/collect.mjs` and `/api/state` + `/api/refresh`) alongside `/settings`, combining local worktrees, branch MRR verdicts/questions/intent playback, and open GitHub PR CI & review-thread status with zero agent bookkeeping.
+
+6. **Tabula Rasa Review (TRR) & Build-Ready Review (BRR).**
    - **BRR** (`brr` skill): Multi-PR directional planning before building; user sign-off is the gate, and `fr mrr` treats `baseHead` BRR plans as authoritative for `intent`.
    - **TRR** (`field-report` skill): Informational, unrecorded check across the 3 default models from `fr seats` asking what to slash/simplify and whether to stay on the branch or rebuild.

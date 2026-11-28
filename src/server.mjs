@@ -2,12 +2,16 @@ import http from "node:http";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { collectBattlefield, readOrCollectBattlefield } from "./collect.mjs";
 import { BINARIES, defaultProbe, MODEL_LISTS } from "./doctor.mjs";
 import { LAUNCHERS, normalizeId, readRawConfig, REVIEW_ROLES, saveSeatConfig, SEAT_PURPOSES } from "./seats.mjs";
 import { createStore, PLAN_SERVICES, TODO_SERVICES } from "./store.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PAGES = {
+  "/": ["index.html", "text/html"],
+  "/index.html": ["index.html", "text/html"],
+  "/app.js": ["app.js", "text/javascript"],
   "/settings": ["settings.html", "text/html"],
   "/settings.js": ["settings.js", "text/javascript"],
   "/styles.css": ["styles.css", "text/css"]
@@ -80,10 +84,20 @@ export async function modelSuggestions({ probe = defaultProbe(), configs = [] } 
   };
 }
 
-export function createServer({ port, store = createStore(), probe = defaultProbe() }) {
+export function createServer({ port, store = createStore(), probe = defaultProbe(), collectFn = collectBattlefield }) {
   return http.createServer(async (req, res) => {
     const pathname = new URL(req.url, "http://127.0.0.1").pathname;
     if (pathname.startsWith("/api/") && !hostsFor(port).includes(req.headers.host)) return json(res, 403, { error: "Unknown host" });
+
+    if (req.method === "POST" && pathname === "/api/refresh") {
+      if (!fromThisPage(req, port)) return json(res, 403, { error: "Battlefield can only be refreshed from the Field Report UI" });
+      await body(req).catch(() => "");
+      try {
+        return json(res, 200, await collectFn({ store, outputFile: path.join(store.root, "projection.json") }));
+      } catch (error) {
+        return json(res, 500, { error: error.message });
+      }
+    }
 
     if (req.method === "POST" && pathname === "/api/config") {
       if (!fromThisPage(req, port)) return json(res, 403, { error: "Config can only be saved from the Field Report settings page" });
@@ -106,10 +120,9 @@ export function createServer({ port, store = createStore(), probe = defaultProbe
 
     if (req.method !== "GET") return send(res, 405, "Method not allowed", "text/plain");
 
-    if (pathname === "/" || pathname === "/index.html") {
-      res.writeHead(302, { location: "/settings", "cache-control": "no-store" });
-      res.end();
-      return;
+    if (pathname === "/api/state") {
+      try { return json(res, 200, await readOrCollectBattlefield({ store, collectFn })); }
+      catch (error) { return json(res, 500, { error: error.message }); }
     }
 
     if (pathname === "/api/projects") {
@@ -144,7 +157,7 @@ export function startServer(port = Number(process.env.PORT || 4177)) {
     process.exitCode = 1;
   });
   server.listen(port, "127.0.0.1", () => {
-    console.log(`Field Report settings: http://127.0.0.1:${port}/settings`);
+    console.log(`Field Report battlefield: http://127.0.0.1:${port}/ (settings: http://127.0.0.1:${port}/settings)`);
   });
   return server;
 }
