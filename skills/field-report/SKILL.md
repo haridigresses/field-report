@@ -53,12 +53,13 @@ Fix any real defects `fr crr` flags, re-stage with `git add`, and rerun `fr crr`
 
 ## 5. After a PR is open: CI & calm review-thread handling
 
+- **Never waive `fr crr` or `fr mrr`**, and **never treat red CI as "pre-existing baseline"** without reading every failing job's log (`gh run view <run-id> --log-failed`) and reporting the exact failure to the user.
 - Use `fr crr` before each post-open fix commit. Do **not** rerun 3-seat MRR on every push; run `fr mrr --all` only when the user asks for final MRR.
 - **Calm comment rules (no PR comment spam):**
    - **Bot threads:** Batch fixes into one push and **resolve fixed bot threads silently**—post a short reply **only** when declining a bot suggestion.
    - **Human threads:** Fix or post **at most one** concise reply, then **leave the thread for that person to resolve** (never resolve a human-opened thread, and never post a second reply when the latest comment is already yours).
    - **No unprompted bot triggers:** Never post `@codex review` or any `@bot` trigger comment unless the user explicitly asks.
-- Run `fr gate bots` to verify CI checks ran and passed and review threads are settled before final handoff.
+- Run `fr gate bots` to verify CI checks ran and passed and review threads are settled before final handoff. Never merge (`gh pr merge` and MCP merge tools are blocked), and never dispatch `gh workflow run` / `gh release create` without explicit user confirmation.
 
 ## 6. BRR & Tabula Rasa Review (TRR)
 

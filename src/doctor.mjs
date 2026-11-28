@@ -115,7 +115,7 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
 
   const claudeSettingsPath = path.join(home, ".claude", "settings.json");
   const claudeSettings = await probe.read(claudeSettingsPath);
-  if (hasInstalledHostHooks(claudeSettings, "claude")) add("ok", "claude hooks", "SessionStart, PreCompact, UserPromptSubmit, and MCP PreToolUse installed");
+  if (hasInstalledHostHooks(claudeSettings, "claude")) add("ok", "claude hooks", "SessionStart, PreCompact, UserPromptSubmit, and PreToolUse installed");
   else add("warn", "claude hooks", `Field Report hooks missing or stale in ${claudeSettingsPath}; run fr init or node scripts/install.mjs`);
 
   for (const [label, file] of [["claude settings", claudeSettingsPath], ["claude local settings", path.join(home, ".claude", "settings.local.json")]]) {
@@ -123,19 +123,19 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
     if (!raw) continue;
     try {
       if (JSON.parse(raw)?.disableAllHooks === true) {
-        add("fail", label, `disableAllHooks=true in ${file} disables Field Report SessionStart, prompt capture, and MCP gate hooks`);
+        add("fail", label, `disableAllHooks=true in ${file} disables Field Report SessionStart, prompt capture, and gate hooks`);
       }
     } catch {}
   }
 
   const cursorHooksPath = path.join(home, ".cursor", "hooks.json");
   const cursorHooks = await probe.read(cursorHooksPath);
-  if (hasInstalledHostHooks(cursorHooks, "cursor")) add("ok", "cursor hooks", "beforeSubmitPrompt and beforeMCPExecution installed");
+  if (hasInstalledHostHooks(cursorHooks, "cursor")) add("ok", "cursor hooks", "beforeSubmitPrompt, beforeShellExecution, and beforeMCPExecution installed");
   else add("warn", "cursor hooks", `Field Report hooks missing or stale in ${cursorHooksPath}; run fr init or node scripts/install.mjs`);
 
   const agyHooksPath = path.join(home, ".gemini", "config", "plugins", "field-report", "hooks.json");
   const agyHooks = await probe.read(agyHooksPath);
-  if (hasInstalledHostHooks(agyHooks, "agy")) add("ok", "antigravity hooks", "SessionStart, PreInvocation, and MCP PreToolUse installed");
+  if (hasInstalledHostHooks(agyHooks, "agy")) add("ok", "antigravity hooks", "SessionStart, PreInvocation, and PreToolUse installed");
   else add("warn", "antigravity hooks", `Field Report hooks missing in ${agyHooksPath}; run fr init or node scripts/install.mjs`);
 
   const agyConfigPath = path.join(home, ".gemini", "config", "config.json");
@@ -152,7 +152,7 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
   const devinConfigPath = path.join(home, ".config", "devin", "config.json");
   if (await probe.exists(devinConfigPath)) {
     const devinCfgRaw = await probe.read(devinConfigPath);
-    if (hasInstalledHostHooks(devinCfgRaw, "devin")) add("ok", "devin hooks", "SessionStart, UserPromptSubmit, and MCP PreToolUse installed");
+    if (hasInstalledHostHooks(devinCfgRaw, "devin")) add("ok", "devin hooks", "SessionStart, UserPromptSubmit, and PreToolUse installed");
     else add("warn", "devin hooks", `Field Report hooks missing in ${devinConfigPath}; run fr init or node scripts/install.mjs`);
     try {
       const parsedDevin = JSON.parse(devinCfgRaw);
@@ -177,6 +177,10 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
   const initialized = await probe.exists(path.join(stateRoot, "config.json"));
   if (initialized) add("ok", "state", stateRoot);
   else add("fail", "state", `${stateRoot} is not initialized; run fr init`);
+  const canonicalRoot = path.join(home, ".local", "state", "field-report");
+  if (env.FIELD_REPORT_STATE_ROOT && path.resolve(stateRoot) !== path.resolve(canonicalRoot)) {
+    add("warn", "state override", `FIELD_REPORT_STATE_ROOT (${stateRoot}) differs from ${canonicalRoot}; ~/.local/bin/gh enforces against ${canonicalRoot}`);
+  }
 
   if (projects == null) {
     projects = [];

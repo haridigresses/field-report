@@ -4,7 +4,7 @@ import { accessSync, constants, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { checkBranchOpenGate, classifyGhArgs } from "../src/host-hooks.mjs";
+import { checkBranchOpenGate, classifyGhArgs, matchManagedProject } from "../src/host-hooks.mjs";
 import { createStore } from "../src/store.mjs";
 
 // ~/.local/bin/gh wrapper: passes every command straight to the real gh binary
@@ -73,6 +73,13 @@ export async function runGhWrapper(argv, {
   const classified = classifyGhArgs(argv);
   if (classified.action === "allow") {
     return execRealGh(realGh, classified.cleanedArgs, { env, cwd, spawnFn });
+  }
+
+  if (classified.action === "merge-pr") {
+    const { matched } = await matchManagedProject({ store: activeStore, cwd, explicitRepo: classified.explicitRepo });
+    if (!matched) return execRealGh(realGh, classified.cleanedArgs, { env, cwd, spawnFn });
+    stderr.write(`Field Report BLOCKED 'gh pr merge' on ${matched.id}: agents never merge pull requests — leave merging to the human.\n`);
+    return 1;
   }
 
   const check = await checkBranchOpenGate({

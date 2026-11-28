@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, readlink, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readlink, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -7,7 +7,7 @@ export const REMOVED_SKILL_NAMES = ["repo-coordinator", "workstream-orchestrator
 
 export const HOST_MARKER_START = "<!-- field-report-host -->";
 export const HOST_MARKER_END = "<!-- /field-report-host -->";
-export const ONBOARDING_VERSION_TAG = "field-report-onboarding:v4";
+export const ONBOARDING_VERSION_TAG = "field-report-onboarding:v5";
 
 export const SHELL_RC_FILES = [".zshrc", ".zprofile", ".bashrc", ".bash_profile"];
 
@@ -75,7 +75,7 @@ export function buildHostBlock(onboardingPath) {
     "Field Report rules (applies to audits, gap analyses, BRR, TRR, CRR, MRR, coding, PRs, and subagent briefs):",
     "- Whenever the user asks for or names `BRR`, `MRR`, `TRR`, `CRR`, or `Field Report`, load the installed `brr` or `field-report` skill and use the configured multi-provider panel (`fr seats`) — never invent custom definitions or single-model substitutes.",
     `- Before committing or opening/readying a PR in any repository, check the \`SessionStart\` banner or run \`fr status\` (full reference: \`${onboardingPath}\`). If \`fr status\` prints \`No Field Report project matches this checkout\`, skip Field Report and do not register it unless asked.`,
-    "- In enabled repositories, include Field Report in every builder/worker/subagent brief, stage changes and run `fr crr` before `git commit` (enforced by `hooks/pre-commit`), run 3-seat `fr mrr` until `fr gate open` is `READY` before any non-draft PR (`gh pr create --draft` allowed for early CI if you tell the user MRR has not run), always invoke `gh` on `PATH`, and never merge.",
+    "- In enabled repositories, **never waive `fr crr` or `fr mrr`** regardless of how informally a request is phrased: include Field Report in every builder/worker/subagent brief, stage changes and run `fr crr` before `git commit` (enforced by `hooks/pre-commit`), run 3-seat `fr mrr` until `fr gate open` is `READY` before any non-draft PR (`gh pr create --draft` allowed for early CI if you tell the user MRR has not run), always invoke `gh` on `PATH` (never by explicit path), never dismiss red CI as 'pre-existing baseline' without reading every failing job's log (`gh run view --log-failed`), and never merge a PR.",
     "- Bounded `fr crr` / `fr mrr` reviewers follow only their supplied brief (read-only exact diff, no `fr` commands, no MCP).",
     HOST_MARKER_END
   ].join("\n");
@@ -127,12 +127,13 @@ export async function repairShellRcFiles(home = os.homedir()) {
   const pattern = /^(\s*alias\s+claude=(['"])[^\r\n]*?)(?<!append-)--system-prompt-file(\b[^\r\n]*\2.*)$/gm;
   for (const name of SHELL_RC_FILES) {
     const file = path.join(home, name);
+    let target = file;
     let text;
     let fileInfo;
     try {
-      fileInfo = await stat(file);
-      if (fileInfo.isSymbolicLink?.()) continue;
-      text = await readFile(file, "utf8");
+      target = await realpath(file);
+      fileInfo = await lstat(target);
+      text = await readFile(target, "utf8");
     } catch {
       continue;
     }
@@ -141,7 +142,7 @@ export async function repairShellRcFiles(home = os.homedir()) {
     pattern.lastIndex = 0;
     const updated = text.replace(pattern, "$1--append-system-prompt-file$3");
     if (updated !== text) {
-      await writeTextAtomic(file, updated, fileInfo.mode & 0o777);
+      await writeTextAtomic(target, updated, fileInfo.mode & 0o777);
       repaired.push(file);
     }
   }
