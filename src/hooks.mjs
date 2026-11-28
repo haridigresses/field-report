@@ -1,4 +1,9 @@
+import { copyFile, rm } from "node:fs/promises";
 import path from "node:path";
+
+// Legacy Field Report git pre-commit hook detection and cleanup.
+// Branch-keyed Field Report no longer uses a git pre-commit registration hook;
+// legacy managed hooks are cleanly uninstalled (restoring any preserved user hook).
 
 export const marker = "# field-report-commit-gate:v4";
 
@@ -8,44 +13,27 @@ export function isManagedHook(text) {
   return Boolean(text) && /field-report-(?:commit-gate|managed-pre-commit):/.test(text);
 }
 
-// One reading of a pre-commit hook for fr hook status and fr doctor: our current
-// hook, an older Field Report hook, a hook manager's file that runs the gate, or none.
 export function hookState(text) {
-  if (!text) return "missing";
-  if (text.includes(marker)) return "installed";
-  if (isManagedHook(text)) return "outdated";
-  if (/\bfr\b.*\bgate checkout\b/.test(text)) return "gate";
-  return "missing";
+  if (!text) return "absent";
+  if (isManagedHook(text)) return "legacy-managed";
+  if (/\bfr\b.*\bgate (?:checkout|commit)\b/.test(text)) return "legacy-manual";
+  return "absent";
 }
 
-// core.hooksPath names a hook manager (husky, lefthook) unless it is git's own
-// hooks folder. Returns the managing path or null.
 export function hookManagerPath({ hook, hooksPath, commonDir }) {
   if (!hooksPath) return null;
   return commonDir && path.resolve(path.dirname(hook)) === path.resolve(commonDir, "hooks") ? null : hooksPath;
 }
 
-export function shouldRunPreserved(existing, preservedExists) {
-  if (existing == null) return false;
-  if (isManagedHook(existing)) {
-    if (existing.includes(".field-report-preserved")) return preservedExists;
-    return preservedExists && /field-report-managed-pre-commit:/.test(existing);
+export async function removeLegacyPreCommitHook(hookPath, { readFileFn, existsFn } = {}) {
+  const text = await readFileFn(hookPath);
+  if (!isManagedHook(text)) return { removed: false, restoredPreserved: false };
+  const preserved = `${hookPath}.field-report-preserved`;
+  if (await existsFn(preserved)) {
+    await copyFile(preserved, hookPath);
+    await rm(preserved, { force: true });
+    return { removed: true, restoredPreserved: true };
   }
-  return true;
-}
-
-export function hookText(launcher, preserved = null) {
-  return [
-    "#!/bin/sh",
-    marker,
-    ...(preserved ? [`${quote(preserved)} || exit $?`] : []),
-    "worktree_admin=${GIT_INDEX_FILE%/index}",
-    "if [ -n \"${GIT_INDEX_FILE:-}\" ] && [ -f \"$worktree_admin/gitdir\" ]; then",
-    "  worktree_gitdir=$(sed -n '1p' \"$worktree_admin/gitdir\")",
-    "  cd \"$(dirname \"$worktree_gitdir\")\" || exit 1",
-    "  unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE",
-    "fi",
-    `exec ${quote(launcher)} gate checkout`,
-    ""
-  ].join("\n");
+  await rm(hookPath, { force: true });
+  return { removed: true, restoredPreserved: false };
 }

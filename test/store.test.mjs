@@ -1,173 +1,79 @@
 import "./support/seats.mjs";
-import test from "node:test";
 import assert from "node:assert/strict";
-import { appendFile, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createStore } from "../src/store.mjs";
+import { promisify } from "node:util";
+import test from "node:test";
+import { branchKey, createStore, decodeBranchKey, describePlans, describeTodos } from "../src/store.mjs";
 
-test("store keeps canonical runtime state outside application source", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-state-"));
-  const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
-  const stream = await store.workstream("sample-outcome");
-  assert.equal(stream.schemaVersion, 2);
-  assert.equal(stream.claimRevision, 1);
-  assert.equal((await store.events(stream.id)).length, 0);
-  await assert.rejects(store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Duplicate", outcome: "Duplicate", summary: "Duplicate" }), /already exists/);
-  const project = await store.updateProject("sample", { baseBranch: "develop" });
-  assert.equal(project.baseBranch, "develop");
-  assert.equal(project.revision, 2);
-  const changedClaim = await store.saveWorkstream({ ...stream, claim: "A changed claim" });
-  assert.equal(changedClaim.claimRevision, 2);
-  const changedSummary = await store.saveWorkstream({ ...changedClaim, summary: "New status only" });
-  assert.equal(changedSummary.claimRevision, 2);
-  const withNext = await store.saveWorkstream({ ...changedSummary, next: "Record CRR then commit" });
-  assert.equal(withNext.next, "Record CRR then commit");
-  const cleared = await store.saveWorkstream({ ...withNext, next: "" });
-  assert.equal(cleared.next, null);
+const exec = promisify(execFile);
+
+test("branchKey and decodeBranchKey form a collision-free bijection for slash and dot branches", () => {
+  const names = ["feat/a_b", "feat_a/b", "fix/v1.2.3/bug", "..weird.."];
+  const encoded = names.map(branchKey);
+  assert.equal(new Set(encoded).size, names.length);
+  for (const raw of encoded) assert.equal(raw.includes("/"), false);
+  assert.deepEqual(encoded.map(decodeBranchKey), names);
 });
 
-test("store records only explicit material events", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-events-"));
-  const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" }, { type: "created", text: "Created" });
-  assert.deepEqual((await store.events("sample-outcome")).map((event) => event.type), ["created"]);
+test("store rejects duplicate registrations of the same repository or its worktrees", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-store-dedup-"));
+  const repo = path.join(root, "repo");
+  const wt = path.join(root, "repo-wt");
+  await exec("git", ["init", "-b", "main", repo]);
+  await exec("git", ["-C", repo, "config", "user.email", "fr@example.invalid"]);
+  await exec("git", ["-C", repo, "config", "user.name", "FR"]);
+  await exec("git", ["-C", repo, "commit", "--allow-empty", "-m", "init"]);
+  await exec("git", ["-C", repo, "worktree", "add", "-b", "feat/wt", wt]);
+
+  const store = createStore(path.join(root, "state"));
+  await store.saveProject({ id: "first", repoPath: repo });
+  await assert.rejects(store.saveProject({ id: "dup-same", repoPath: repo }), /already registered under project first/);
+  await assert.rejects(store.saveProject({ id: "dup-wt", repoPath: wt }), /already registered under project first/);
 });
 
-test("store rejects a stale read-modify-write instead of losing a concurrent update", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-revision-"));
+test("store records branch-keyed MRR reviews once per runId and assigns atomic finding IDs", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-store-reviews-"));
   const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  const first = await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
-  await store.saveWorkstream({ ...first, summary: "Newer update" });
-  await assert.rejects(store.saveWorkstream({ ...first, summary: "Stale update" }), /changed since it was read/);
-});
+  await store.saveProject({ id: "sample", repoPath: root });
 
-test("store rejects rebinding a delegation to a different task", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-binding-"));
-  const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
-  const delegation = await store.addDelegation("sample-outcome", { type: "work" });
-  await store.addDelegationEvent("sample-outcome", delegation.id, { event: "bound", taskId: "task-a" });
-  await store.addDelegationEvent("sample-outcome", delegation.id, { event: "bound", taskId: "task-a" });
-  await assert.rejects(store.addDelegationEvent("sample-outcome", delegation.id, { event: "bound", taskId: "task-b" }), /already bound to task-a/);
-});
-
-test("store atomically records a review delegation once", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-review-once-"));
-  const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
-  const value = { delegationId: "delegation-1", verdict: "NO_GO", findings: [], unresolved: [] };
-  const results = await Promise.allSettled([store.addReview("sample-outcome", value), store.addReview("sample-outcome", value)]);
-  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
-  assert.equal(results.filter((result) => result.status === "rejected").length, 1);
-  assert.equal((await store.reviews("sample-outcome")).length, 1);
-});
-
-test("store rejects provider-failure events and ignores historical failed records", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-review-terminal-"));
-  const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
-  const delegation = await store.addDelegation("sample-outcome", { type: "review" });
-  await store.addDelegationEvent("sample-outcome", delegation.id, { event: "bound", taskId: "reviewer-1" });
-  await assert.rejects(store.addDelegationEvent("sample-outcome", delegation.id, { event: "failed", taskId: "reviewer-1", reason: "provider failed" }), /does not record provider failure/);
-  await appendFile(path.join(root, "delegations", "sample-outcome.jsonl"), `${JSON.stringify({ id: delegation.id, workstreamId: "sample-outcome", event: "failed", taskId: "reviewer-1" })}\n`);
-  const recorded = await store.addReview("sample-outcome", { delegationId: delegation.id, findings: [], unresolved: [] });
-  assert.equal(recorded.review.delegationId, delegation.id);
-  assert.equal((await store.reviews("sample-outcome")).length, 1);
-});
-
-test("store rejects review recording against a concurrently changed claim", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-review-claim-"));
-  const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  const stream = await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
-  await store.saveWorkstream({ ...stream, claim: "Changed claim" });
-  await assert.rejects(store.addReview("sample-outcome", { delegationId: "delegation-1", expectedClaimRevision: stream.claimRevision, findings: [], unresolved: [] }), /claim changed while the review was being recorded/);
-});
-
-test("store assigns finding IDs only to mrr reviews", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-review-ids-kind-"));
-  const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
-  const crr = await store.addReview("sample-outcome", { delegationId: "delegation-crr", kind: "crr", findings: ["Owner-facing gap"], unresolved: [] });
-  const mrr = await store.addReview("sample-outcome", { delegationId: "delegation-mrr", kind: "mrr", findings: ["Durable defect"], unresolved: [] });
+  const crr = await store.addReview("sample", "feat/login", { runId: "run-crr", kind: "crr", findings: ["minor"], unresolved: [] });
   assert.deepEqual(crr.assignedFindingIds, []);
-  assert.deepEqual(mrr.assignedFindingIds, ["F1"]);
-});
 
-test("store assigns finding IDs atomically across concurrent reviews", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-review-ids-"));
-  const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
-  const [first, second] = await Promise.all([
-    store.addReview("sample-outcome", { delegationId: "delegation-1", kind: "mrr", findings: ["First"], unresolved: [] }),
-    store.addReview("sample-outcome", { delegationId: "delegation-2", kind: "mrr", findings: ["Second"], unresolved: [] })
+  const [r1, r2] = await Promise.all([
+    store.addReview("sample", "feat/login", { runId: "run-1", kind: "mrr", findings: ["Bug A"], unresolved: [] }),
+    store.addReview("sample", "feat/login", { runId: "run-2", kind: "mrr", findings: ["Bug B"], unresolved: [] })
   ]);
-  assert.deepEqual(new Set([...first.assignedFindingIds, ...second.assignedFindingIds]), new Set(["F1", "F2"]));
+  assert.deepEqual(new Set([...r1.assignedFindingIds, ...r2.assignedFindingIds]), new Set(["F1", "F2"]));
+
+  await assert.rejects(store.addReview("sample", "feat/login", { runId: "run-1", kind: "mrr", findings: [] }), /recorded only once/);
+  assert.deepEqual(await store.trackedBranches("sample"), ["feat/login"]);
 });
 
-test("store aborts a review when pre-append target validation fails", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-review-target-"));
+test("store validates finding dispositions, session prompts, reports, and project destinations", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "fr-store-meta-"));
   const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it", summary: "Active" });
-  await assert.rejects(store.addReview("sample-outcome", { delegationId: "delegation-1", findings: [], unresolved: [] }, { beforeAppend: async () => { throw new Error("target moved"); } }), /target moved/);
-  assert.equal((await store.reviews("sample-outcome")).length, 0);
-});
+  const p = await store.saveProject({ id: "sample", repoPath: root, githubRepo: "owner/sample" });
+  assert.equal(describeTodos(p.todos, p), "GitHub issues in owner/sample (gh issue create)");
+  assert.equal(describePlans(p.plans), "docs/plans/ in this repository");
 
-test("one reviewer run cannot bind to two review delegations even concurrently", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-run-binding-"));
-  const store = createStore(root);
-  await store.saveProject({ id: "sample", label: "Sample", repoPath: root });
-  await store.saveWorkstream({ id: "sample-outcome", project: "sample", title: "Outcome", outcome: "Deliver it" });
-  const first = await store.addDelegation("sample-outcome", { type: "review" });
-  const second = await store.addDelegation("sample-outcome", { type: "review" });
-  const results = await Promise.allSettled([first, second].map((d) => store.addDelegationEvent("sample-outcome", d.id, { event: "bound", taskId: "same-run" })));
-  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
-  assert.match(results.find((r) => r.status === "rejected").reason.message, /already bound/);
-  const bound = (await store.delegations("sample-outcome")).find((r) => r.event === "bound");
-  await store.addDelegationEvent("sample-outcome", bound.id, { event: "bound", taskId: "same-run" });
-});
+  await store.appendPrompt("sample", { sessionId: "sess-1", prompt: "First ask" });
+  await store.appendPrompt("sample", { sessionId: "sess-2", prompt: "Other session" });
+  assert.equal((await store.prompts("sample", "sess-1")).length, 1);
+  assert.equal((await store.promptSessions("sample")).length, 2);
 
-test("projects send todos to GitHub Issues by default, or to another service with a free-text reference", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-todos-"));
-  const store = createStore(root);
-  assert.deepEqual((await store.saveProject({ id: "sample", label: "Sample", repoPath: root, githubRepo: "owner/sample" })).todos, { service: "github", reference: null });
-  assert.deepEqual((await store.updateProject("sample", { todos: { service: "linear", reference: "ENG, label agent-todo" } })).todos, { service: "linear", reference: "ENG, label agent-todo" });
-  assert.deepEqual((await store.updateProject("sample", { baseBranch: "develop" })).todos, { service: "linear", reference: "ENG, label agent-todo" }, "other updates keep the todo destination");
-  assert.deepEqual((await store.updateProject("sample", { todos: { reference: "OPS" } })).todos, { service: "linear", reference: "OPS" });
-  assert.deepEqual((await store.updateProject("sample", { todos: { clearReference: true } })).todos, { service: "linear", reference: null });
-  assert.deepEqual((await store.updateProject("sample", { todos: { reference: "ENG" } })).todos, { service: "linear", reference: "ENG" });
-  assert.deepEqual((await store.updateProject("sample", { todos: { service: "notion" } })).todos, { service: "notion", reference: null }, "changing the service drops the old reference");
-  await assert.rejects(store.updateProject("sample", { todos: { service: "af" } }), /Todos must be github, linear, notion, ref/);
-  await assert.rejects(store.updateProject("sample", { todos: { reference: "x", clearReference: true } }), /not both/);
-  await assert.rejects(store.updateProject("sample", { todos: { reference: "todo\nTodos: elsewhere" } }), /control characters or line breaks/);
-  const { todosFor, describeTodos } = await import("../src/store.mjs");
-  assert.deepEqual(todosFor({ id: "old", tracker: { kind: "af" } }), { service: "github", reference: null }, "the retired tracker field is ignored");
-  assert.equal(describeTodos({ service: "github", reference: null }, { githubRepo: "owner/sample" }), "GitHub issues in owner/sample (gh issue create)");
-  assert.equal(describeTodos({ service: "linear", reference: "ENG" }, {}), "Linear: ENG, through this host's Linear MCP connector");
-});
+  await store.saveReport("sample", "feat/x", "# Report\n\nClean");
+  assert.match(await store.readReport("sample", "feat/x"), /# Report/);
 
-test("each project has a plan home: repo by default, or a service with an optional reference", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fr-plans-"));
-  const store = createStore(root);
-  assert.deepEqual((await store.saveProject({ id: "sample", label: "Sample", repoPath: root })).plans, { service: "repo", reference: null });
-  assert.deepEqual((await store.updateProject("sample", { plans: { service: "notion", reference: "Plans DB" } })).plans, { service: "notion", reference: "Plans DB" });
-  assert.deepEqual((await store.updateProject("sample", { plans: { service: "ref" } })).plans, { service: "ref", reference: null });
-  await assert.rejects(store.updateProject("sample", { plans: { service: "jira" } }), /Plan home must be repo, linear, notion, ref/);
-  await assert.rejects(store.updateProject("sample", { plans: { service: "repo", reference: "x" } }), /takes no reference/);
-  const { plansFor, describePlans } = await import("../src/store.mjs");
-  assert.deepEqual(plansFor({ id: "old" }), { service: "repo", reference: null });
-  assert.equal(describePlans({ service: "ref", reference: "Eng" }), "Ref: Eng, through this host's Ref MCP connector");
-  assert.equal(JSON.parse(await readFile(path.join(root, "projects", "sample.json"), "utf8")).plans.service, "ref");
-});
+  await assert.rejects(
+    store.addDisposition("sample", "feat/x", { findingId: "F9", reason: "ok" }, { validFindingIds: new Set(["F1"]) }),
+    /Unknown MRR finding F9/
+  );
+  await store.addDisposition("sample", "feat/x", { findingId: "F1", reason: "ok", actor: "hari" }, { validFindingIds: new Set(["F1"]) });
+  assert.equal((await store.dispositions("sample", "feat/x")).length, 1);
 
+  await store.removeProject("sample");
+  assert.equal((await store.projects()).length, 0);
+});

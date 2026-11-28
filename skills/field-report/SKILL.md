@@ -1,36 +1,58 @@
 ---
 name: field-report
-description: Operate the Field Report control loop for delivery-unit binding, CRR before commits you intend to keep, three-seat MRR before CI, a one-line next action, and a session title.
+description: Run Field Report's pre-commit CRR, three-seat pre-PR MRR, and calm post-open CI/bot-thread checks in enabled repositories.
 ---
 
 # Field Report
 
-Field Report binds a delivery unit and records review evidence. It does not launch reviewers, open pull requests, or merge.
+Field Report gates non-draft pull requests on three independent reviews (`correctness`, `design`, `intent`) keyed automatically by repository + branch + commit HEAD. There is **no branch or workstream registration**. Field Report never merges.
 
-1. Coordinators and workstream owners: run `fr identity --role coordinator|owner` and use its key as this session's title where the host lets you set one (or its fallback if another open session has that title); it is a label only. Do not ask the user to name you. Reviewers must not load MCP servers and take no title.
-2. Start with `fr context [workstream-id]`. If it says no Field Report project matches this checkout, this repository does not use Field Report: skip these steps, and do not register it with `fr project add` unless the user asks. If the branch is unregistered, follow the printed `fr create` or `fr update` self-binding command.
-3. Read `fr workflow <role>` completely before role work. If policy changed during a long-running task, reread it. File todos where `fr context` prints on its `Todos:` line: GitHub issues in the project's repo by default, or the Linear, Notion, or Ref location the user set. Todos are visible to the team; file only real follow-ups, and never from a reviewer. Read this repository's `merge-ready-review.md` for merge quality. Do not make product or design decisions without asking the user. Product and domain questions go to the user, especially when they would shape data modeling or a one-way decision; do not infer them from schema or code. Catch overengineering. If still stuck on a technical call, consult one seated model (`fr seats`) once; that is not review evidence.
-4. Before you run `git commit` on a commit you intend to keep, stop and run CRR: `fr review brief <id> --kind crr --role crr`, launch 1–2 fresh subagents, local models first, repair owner-facing findings, then `fr gate crr`. A green checkout hook is not CRR. WIP or amend commits are owner judgment. Do not wrap `git commit`, and do not put this panel in the hook.
-5. Keep a one-line next action with `fr update <id> --next "<text>"`. Update it when you stop or the next step changes. It is a sticky note, not a todo ledger; the project's todo service holds the todos. Print it from `fr context`.
-6. Before opening a PR: commission MRR — `correctness`, `design`, `intent`. Fetch origin first so local `origin/<base>` is current. The user's config file chooses the models: run `fr seats` to see each seat's valid models (the first is the default). Each brief prints the model and the exact launch in `execution`. Only a model listed for the seat can fill it; to use another, the user adds it to the config. Each seat is decided by its review of the commit nearest HEAD (HEAD or an ancestor); READY means every seat's deciding review is a GO, or a NO_GO whose findings the user accepted (`fr review accept`). Earlier GOs carry forward and the gate prints what each seat has not seen. After a fix, rerun only the seat that said NO_GO. A seat reviews each exact head once. Reviewers return unsettled product choices as questions; record the user's answers with `fr decide`. The full rules live in `fr workflow`. Weigh findings by likelihood and blast radius: fix real ones on a new head and rerun that seat; bring unlikely, fail-safe ones to the user to accept instead of building machinery. Record an acceptance only when the user explicitly accepted that finding. Repair or resume a started hang. Do not record provider failure. The owner task cannot review; a fresh subagent of the builder's model can. After the PR is open, use CRR through feature work and bot cycles. Do not commission MRR because HEAD moved. When the user asks for final MRR, run the panel on the current HEAD. You may argue that the delta is not substantive enough (size is a proxy for sensitivity). When the user asks for TRR, or agrees after you suggest it on a long or complex PR (10+ commits or thousands of lines are examples; size is a proxy), launch three fresh agents on each seat's default model from `fr seats` with the workflow TRR prompt. Present the writeups separately, including each agent's stay-on-this-branch vs rebuild call. Do not record them, and do not auto-run from a threshold. Do not commission MRR because of TRR. If they also asked for final MRR, run both in parallel.
-7. Reviews never require permission. Launch the brief. If Auto-review blocks a review CLI, retry it; that is not a user question. Add review CLIs to Cursor Settings → Agents → Approvals & Execution.
-8. Obtain immutable briefs with `fr review brief`. Inspect with `inspection.command`. Bind, then `fr review record`. Record the original reviewer output file directly, optionally with `--delegation <original-id>` when routing fields are omitted. FR fills omitted identity from that brief and binding; conflicting model, target, or delegation identity is rejected. A supplied provider field is ignored and does not fail the review. Never edit a reviewer verdict, findings, limitations, completion claim, or provenance to make recording succeed. Resume the same reviewer on the same delegation for substantive or ambiguous corrections; do not mint replacement delegations for an existing result.
-9. The hook only requires `fr gate checkout`. Do not auto-open a PR. After `fr gate open` is READY, you may open one or leave that to the user. After bots/CI, `fr gate bots` is merge-readiness evidence, not merge permission.
-10. Borderline flake vs real CI failure: consult one seated model (`fr seats`) once. Not a hard gate. Bot comments are not an MRR panel, but each one gets handled: whenever a review bot posts, fix each comment or reply why not, and resolve its thread. A thread with any comment from a person, including a reply in a bot's thread, is theirs to resolve: fix it or reply, then leave it for them. After opening a PR, wait for its review bots before calling it done. Some bots review every push; others review only on open or on request (Codex: comment `@codex review`). `fr gate bots` blocks on unresolved review threads.
-11. Persist only material review state in Field Report.
+## 1. Check whether this repository uses Field Report
 
-Reviews never require permission. Launch each seat's default model, then the next model `fr seats` lists for that seat if the default cannot start. Only listed models count; to use another, the user adds it to the config. Switch models only before a review of that seat is recorded on this head. Repair or resume a started hang or malformed envelope; do not swap because of it. Prefer a native same-type path when the invoking agent is that provider (a Codex host launching an OpenAI model, a Claude host launching an Anthropic model). Use the known CLI, or another documented path, for third-party agents. Cloud Agents are third-party.
+Run `fr status`.
+- If it prints `No Field Report project matches this checkout`, this repository is not enabled—skip Field Report and do not run `fr project add` unless the user asks.
+- Otherwise note the project's base branch, `Todos:` destination, and `Plans:` home printed by `fr status`.
 
-- CRR / local: a fresh native subagent of a local model, no MCP.
-- Seats: run the brief's `execution.launch`. The config file sets each model's launcher (`codex`, `claude`, or `cursor`; `--route native` runs a seat as a native subagent) and, for Cursor, its Cursor model id. A new model is a config edit, never a code change.
-- `codex` launcher: `codex exec -m MODEL -s read-only --ignore-user-config --json --color never -o <output> -C <repo> - < <prompt>`
-- `cursor` launcher: from `<repo>`, `fr-cursor-review --model CURSOR_MODEL --print --output-format stream-json --sandbox enabled --trust < <prompt>`. The brief goes on stdin, which avoids argument-length limits (cursor-agent 2026.11.19 died on long prompt arguments). Do not pass `--force`. Record the stream's final `type=result` object. The wrapper points HOME at a temp dir with empty user-level MCP, the two Cursor settings/state files, and (on macOS) a link to the existing login keychain; it does not suppress repository-scoped Cursor MCP. Reviewers remain instructed not to use MCP.
-- `claude` launcher: from `<repo>`, after `test "$(git rev-parse HEAD)"` matches the brief head and `git status --porcelain` is empty, `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(git diff --no-ext-diff --no-textconv BASE_SHA HEAD_SHA --)" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model MODEL "$(< <prompt>)"`.
+## 2. Product & architecture judgment stays with the user
 
-Before implementing or recommending a behavior-changing fix, describe one concrete scenario: what happens today, what should happen afterward, and what user instruction or previously approved product rule establishes that outcome. Existing code, tests, schema, agent-written documentation, and reviewer agreement establish behavior, not user intent. If the proposed outcome requires an unsettled product choice, explain it in plain English, recommend an option, and ask before implementing that part or declaring it ready. Continue independent work. Reuse prior explicit decisions without asking again. Reviewers must flag unsupported product assumptions even when the implementation is correct.
+- Read the repository's `merge-ready-review.md` if present.
+- Product behavior, domain facts, migrations, security boundaries, and meaningful scope additions belong to the user—do not infer them from existing code or schema. Ask the user plainly before implementing unsettled product choices.
+- File real follow-up todos only in the project's `Todos:` destination (`gh issue create` for GitHub Issues by default, or the configured Linear/Notion/Ref connector).
 
-Do not invent product decisions. Unanswered product questions block READY until the user decides; parking them in the summary is allowed only when they are genuinely separable. Schema, migrations, and candidate-authored docs are not product contracts. Use ordinary `claude`, never `claude-aws`.
+## 3. Before keeping a commit: `fr crr`
 
-Cursor Cloud Agents reach the host `codex` and `claude` CLIs on the user's machine only when this session's tool calls execute on a My Machines worker for that checkout. Field Report does not probe host accessibility or start workers. Start a worker for this checkout only with Cursor's CLI (`agent worker start --name local --worker-dir <this-repo>`). Write the brief to a prompt file and run the exact command from `fr machines invoke codex|claude` (it defaults to the first seated model for that launcher; pass `--model` for another). If that command fails, report the failure; do not substitute Cursor-hosted models.
+Before committing work you intend to keep (skip for quick WIP/amend checkpoints), run:
 
-The installer links this one canonical skill source into `~/.codex/skills`, `~/.claude/skills`, and `~/.cursor/skills`; do not maintain host-specific copies.
+```bash
+fr crr
+```
+
+Fix any real defects it flags. If no CLI reviewer is configured, `fr crr --brief` prints an isolated review brief you can run in a fresh read-only subagent with no MCP servers or conversation history.
+
+## 4. Before opening or readying a PR: `fr mrr`
+
+1. Commit all changes and fetch `origin` so `origin/<base>` is current.
+2. Run three-seat MRR directly:
+   ```bash
+   fr mrr [--notes "brief technical rationale for touched dependencies"] [--brr path/to/plan.md]
+   ```
+   - `fr mrr` runs `correctness`, `design`, and `intent` in parallel using `~/.config/field-report/config.json`, falling back down a seat's model list *only* if an earlier CLI cannot start.
+   - If a seat uses `launch: "native"`, run `fr mrr --brief --seat <role>`, execute the prompt in a fresh read-only subagent (zero owner context, no MCP), and record its JSON output with `fr mrr --record <file> --brief-id <uuid>`.
+3. **Converging on `NO_GO`:**
+   - Fix real defects on a new commit and rerun `fr mrr` (by default `fr mrr` reruns **only** missing or `NO_GO` seats; earlier `GO`s carry forward and show unreviewed commit deltas).
+   - Never shop for a second review on the exact same commit HEAD.
+   - For an unlikely, fail-safe, or debatable finding, bring it to the user; **only** after the user explicitly accepts it, record `fr accept <F-id> --reason "<user's reason>"`.
+   - Surface any `questions` printed by MRR directly to the user.
+4. **Draft PRs vs. Open PRs:**
+   - Non-draft `gh pr create` and `gh pr ready` are **blocked** by Field Report until `fr gate open` is `READY`.
+   - Opening a **Draft PR** (`gh pr create --draft`) before MRR is allowed when running CI early is useful—if you mention or hand off a Draft PR before MRR is `READY`, **explicitly tell the user that MRR has not been run yet**.
+   - Never merge a PR.
+
+## 5. After a PR is open: CI & calm review-thread handling
+
+- Use `fr crr` during post-open fix churn. Do **not** rerun 3-seat MRR on every push; run `fr mrr --all` only when the user asks for final MRR.
+- **Calm comment rules (no PR comment spam):**
+  - **Bot threads:** Batch fixes into one push and **resolve fixed bot threads silently**—post a short reply **only** when declining a bot suggestion.
+  - **Human threads:** Fix or post **at most one** concise reply, then **leave the thread for that person to resolve** (never resolve a human-opened thread, and never post a second reply when the latest comment is already yours).
+  - **No unprompted bot triggers:** Never post `@codex review` or any `@bot` trigger comment unless the user explicitly asks.
+- Run `fr gate bots` to verify CI checks ran and passed and review threads are settled before final handoff.

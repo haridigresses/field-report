@@ -6,7 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import { cursorModelIds, defaultProbe, doctor, formatDoctor } from "../src/doctor.mjs";
+import { agyModelIds, cursorModelIds, defaultProbe, devinModelIds, doctor, formatDoctor } from "../src/doctor.mjs";
+import { installHostHooks } from "../src/host-hooks.mjs";
 import { skillHostDirs, SKILL_NAMES } from "../src/install.mjs";
 import { parseSeatConfig } from "../src/seats.mjs";
 
@@ -16,137 +17,96 @@ const runtimeRoot = path.resolve(".");
 const config = parseSeatConfig({
   schemaVersion: 1,
   seats: {
-    "correctness": { models: [{ id: "gpt-x", launch: "codex" }] },
-    "design": { models: [{ id: "grok-x", launch: "cursor", cliModel: "cursor-grok-x-high" }, { id: "neon-x", launch: "cursor", cliModel: "neon-x-high" }] },
-    "intent": { models: [{ id: "claude-x", launch: "claude" }] }
+    correctness: { models: [{ id: "swe-1.6", launch: "devin" }] },
+    design: { models: [{ id: "grok-x", launch: "cursor", cliModel: "cursor-grok-x-high" }, { id: "gemini-4-neon", launch: "agy", cliModel: "gemini-4-neon-high" }] },
+    intent: { models: [{ id: "claude-x", launch: "claude" }] }
   }
 });
 
 async function installedHome() {
   const home = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-"));
-  await mkdir(path.join(home, ".local", "bin"), { recursive: true });
-  await writeFile(path.join(home, ".local", "bin", "fr"), "#!/bin/sh\n");
-  await writeFile(path.join(home, ".local", "bin", "fr-cursor-review"), "#!/bin/sh\n");
+  const binDir = path.join(home, ".local", "bin");
+  await mkdir(binDir, { recursive: true });
+  for (const name of ["fr", "gh", "fr-cursor-review", "fr-devin-review"]) {
+    const file = path.join(binDir, name);
+    await writeFile(file, "#!/bin/sh\n");
+    await chmod(file, 0o755);
+  }
   for (const host of skillHostDirs(home)) {
     await mkdir(host, { recursive: true });
     for (const name of SKILL_NAMES) await symlink(path.join(runtimeRoot, "skills", name), path.join(host, name));
   }
+  await installHostHooks({ frBin: path.join(binDir, "fr"), home });
   const stateRoot = path.join(home, "state");
   await mkdir(stateRoot);
   await writeFile(path.join(stateRoot, "config.json"), "{}");
   return { home, stateRoot };
 }
 
-// Real filesystem; fake CLIs.
 function probeWith(commands) {
   const real = defaultProbe();
-  return { ...real, run: async (command, args, options) => {
-    if (command === "git") return real.run(command, args, options);
-    const key = `${command} ${args.join(" ")}`;
-    return commands[key] || { code: "ENOENT", stdout: "", stderr: "" };
-  } };
+  return {
+    ...real,
+    run: async (command, args, options) => {
+      if (command === "git") return real.run(command, args, options);
+      const base = path.basename(command);
+      const key = `${base} ${args.join(" ")}`;
+      return commands[key] || { code: "ENOENT", stdout: "", stderr: "" };
+    }
+  };
 }
 
 const allCommands = {
-  "codex --version": { code: 0, stdout: "codex 1.0\n" },
+  "devin --version": { code: 0, stdout: "devin 1.0\n" },
+  "devin models list --format json": { code: 0, stdout: JSON.stringify({ families: [{ slug: "swe-1.6", aliases: [], variants: [] }] }) },
   "claude --version": { code: 0, stdout: "claude 2.0\n" },
   "cursor-agent --version": { code: 0, stdout: "2026.11.22\n" },
-  "cursor-agent --list-models": { code: 0, stdout: "Available models\n\ncursor-grok-x-high - Grok X High\nneon-x-high - Neon X\n" },
+  "cursor-agent --list-models": { code: 0, stdout: "cursor-grok-x-high - Grok X\n" },
+  "agy --version": { code: 0, stdout: "agy 2.0\n" },
+  "agy models": { code: 0, stdout: "gemini-4-neon-high\tGemini 4 Neon High\n" },
   "gh auth status": { code: 0, stdout: "" },
   "zsh --version": { code: 0, stdout: "zsh 5.9\n" }
 };
 
 const byLabel = (results, label) => results.find((item) => item.label === label);
 
-test("cursorModelIds reads the id before the display name", () => {
-  assert.deepEqual([...cursorModelIds("Available models\n\nauto - Auto (default)\ngpt-5.3-codex-low - Codex 5.3 Low\n")], ["auto", "gpt-5.3-codex-low"]);
+test("model ID parsers handle cursor, agy, and devin output formats", () => {
+  assert.deepEqual([...cursorModelIds("auto - Auto\ngpt-5.3-low - Codex\n")], ["auto", "gpt-5.3-low"]);
+  assert.deepEqual([...agyModelIds("Header without tab\ngemini-4-neon-high\tGemini 4 Neon\n")], ["gemini-4-neon-high"]);
+  assert.deepEqual([...devinModelIds(JSON.stringify({ families: [{ slug: "swe-1.6", aliases: ["swe"], variants: [{ model_uid: "swe-1.6-fast" }] }] }))], ["swe-1.6", "swe", "swe-1.6-fast"]);
 });
 
-test("doctor passes on a fully installed machine", async () => {
+test("doctor passes on a fully installed machine across cursor, agy, devin, and claude", async () => {
   const { home, stateRoot } = await installedHome();
   const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, probe: probeWith(allCommands) });
   assert.deepEqual(results.filter((item) => item.level !== "ok"), []);
   assert.match(formatDoctor(results), /Ready\.$/);
 });
 
-test("doctor fails a missing default launcher and a missing default cursor model, warns on fallbacks", async () => {
+test("doctor warns on legacy pre-commit hooks and duplicate repository projects, and does not create state on a bare machine", async () => {
   const { home, stateRoot } = await installedHome();
-  const commands = { ...allCommands, "claude --version": { code: "ENOENT", stdout: "" }, "cursor-agent --list-models": { code: 0, stdout: "neon-x-medium - Neon X\n" } };
-  const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, probe: probeWith(commands) });
-  assert.equal(byLabel(results, "claude CLI").level, "fail");
-  assert.equal(byLabel(results, "design default grok-x").level, "fail");
-  assert.equal(byLabel(results, "design fallback neon-x").level, "warn");
-  assert.match(formatDoctor(results), /problem\(s\) to fix/);
-});
-
-test("doctor reports an uninstalled machine and a broken config", async () => {
-  const home = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-bare-"));
-  const results = await doctor({ runtimeRoot, stateRoot: path.join(home, "state"), home, env: { PATH: "/usr/bin" }, nodeVersion: "18.19.0", loadConfig: () => { throw new Error("Config: schemaVersion must be 1"); }, probe: probeWith({}) });
-  for (const label of ["node", "fr launcher", "state", "seat config"]) assert.equal(byLabel(results, label).level, "fail", label);
-  assert.equal(byLabel(results, "PATH").level, "warn");
-  assert.equal(byLabel(results, "gh").level, "warn");
-  assert.ok(results.some((item) => item.label.startsWith("skills ") && item.level === "fail"));
-});
-
-test("doctor warns when a hook manager owns a tracked pre-commit hook", async () => {
-  const { home, stateRoot } = await installedHome();
-  const repo = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-repo-"));
+  const repo = await mkdtemp(path.join(os.tmpdir(), "fr-doc-repo-"));
   await exec("git", ["init", "-q"], { cwd: repo });
-  await mkdir(path.join(repo, ".husky"));
-  await writeFile(path.join(repo, ".husky", "pre-commit"), "npm test\n");
-  await exec("git", ["add", ".husky/pre-commit"], { cwd: repo });
-  await exec("git", ["config", "core.hooksPath", ".husky"], { cwd: repo });
-  const plain = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-plain-"));
-  await exec("git", ["init", "-q"], { cwd: plain });
-  const projects = [{ id: "husky", repoPath: repo }, { id: "plain", repoPath: plain }, { id: "gone", repoPath: path.join(home, "nope") }];
-  const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, projects, probe: probeWith(allCommands) });
-  assert.match(byLabel(results, "project husky").detail, /tracked file; fr hook install refuses it/);
-  assert.equal(byLabel(results, "project husky").level, "warn");
-  assert.match(byLabel(results, "project plain").detail, /fr hook install plain/);
-  assert.equal(byLabel(results, "project gone").level, "warn");
-  await writeFile(path.join(repo, ".husky", "pre-commit"), "npm test\nfr gate checkout\n");
-  const unexecutable = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, projects, probe: probeWith(allCommands) });
-  assert.match(byLabel(unexecutable, "project husky").detail, /not executable/);
-  await chmod(path.join(repo, ".husky", "pre-commit"), 0o755);
-  const again = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, projects, probe: probeWith(allCommands) });
-  assert.equal(byLabel(again, "project husky").level, "ok");
-});
+  await mkdir(path.join(repo, ".git", "hooks"), { recursive: true });
+  await writeFile(path.join(repo, ".git", "hooks", "pre-commit"), "#!/bin/sh\n# field-report-commit-gate:v4\n");
 
-test("fr doctor does not create state on an uninitialized machine", async () => {
-  const home = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-cli-"));
-  const stateRoot = path.join(home, "state");
-  await exec(process.execPath, [path.resolve("bin/fr.mjs"), "doctor"], { env: { ...process.env, HOME: home, FIELD_REPORT_STATE_ROOT: stateRoot } }).catch((error) => assert.match(error.stdout, /FAIL state/));
-  await assert.rejects(access(stateRoot));
-});
+  const results = await doctor({
+    runtimeRoot,
+    stateRoot,
+    home,
+    env: { PATH: path.join(home, ".local", "bin") },
+    nodeVersion: "24.1.0",
+    loadConfig: () => config,
+    projects: [{ id: "one", repoPath: repo }, { id: "dup", repoPath: repo }],
+    probe: probeWith(allCommands)
+  });
+  assert.match(byLabel(results, "project one").detail, /legacy Field Report pre-commit hook/);
+  assert.match(byLabel(results, "project dup").detail, /shares repository with project 'one'/);
 
-test("doctor treats core.hooksPath at git's own hooks folder as no manager, and flags older Field Report hooks", async () => {
-  const { home, stateRoot } = await installedHome();
-  const repo = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-default-"));
-  await exec("git", ["init", "-q"], { cwd: repo });
-  await exec("git", ["config", "core.hooksPath", ".git/hooks"], { cwd: repo });
-  const older = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-v3-"));
-  await exec("git", ["init", "-q"], { cwd: older });
-  await mkdir(path.join(older, ".git", "hooks"), { recursive: true });
-  await writeFile(path.join(older, ".git", "hooks", "pre-commit"), "#!/bin/sh\n# field-report-commit-gate:v3\n");
-  const projects = [{ id: "default", repoPath: repo }, { id: "older", repoPath: older }];
-  const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, projects, probe: probeWith(allCommands) });
-  assert.match(byLabel(results, "project default").detail, /checkout hook not installed; run fr hook install default/);
-  assert.match(byLabel(results, "project older").detail, /older Field Report hook/);
-  assert.match(formatDoctor(results), /^Ready with/m);
-});
-
-test("doctor reads project files itself, fails an unreadable one, and checks the Cursor wrapper and zsh", async () => {
-  const { home, stateRoot } = await installedHome();
-  await mkdir(path.join(stateRoot, "projects"));
-  await writeFile(path.join(stateRoot, "projects", "good.json"), JSON.stringify({ id: "good", repoPath: path.join(home, "gone") }));
-  await writeFile(path.join(stateRoot, "projects", "bad.json"), "{not json");
-  await writeFile(path.join(home, ".local", "bin", "fr-cursor-review"), "");
-  const { rm } = await import("node:fs/promises");
-  await rm(path.join(home, ".local", "bin", "fr-cursor-review"));
-  const commands = { ...allCommands, "zsh --version": { code: "ENOENT", stdout: "" } };
-  const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, probe: probeWith(commands) });
-  assert.equal(byLabel(results, "project file bad.json").level, "fail");
-  assert.equal(byLabel(results, "project good").level, "warn");
-  assert.equal(byLabel(results, "fr-cursor-review").level, "fail");
-  assert.equal(byLabel(results, "zsh").level, "fail");
+  const bareHome = await mkdtemp(path.join(os.tmpdir(), "fr-doctor-bare-"));
+  const bareState = path.join(bareHome, "state");
+  await exec(process.execPath, [path.resolve("bin/fr.mjs"), "doctor"], {
+    env: { ...process.env, HOME: bareHome, FIELD_REPORT_HOME: bareHome, FIELD_REPORT_STATE_ROOT: bareState }
+  }).catch((error) => assert.match(error.stdout, /FAIL state/));
+  await assert.rejects(access(bareState));
 });

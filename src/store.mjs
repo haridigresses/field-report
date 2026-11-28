@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { gitCommonDir } from "./repository.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const DEFAULT_ROOT = path.join(os.homedir(), ".local", "state", "field-report");
+const CONTROL = /[\u0000-\u001f\u007f]/;
 
 function requiredString(value, label, max = 1200) {
   const text = String(value || "").trim();
@@ -23,6 +25,16 @@ function id(value, label = "ID") {
   return text;
 }
 
+// Reversible, collision-free filename stem for arbitrary git branch names.
+export function branchKey(branch) {
+  const name = requiredString(branch, "Branch name", 300);
+  return encodeURIComponent(name).replaceAll(".", "%2E");
+}
+
+export function decodeBranchKey(encoded) {
+  return decodeURIComponent(String(encoded));
+}
+
 async function readJson(file, fallback = undefined) {
   try { return JSON.parse(await readFile(file, "utf8")); }
   catch (error) { if (error.code === "ENOENT" && fallback !== undefined) return fallback; throw error; }
@@ -35,14 +47,13 @@ async function writeJson(file, value) {
   await rename(temporary, file);
 }
 
-const CONTROL = /[\u0000-\u001f\u007f]/;
+async function writeTextAtomic(file, text) {
+  await mkdir(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${process.pid}.${randomUUID()}.next`;
+  await writeFile(temporary, text, { mode: 0o600 });
+  await rename(temporary, file);
+}
 
-// A project points at two outside places: where agents file todos and where
-// BRR plans live. Each is a service plus an optional free-text reference
-// (repo, team, label, page, parent document). Field Report stores only the
-// pointer; agents reach the service themselves (gh for GitHub, the host's MCP
-// connector for the rest). Changing the service drops the old reference
-// unless the same update names one.
 const SERVICE_NAMES = { github: "GitHub", linear: "Linear", notion: "Notion", ref: "Ref" };
 export const TODO_SERVICES = ["github", "linear", "notion", "ref"];
 export const PLAN_SERVICES = ["repo", "linear", "notion", "ref"];
@@ -60,7 +71,6 @@ function normalizeDestination(value, previous, { services, fallback, what, flag 
   return { service, reference };
 }
 
-// Todos default to GitHub Issues in the project's own repository.
 export function normalizeTodos(value, previous = null) { return normalizeDestination(value, previous, { services: TODO_SERVICES, fallback: "github", what: "Todos", flag: "todos" }); }
 export function todosFor(project) { return normalizeTodos(null, project?.todos); }
 export function describeTodos(todos, project) {
@@ -69,7 +79,6 @@ export function describeTodos(todos, project) {
   return `${name}${todos.reference ? `: ${todos.reference}` : ""}, through this host's ${name} MCP connector`;
 }
 
-// Plans default to docs/plans/ in the repository.
 export function normalizePlans(value, previous = null) { return normalizeDestination(value, previous, { services: PLAN_SERVICES, fallback: "repo", what: "Plan home", flag: "plans" }); }
 export function plansFor(project) { return normalizePlans(null, project?.plans); }
 export function describePlans(plans) {
@@ -78,7 +87,6 @@ export function describePlans(plans) {
   return `${name}${plans.reference ? `: ${plans.reference}` : ""}, through this host's ${name} MCP connector`;
 }
 
-// One-token form for list output: github, linear:ENG/agent-todo, notion:Plans.
 export const destinationTarget = (value) => `${value.service}${value.reference ? `:${value.reference}` : ""}`;
 
 export function defaultStateRoot() { return process.env.FIELD_REPORT_STATE_ROOT || DEFAULT_ROOT; }
@@ -88,10 +96,10 @@ export function createStore(root = defaultStateRoot()) {
   const lock = path.join(root, ".write-lock");
 
   async function init() {
-    await Promise.all(["projects", "workstreams", "reviews", "delegations", "events", "dispositions"].map((entry) => mkdir(path.join(root, entry), { recursive: true })));
+    await Promise.all(["projects", "branches", "dispositions", "prompts", "reports", "briefs"].map((entry) => mkdir(path.join(root, entry), { recursive: true })));
     const configFile = path.join(root, "config.json");
     try { await readFile(configFile); }
-    catch (error) { if (error.code !== "ENOENT") throw error; await writeJson(configFile, { schemaVersion: 2, createdAt: new Date().toISOString() }); }
+    catch (error) { if (error.code !== "ENOENT") throw error; await writeJson(configFile, { schemaVersion: 3, createdAt: new Date().toISOString() }); }
     return root;
   }
 
@@ -109,16 +117,28 @@ export function createStore(root = defaultStateRoot()) {
     try { return await operation(); } finally { await rm(lock, { recursive: true, force: true }); }
   }
 
-  async function append(kind, workstreamId, value) {
-    const file = path.join(root, kind, `${id(workstreamId, "Workstream ID")}.jsonl`);
+  async function appendJsonl(file, value) {
     await mkdir(path.dirname(file), { recursive: true });
     await appendFile(file, `${JSON.stringify(value)}\n`, { mode: 0o600 });
     return value;
   }
 
-  async function lines(kind, workstreamId) {
-    try { return (await readFile(path.join(root, kind, `${id(workstreamId, "Workstream ID")}.jsonl`), "utf8")).split("\n").filter(Boolean).map(JSON.parse); }
-    catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  async function readJsonl(file) {
+    try {
+      return (await readFile(file, "utf8"))
+        .split("\n")
+        .filter(Boolean)
+        .flatMap((line) => {
+          try { return [JSON.parse(line)]; } catch { return []; }
+        });
+    } catch (error) {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  function withDestinations(value) {
+    return { ...value, todos: todosFor(value), plans: plansFor(value) };
   }
 
   async function projects() {
@@ -127,13 +147,27 @@ export function createStore(root = defaultStateRoot()) {
     return (await Promise.all(files.map((file) => readJson(path.join(root, "projects", file))))).map(withDestinations);
   }
 
+  async function assertUniqueRepo(repoPath, commonDir, ignoreId = null) {
+    const existing = await projects();
+    for (const other of existing) {
+      if (other.id === ignoreId) continue;
+      const otherCommon = other.commonDir || await gitCommonDir(other.repoPath);
+      if (other.repoPath === repoPath || (commonDir && otherCommon && commonDir === otherCommon)) {
+        throw new Error(`Repository ${repoPath} is already registered under project ${other.id}`);
+      }
+    }
+  }
+
   async function saveProject(value) {
+    const repoPath = path.resolve(requiredString(value.repoPath, "Repository path", 1000));
+    const commonDir = await gitCommonDir(repoPath);
     const project = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       revision: 1,
       id: id(value.id, "Project ID"),
       label: requiredString(value.label || value.id, "Project label", 160),
-      repoPath: path.resolve(requiredString(value.repoPath, "Repository path", 1000)),
+      repoPath,
+      ...(commonDir ? { commonDir } : {}),
       githubRepo: optionalString(value.githubRepo, "GitHub repository", 300),
       baseBranch: optionalString(value.baseBranch, "Base branch", 200) || "main",
       todos: normalizeTodos(value.todos),
@@ -142,6 +176,7 @@ export function createStore(root = defaultStateRoot()) {
     };
     await locked(async () => {
       if (await readJson(path.join(root, "projects", `${project.id}.json`), null)) throw new Error(`Project already exists: ${project.id}`);
+      await assertUniqueRepo(repoPath, commonDir);
       await writeJson(path.join(root, "projects", `${project.id}.json`), project);
     });
     return project;
@@ -149,15 +184,21 @@ export function createStore(root = defaultStateRoot()) {
 
   async function updateProject(projectId, value) {
     return locked(async () => {
-      const file = path.join(root, "projects", `${id(projectId, "Project ID")}.json`);
+      const pid = id(projectId, "Project ID");
+      const file = path.join(root, "projects", `${pid}.json`);
       const previous = await readJson(file, null);
       if (!previous) throw new Error(`Unknown project: ${projectId}`);
+      const repoPath = value.repoPath == null ? previous.repoPath : path.resolve(requiredString(value.repoPath, "Repository path", 1000));
+      const commonDir = (await gitCommonDir(repoPath)) || (repoPath === previous.repoPath ? previous.commonDir : null);
+      await assertUniqueRepo(repoPath, commonDir, pid);
       const project = {
         ...previous,
+        schemaVersion: 3,
         revision: (previous.revision || 0) + 1,
         label: value.label == null ? previous.label : requiredString(value.label, "Project label", 160),
-        repoPath: value.repoPath == null ? previous.repoPath : path.resolve(requiredString(value.repoPath, "Repository path", 1000)),
-        githubRepo: value.githubRepo == null ? previous.githubRepo : optionalString(value.githubRepo, "GitHub repository", 300),
+        repoPath,
+        ...(commonDir ? { commonDir } : {}),
+        githubRepo: value.githubRepo === undefined ? previous.githubRepo : optionalString(value.githubRepo, "GitHub repository", 300),
         baseBranch: value.baseBranch == null ? previous.baseBranch : requiredString(value.baseBranch, "Base branch", 200),
         todos: normalizeTodos(value.todos, todosFor(previous)),
         plans: normalizePlans(value.plans, plansFor(previous)),
@@ -174,147 +215,177 @@ export function createStore(root = defaultStateRoot()) {
     return withDestinations(value);
   }
 
-  // Projects saved without todos or plans read as the defaults, so every
-  // consumer sees one shape without rewriting the stored record.
-  function withDestinations(value) { return { ...value, todos: todosFor(value), plans: plansFor(value) }; }
-
-  // One-time v2 claim migration: records saved before the dedicated delivery
-  // claim existed used summary as the implicit claim; preserve that reading
-  // until the record is next saved.
-  function withClaim(value) { return value ? { ...value, claim: value.claim ?? value.summary, claimRevision: value.claimRevision ?? 1 } : value; }
-
-  async function workstreams() {
-    await init();
-    const files = (await readdir(path.join(root, "workstreams"))).filter((file) => file.endsWith(".json")).sort();
-    return (await Promise.all(files.map((file) => readJson(path.join(root, "workstreams", file))))).map(withClaim);
+  function branchFile(folder, projectId, branch, ext = "jsonl") {
+    return path.join(root, folder, id(projectId, "Project ID"), `${branchKey(branch)}.${ext}`);
   }
 
-  async function workstream(workstreamId) {
-    const value = await readJson(path.join(root, "workstreams", `${id(workstreamId, "Workstream ID")}.json`), null);
-    if (!value) throw new Error(`Unknown workstream: ${workstreamId}`);
-    return withClaim(value);
+  async function reviews(projectId, branch) {
+    return readJsonl(branchFile("branches", projectId, branch));
   }
 
-  async function saveWorkstream(value, event = null) {
+  async function dispositions(projectId, branch) {
+    return readJsonl(branchFile("dispositions", projectId, branch));
+  }
+
+  async function briefs(projectId, branch) {
+    return readJsonl(branchFile("briefs", projectId, branch));
+  }
+
+  async function addBrief(projectId, branch, value) {
+    await project(projectId);
+    const brief = { ...value, id: value.id || randomUUID(), projectId: id(projectId, "Project ID"), branch: requiredString(branch, "Branch", 300), createdAt: new Date().toISOString() };
+    await locked(() => appendJsonl(branchFile("briefs", projectId, branch), brief));
+    return brief;
+  }
+
+  async function addReview(projectId, branch, value, { beforeAppend } = {}) {
+    const targetProject = await project(projectId);
+    const branchName = requiredString(branch, "Branch", 300);
+    const review = { ...value, id: randomUUID(), projectId: targetProject.id, branch: branchName, recordedAt: new Date().toISOString() };
     return locked(async () => {
-      // Under the lock, so a project removed meanwhile can't gain an orphan.
-      await project(value.project);
-      const previous = await readJson(path.join(root, "workstreams", `${id(value.id, "Workstream ID")}.json`), {});
-      if (previous.id && value.revision == null) throw new Error(`Workstream already exists: ${value.id}`);
-      if (value.revision != null && value.revision !== previous.revision) throw new Error(`Workstream ${value.id} changed since it was read; reload before updating`);
-      const status = value.status || previous.status || "planned";
-      if (!["planned", "active", "blocked", "complete"].includes(status)) throw new Error("Status must be planned, active, blocked, or complete");
-      const previousClaim = previous.claim ?? previous.summary ?? null;
-      const claim = requiredString(value.claim ?? previousClaim ?? value.summary ?? value.outcome ?? previous.outcome, "Delivery claim");
-      const record = {
-      schemaVersion: 2,
-      revision: (previous.revision || 0) + 1,
-      id: id(value.id, "Workstream ID"),
-      project: id(value.project, "Project ID"),
-      title: requiredString(value.title || previous.title, "Title", 200),
-      outcome: requiredString(value.outcome || previous.outcome || value.summary || previous.summary, "Outcome"),
-      status,
-      summary: requiredString(value.summary || previous.summary || value.outcome || previous.outcome, "Summary"),
-      claim,
-      claimRevision: previous.id ? (previous.claimRevision ?? 1) + (claim === previousClaim ? 0 : 1) : 1,
-      next: optionalString(value.next ?? previous.next, "Next action", 400),
-      // User product decisions; every review brief carries them as settled.
-      decisions: (Array.isArray(value.decisions) ? value.decisions : previous.decisions || []).map((text) => requiredString(text, "Decision", 1000)),
-      ownerTaskId: optionalString(value.ownerTaskId ?? previous.ownerTaskId, "Owner task ID", 200),
-      branch: optionalString(value.branch ?? previous.branch, "Branch", 300),
-      pullRequests: Array.isArray(value.pullRequests) ? [...new Set(value.pullRequests.map(Number).filter(Number.isInteger))] : previous.pullRequests || [],
-      createdAt: previous.createdAt || value.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-      };
-      await writeJson(path.join(root, "workstreams", `${record.id}.json`), record);
-      if (event) await append("events", record.id, { id: randomUUID(), at: record.updatedAt, type: event.type, text: requiredString(event.text, "Event text"), actor: optionalString(event.actor, "Actor", 200) });
-      return record;
-    });
-  }
-
-  async function addDelegation(workstreamId, value) {
-    const stream = await workstream(workstreamId);
-    const delegation = { ...value, id: randomUUID(), workstreamId: stream.id, event: "created", createdAt: new Date().toISOString() };
-    await locked(() => append("delegations", stream.id, delegation));
-    return delegation;
-  }
-
-  async function addDelegationEvent(workstreamId, delegationId, value) {
-    const stream = await workstream(workstreamId);
-    const event = { ...value, id: delegationId, workstreamId: stream.id, at: new Date().toISOString() };
-    return locked(async () => {
-      const events = await lines("delegations", stream.id);
-      const created = events.find((item) => item.event === "created" && item.id === delegationId);
-      if (!created) throw new Error(`Unknown delegation: ${delegationId}`);
-      if (value.event === "failed") throw new Error("Field Report does not record provider failure");
-      if (value.event === "bound") {
-        const existing = events.findLast((item) => item.event === "bound" && item.id === delegationId);
-        if (existing && existing.taskId !== value.taskId) throw new Error(`Delegation ${delegationId} is already bound to ${existing.taskId}`);
-        if (created.type === "review") {
-          const reviewIds = new Set(events.filter((item) => item.event === "created" && item.type === "review").map((item) => item.id));
-          const other = events.find((item) => item.event === "bound" && item.taskId === value.taskId && item.id !== delegationId && reviewIds.has(item.id));
-          if (other) throw new Error(`Review task ${value.taskId} is already bound to delegation ${other.id}`);
-        }
-        if (existing) return existing;
+      const prior = await reviews(targetProject.id, branchName);
+      if (review.runId && prior.some((item) => item.runId === review.runId)) {
+        throw new Error("A review brief/run may be recorded only once");
       }
-      return append("delegations", stream.id, event);
-    });
-  }
-
-  async function addReview(workstreamId, value, { beforeAppend } = {}) {
-    const stream = await workstream(workstreamId);
-    const { expectedClaimRevision, ...storedValue } = value;
-    const review = { ...storedValue, id: randomUUID(), workstreamId: stream.id, recordedAt: new Date().toISOString() };
-    return locked(async () => {
-      const current = withClaim(await readJson(path.join(root, "workstreams", `${stream.id}.json`)));
-      if (expectedClaimRevision != null && current.claimRevision !== expectedClaimRevision) throw new Error("Workstream claim changed while the review was being recorded; retry against current state");
-      const prior = await lines("reviews", stream.id);
-      if (prior.some((item) => item.delegationId === review.delegationId)) throw new Error("A review delegation may be recorded only once");
-      const durable = (item) => item.legacy !== true && item.kind === "mrr";
-      const priorFindingCount = prior.filter(durable).reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
       if (beforeAppend) await beforeAppend(prior);
-      await append("reviews", stream.id, review);
-      if (review.delegationId) await append("delegations", stream.id, { id: review.delegationId, workstreamId: stream.id, event: "completed", at: review.recordedAt });
-      const assignedFindingIds = durable(review)
+      const priorFindingCount = prior
+        .filter((item) => item.kind === "mrr")
+        .reduce((count, item) => count + (item.findings?.length || 0) + (item.unresolved?.length || 0), 0);
+      await appendJsonl(branchFile("branches", targetProject.id, branchName), review);
+      const assignedFindingIds = review.kind === "mrr"
         ? Array.from({ length: (review.findings?.length || 0) + (review.unresolved?.length || 0) }, (_, index) => `F${priorFindingCount + index + 1}`)
         : [];
       return { review, assignedFindingIds };
     });
   }
 
-  // The user's acceptance of one MRR finding. It never expires: the finding
-  // lives on one recorded review, so the acceptance cannot drift to new code.
-  async function addDisposition(workstreamId, value) {
-    const stream = await workstream(workstreamId);
+  async function addDisposition(projectId, branch, value, { validFindingIds = null } = {}) {
+    const targetProject = await project(projectId);
+    const branchName = requiredString(branch, "Branch", 300);
+    const findingId = requiredString(value.findingId, "Finding ID", 20).toUpperCase();
     const disposition = {
       id: randomUUID(),
-      workstreamId: stream.id,
-      findingId: requiredString(value.findingId, "Finding ID", 20),
-      reason: requiredString(value.reason, "Disposition reason", 4000),
-      actor: requiredString(value.actor, "Disposition actor", 200),
+      projectId: targetProject.id,
+      branch: branchName,
+      findingId,
+      reason: requiredString(value.reason, "Acceptance reason", 4000),
+      actor: requiredString(value.actor || "user", "Actor", 200),
       createdAt: new Date().toISOString()
     };
-    await locked(() => append("dispositions", stream.id, disposition));
-    return disposition;
-  }
-
-  // Removing a project deletes its record. Its workstreams and their review
-  // records go too, but only when asked: they are review history.
-  async function removeProject(projectId, { withWorkstreams = false, expectedWorkstreams = null } = {}) {
-    const target = await project(projectId);
     return locked(async () => {
-      const owned = (await workstreams()).filter((stream) => stream.project === target.id).map((stream) => stream.id);
-      // The settings page confirms a count; refuse if workstreams appeared since.
-      if (expectedWorkstreams != null && expectedWorkstreams !== owned.length) throw new Error(`Project ${target.id} now has ${owned.length} workstreams, not ${expectedWorkstreams}; reload and confirm again`);
-      if (owned.length && !withWorkstreams) throw new Error(`Project ${target.id} has ${owned.length} workstream${owned.length === 1 ? "" : "s"} (${owned.join(", ")}); removing it also deletes them and their reviews. Pass --with-workstreams to confirm.`);
-      for (const streamId of owned) {
-        await rm(path.join(root, "workstreams", `${streamId}.json`), { force: true });
-        for (const kind of ["events", "reviews", "delegations", "dispositions"]) await rm(path.join(root, kind, `${streamId}.jsonl`), { force: true });
+      if (validFindingIds && !validFindingIds.has(findingId)) {
+        throw new Error(`Unknown MRR finding ${findingId} on ${targetProject.id}/${branchName}`);
       }
-      await rm(path.join(root, "projects", `${target.id}.json`));
-      return { project: target.id, workstreams: owned };
+      await appendJsonl(branchFile("dispositions", targetProject.id, branchName), disposition);
+      return disposition;
     });
   }
 
-  return { root, init, projects, project, saveProject, updateProject, removeProject, workstreams, workstream, saveWorkstream, delegations: (id) => lines("delegations", id), reviews: (id) => lines("reviews", id), events: (id) => lines("events", id), dispositions: (id) => lines("dispositions", id), addDelegation, addDelegationEvent, addReview, addDisposition };
+  function sessionKey(sessionId) {
+    return encodeURIComponent(optionalString(sessionId, "Session ID", 200) || "default").replaceAll(".", "%2E");
+  }
+
+  async function appendPrompt(projectId, entry) {
+    const pid = id(projectId, "Project ID");
+    const sid = optionalString(entry.sessionId, "Session ID", 200) || "default";
+    const record = {
+      id: randomUUID(),
+      ts: entry.ts || new Date().toISOString(),
+      host: optionalString(entry.host, "Host", 60) || "unknown",
+      sessionId: sid,
+      branch: optionalString(entry.branch, "Branch", 300) || "HEAD",
+      head: optionalString(entry.head, "HEAD SHA", 60),
+      prompt: requiredString(entry.prompt, "Prompt", 100_000)
+    };
+    await appendJsonl(path.join(root, "prompts", pid, `${sessionKey(sid)}.jsonl`), record);
+    return record;
+  }
+
+  async function prompts(projectId, sessionId = null) {
+    const pid = id(projectId, "Project ID");
+    if (sessionId) {
+      return readJsonl(path.join(root, "prompts", pid, `${sessionKey(sessionId)}.jsonl`));
+    }
+    let files;
+    try { files = (await readdir(path.join(root, "prompts", pid))).filter((f) => f.endsWith(".jsonl")).sort(); }
+    catch (error) { if (error.code === "ENOENT") return []; throw error; }
+    const all = (await Promise.all(files.map((file) => readJsonl(path.join(root, "prompts", pid, file))))).flat();
+    return all.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+  }
+
+  async function promptSessions(projectId) {
+    const pid = id(projectId, "Project ID");
+    let files;
+    try { files = (await readdir(path.join(root, "prompts", pid))).filter((f) => f.endsWith(".jsonl")); }
+    catch (error) { if (error.code === "ENOENT") return []; throw error; }
+    const summaries = [];
+    for (const file of files) {
+      const items = await readJsonl(path.join(root, "prompts", pid, file));
+      if (!items.length) continue;
+      summaries.push({
+        sessionId: decodeBranchKey(file.slice(0, -".jsonl".length)),
+        count: items.length,
+        lastTs: items[items.length - 1].ts
+      });
+    }
+    return summaries.sort((a, b) => String(b.lastTs).localeCompare(String(a.lastTs)));
+  }
+
+  async function saveReport(projectId, branch, markdown) {
+    const file = branchFile("reports", projectId, branch, "md");
+    await writeTextAtomic(file, `${String(markdown).trim()}\n`);
+    return file;
+  }
+
+  async function readReport(projectId, branch) {
+    try { return await readFile(branchFile("reports", projectId, branch, "md"), "utf8"); }
+    catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  }
+
+  async function trackedBranches(projectId) {
+    try {
+      const files = await readdir(path.join(root, "branches", id(projectId, "Project ID")));
+      return files
+        .filter((file) => file.endsWith(".jsonl"))
+        .map((file) => decodeBranchKey(file.slice(0, -".jsonl".length)))
+        .sort();
+    } catch (error) {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  async function removeProject(projectId) {
+    const target = await project(projectId);
+    return locked(async () => {
+      const branches = await trackedBranches(target.id);
+      for (const folder of ["branches", "dispositions", "reports", "briefs", "prompts"]) {
+        await rm(path.join(root, folder, target.id), { recursive: true, force: true });
+      }
+      await rm(path.join(root, "projects", `${target.id}.json`), { force: true });
+      return { project: target.id, branches };
+    });
+  }
+
+  return {
+    root,
+    init,
+    projects,
+    project,
+    saveProject,
+    updateProject,
+    removeProject,
+    reviews,
+    dispositions,
+    briefs,
+    addBrief,
+    addReview,
+    addDisposition,
+    appendPrompt,
+    prompts,
+    promptSessions,
+    saveReport,
+    readReport,
+    trackedBranches
+  };
 }

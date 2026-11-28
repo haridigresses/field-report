@@ -15,7 +15,7 @@ Run `fr-ask-questions` on the request: the outcome, what done looks like for the
 
 ## 2. Look before proposing
 
-Read-only, as in plan mode: read the relevant code and docs, decisions the user already made (the `Decisions:` line of `fr context` in any related workstream), and this repository's architecture and footgun docs. Cite files. Change nothing, and write no code.
+Read-only, as in plan mode: read the relevant code and docs, prior user decisions in the conversation or existing plans, and this repository's architecture and footgun docs. Cite files. Change nothing, and write no code.
 
 ## 3. Sketch the arcs
 
@@ -41,11 +41,11 @@ List every assumption the plan rests on, including ones implied earlier in the c
 
 ## 6. Settle the directional calls
 
-Use `fr-grill-me` on the open directional choices, one question at a time with a recommended answer. Write each answer in the plan's Decisions section. When a PR's workstream is created later, record the decisions that bind it with `fr decide`, because reviewers read their brief, not the plan.
+Use `fr-grill-me` on the open directional choices, one question at a time with a recommended answer. Write each answer in the plan's Decisions section. Pass `--brr <plan-file>` (or place the plan in `docs/plans/` where `fr mrr` auto-detects it) so the `intent` seat treats the signed-off BRR plan as authoritative.
 
 ## 7. Write the plan and get sign-off
 
-Write the plan as plain markdown in the project's plan home: `fr project list` shows it before any workstream exists, and `fr context` prints it on its `Plans:` line. If that is `docs/plans/`, write `docs/plans/<build>.md` in the target repository. If it names a service (Linear, Notion, or Ref) and a reference, write and read the plan there through this host's MCP connector for it. If the host has no connector for it, say so and ask the user where to put the plan; do not silently write it somewhere else.
+Write the plan as plain markdown in the project's plan home (`fr status` and `fr project list` show it). If that is `docs/plans/`, write `docs/plans/<build>.md` in the target repository. If it names a service (Linear, Notion, or Ref) and a reference, write and read the plan there through this host's MCP connector for it. If the host has no connector for it, say so and ask the user where to put the plan; do not silently write it somewhere else.
 
 Keep one copy. The plan home holds the plan and the user's comments; do not keep a second copy in the repo that can drift.
 
