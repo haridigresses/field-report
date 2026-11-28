@@ -89,20 +89,47 @@ test("saving writes through a symlinked config instead of replacing the link", a
   assert.equal(JSON.parse(await readFile(real, "utf8")).seats.design.models[0].id, "gemini-4-neon");
 });
 
-test("settings HTTP endpoints serve defaults, validate config saves, block CSRF/rebinding, redirect / to /settings, and edit/remove projects", async () => {
+test("HTTP endpoints serve Battlefield /, /settings, /api/state, /api/refresh, validate config saves, and block CSRF/rebinding", async () => {
   const port = 4177;
   const dir = await mkdtemp(path.join(os.tmpdir(), "fr-settings-http-"));
   const previousConfig = process.env.FIELD_REPORT_CONFIG;
   process.env.FIELD_REPORT_CONFIG = path.join(dir, "config.json");
   const store = createStore(path.join(dir, "state"));
   await store.saveProject({ id: "live", label: "Live", repoPath: dir });
-  const server = createServer({ port, store });
+  let refreshCount = 0;
+  const mockCollect = async () => {
+    refreshCount += 1;
+    return { schemaVersion: 7, generatedAt: "2026-11-28T08:00:00Z", projects: [{ id: "live", label: "Live", health: { git: "ok", github: "local-only" } }], units: [] };
+  };
+  const server = createServer({ port, store, collectFn: mockCollect });
 
   try {
-    const redirect = await dispatch(server, port, { url: "/" });
-    assert.equal(redirect.status, 302);
-    assert.equal(redirect.headers.location, "/settings");
+    const homePage = await dispatch(server, port, { url: "/" });
+    assert.equal(homePage.status, 200);
+    assert.match(homePage.text, /Field Report — Battlefield/);
+    assert.equal((await dispatch(server, port, { url: "/app.js" })).status, 200);
     assert.equal((await dispatch(server, port, { url: "/settings" })).status, 200);
+
+    const stateRes = (await dispatch(server, port, { url: "/api/state" })).json();
+    assert.equal(stateRes.schemaVersion, 7);
+    assert.equal(refreshCount, 1);
+
+    const csrfRefresh = await dispatch(server, port, {
+      method: "POST",
+      url: "/api/refresh",
+      headers: { origin: "https://evil.example", "content-type": "application/json" },
+      body: "{}"
+    });
+    assert.equal(csrfRefresh.status, 403);
+
+    const goodRefresh = await dispatch(server, port, {
+      method: "POST",
+      url: "/api/refresh",
+      headers: { origin: `http://127.0.0.1:${port}`, "content-type": "application/json" },
+      body: "{}"
+    });
+    assert.equal(goodRefresh.status, 200);
+    assert.equal(refreshCount, 2);
 
     const initial = (await dispatch(server, port, { url: "/api/config" })).json();
     assert.equal(initial.exists, false);

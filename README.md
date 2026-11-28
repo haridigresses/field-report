@@ -13,6 +13,7 @@ Field Report mechanically gates commits on a staged-tree **CRR** (`fr crr`) and 
 - **Blocks the normal PR-open & merge paths:** `~/.local/bin/gh` (evaluating `process.cwd()` where `gh` actually runs, pinned to your canonical user state root) blocks non-draft `gh pr create` and `gh pr ready` until `fr gate open` is `READY` and blocks `gh pr merge` unconditionally in enabled repos, while host `PreToolUse` hooks block explicit-path `/.../gh` bypasses, block MCP PR-open/ready/merge calls, and force human confirmation (`ask`/`force_ask`) on `gh workflow run` / `gh release create`. Draft PRs (`gh pr create --draft`) pass through anytime for early CI with a reminder to tell the user MRR has not run. Raw HTTP tools (`gh api`, `curl`) are out of scope locally; add a required GitHub status check if you want a remote merge backstop.
 - **Environment & blind-spot audit (`fr doctor`):** Audits `PATH` order, shell rc footguns (`--system-prompt-file` on `claude`, `alias gh=`), disabled host hooks/plugins, reviewer CLIs & models, and per-project `pre-commit` hooks / `core.hooksPath`.
 - **Calm post-open checks (`fr gate bots`):** Verifies GitHub checks ran and passed and review threads are resolved—resolving fixed bot threads silently and leaving human threads for the human reviewer without duplicate comment spam.
+- **Read-only General's Battlefield (`fr ui`):** Serves `/` with a live overview across all enabled repos (worktrees, open PRs, 3-seat MRR verdicts, reviewer questions, CI rollup, and bot/human thread status) alongside `/settings`.
 
 ## Install
 
@@ -24,11 +25,11 @@ cd ~/field-report && node scripts/install.mjs && fr init
 fr doctor
 ```
 
-Configure models and projects either in `~/.config/field-report/config.json` or in the local Settings UI:
+Open the General's Battlefield and Settings UI locally:
 
 ```bash
 fr ui
-# opens http://127.0.0.1:4177/settings
+# opens http://127.0.0.1:4177/ (and http://127.0.0.1:4177/settings)
 ```
 
 ## Commands
