@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { buildUserContract, capturePromptFromHook, formatCappedPrompts } from "../src/prompts.mjs";
+import { detectRepoBrr, verifyBrrAtBaseHead } from "../src/repository.mjs";
 import { createStore } from "../src/store.mjs";
 
 const exec = promisify(execFile);
@@ -39,13 +40,73 @@ test("session-keyed prompt capture works across main checkout and git worktrees 
     store,
     project,
     env: { FR_SESSION_ID: "s1" },
-    brr: { source: "docs/plans/x.md", text: "Approved BRR plan" }
+    brr: { source: "docs/plans/x.md", text: "Approved BRR plan", authoritative: true }
   });
   assert.equal(contract.sessionId, "s1");
   assert.equal(contract.promptCount, 2);
   assert.match(contract.text, /AUTHORITATIVE BRR PLAN \(docs\/plans\/x\.md\) — DOMINATES/);
   assert.match(contract.text, /Actually drop Y, keep X simple/);
   assert.doesNotMatch(contract.text, /Unrelated refactor Z/);
+
+  // F26: passing --session <bogus> when captured sessions exist throws rather than falling through to --intent-file!
+  await assert.rejects(
+    buildUserContract({ store, project, sessionId: "bogus", intentFileText: "Builder self-serving story" }),
+    /No captured prompts found for --session 'bogus'/
+  );
+  // Concurrent s1 & s2 without sessionId or envSession throws ambiguous multi-session error.
+  await assert.rejects(
+    buildUserContract({ store, project, env: {} }),
+    /Multiple captured prompt sessions exist/
+  );
+  // Exported env session (e.g. FR_SESSION_ID on SessionStart) with 0 prompts degrades gracefully instead of throwing against historical sessions, and ignores --intent-file when historical sessions exist.
+  const emptyEnvContract = await buildUserContract({
+    store,
+    project,
+    env: { FR_SESSION_ID: "fresh-session-no-prompts" },
+    intentFileText: "Should not inject when sessions exist"
+  });
+  assert.equal(emptyEnvContract.promptCount, 0);
+  assert.match(emptyEnvContract.text, /NO CAPTURED USER PROMPTS OR BRR/);
+  assert.doesNotMatch(emptyEnvContract.text, /Should not inject/);
+
+  // F26 + detectRepoBrr: single signed-off plan on baseHead auto-loads even if untouched in diff;
+  // verifyBrrAtBaseHead marks only blobs matching baseHead as authoritative.
+  await mkdir(path.join(repo, "docs", "plans"), { recursive: true });
+  const planFile = path.join(repo, "docs", "plans", "spec.md");
+  await writeFile(planFile, "Signed-off plan\n");
+  await exec("git", ["-C", repo, "add", "docs/plans/spec.md"]);
+  await exec("git", ["-C", repo, "commit", "-m", "add plan"]);
+  const baseSha = (await exec("git", ["-C", repo, "rev-parse", "HEAD"])).stdout.trim();
+
+  const autoDetected = await detectRepoBrr(repo, baseSha, ["docs/plans/new-decoy-not-on-base.md"]);
+  assert.equal(autoDetected?.authoritative, true);
+  assert.equal(autoDetected?.text, "Signed-off plan");
+
+  const brrOnlyContract = await buildUserContract({
+    store,
+    project,
+    env: { FR_SESSION_ID: "fresh-session-no-prompts" },
+    brr: autoDetected
+  });
+  assert.match(brrOnlyContract.text, /AUTHORITATIVE BRR PLAN/);
+  assert.doesNotMatch(brrOnlyContract.text, /NO CAPTURED USER PROMPTS OR BRR/);
+
+  const authCheck = await verifyBrrAtBaseHead(repo, baseSha, planFile, "Signed-off plan\n");
+  assert.equal(authCheck.authoritative, true);
+  const tamperedCheck = await verifyBrrAtBaseHead(repo, baseSha, planFile, "Builder altered plan\n");
+  assert.equal(tamperedCheck.authoritative, false);
+  const externalCheck = await verifyBrrAtBaseHead(repo, baseSha, path.join(root, "fake.md"), "Signed-off plan\n");
+  assert.equal(externalCheck.authoritative, false);
+
+  const nonAuthContract = await buildUserContract({
+    store,
+    project,
+    sessionId: "s1",
+    brr: { source: "/tmp/fake.md", text: "Fake plan", authoritative: false }
+  });
+  assert.equal(nonAuthContract.hasBrr, false);
+  assert.match(nonAuthContract.text, /BUILDER-SUPPLIED PLAN CONTEXT.*NOT verified on baseHead/);
+  assert.doesNotMatch(nonAuthContract.text, /DOMINATES/);
 });
 
 test("formatCappedPrompts preserves initial framing and newest pivots within byte budget", () => {

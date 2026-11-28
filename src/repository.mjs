@@ -154,20 +154,44 @@ export async function readMergeRules(repoRoot) {
   catch { return null; }
 }
 
-// Only plans already present on baseHead may auto-populate as pre-existing BRR
+// Only plans already present on baseHead may be treated as authoritative BRR
 // context; candidate-authored plan files added/edited in the branch's own diff
-// are never promoted to dominate USER CONTRACT.
+// (or arbitrary external files passed via --brr) never dominate USER CONTRACT.
+// When docs/plans/ on baseHead contains a single signed-off plan (or a changed
+// plan file already existed on baseHead), load its baseHead blob automatically.
 export async function detectRepoBrr(repoRoot, baseHead, changedFiles = []) {
   if (!baseHead) return null;
   const planFiles = changedFiles.filter((file) => /^docs\/plans\/.+\.md$/i.test(file));
-  if (!planFiles.length) return null;
-  const chosen = planFiles[planFiles.length - 1];
-  try {
-    const content = (await run("git", ["show", `${baseHead}:${chosen}`], repoRoot)).trim();
-    return content ? { source: `${chosen} @ ${baseHead.slice(0, 12)}`, text: content } : null;
-  } catch {
-    return null;
+  for (let i = planFiles.length - 1; i >= 0; i -= 1) {
+    const candidate = planFiles[i];
+    try {
+      const content = (await run("git", ["show", `${baseHead}:${candidate}`], repoRoot)).trim();
+      if (content) return { source: `${candidate} @ ${baseHead.slice(0, 12)}`, text: content, authoritative: true };
+    } catch {}
   }
+  try {
+    const listed = await run("git", ["ls-tree", "-r", "--name-only", baseHead, "docs/plans/"], repoRoot);
+    const basePlans = listed.split("\n").filter((file) => /^docs\/plans\/.+\.md$/i.test(file)).sort();
+    if (basePlans.length === 1) {
+      const content = (await run("git", ["show", `${baseHead}:${basePlans[0]}`], repoRoot)).trim();
+      if (content) return { source: `${basePlans[0]} @ ${baseHead.slice(0, 12)}`, text: content, authoritative: true };
+    }
+  } catch {}
+  return null;
+}
+
+export async function verifyBrrAtBaseHead(repoRoot, baseHead, filePath, fileText) {
+  if (!baseHead || !filePath) return { authoritative: false, source: filePath };
+  const rel = path.relative(repoRoot, path.resolve(filePath)).replaceAll(path.sep, "/");
+  if (!rel.startsWith("..") && !path.isAbsolute(rel)) {
+    try {
+      const baseContent = await run("git", ["show", `${baseHead}:${rel}`], repoRoot);
+      if (baseContent.trim() === String(fileText || "").trim()) {
+        return { authoritative: true, source: `${rel} @ ${baseHead.slice(0, 12)}` };
+      }
+    } catch {}
+  }
+  return { authoritative: false, source: filePath };
 }
 
 export async function pullRequest(project, selector, cwd = process.cwd(), { ghBin = "gh" } = {}) {

@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { accessSync, constants, realpathSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { checkBranchOpenGate, classifyGhArgs } from "../src/host-hooks.mjs";
 import { createStore } from "../src/store.mjs";
+
+const SYSTEM_HOME = (() => {
+  try { return os.userInfo().homedir; } catch { return os.homedir(); }
+})();
 
 // ~/.local/bin/gh wrapper: passes every command straight to the real gh binary
 // EXCEPT non-draft 'gh pr create' and 'gh pr ready' in Field Report-enabled
@@ -43,14 +48,27 @@ function execRealGh(realGh, args, { env = process.env, cwd = process.cwd(), spaw
   });
 }
 
+export function canonicalStateRoot({ homeDir = SYSTEM_HOME } = {}) {
+  return path.join(homeDir, ".local", "state", "field-report");
+}
+
+function resolveShimStore(env = process.env, { homeDir = SYSTEM_HOME } = {}) {
+  if (env.FIELD_REPORT_ALLOW_TEST_ROOT === "1" && env.FIELD_REPORT_STATE_ROOT) {
+    return createStore(path.resolve(env.FIELD_REPORT_STATE_ROOT));
+  }
+  return createStore(canonicalStateRoot({ homeDir }));
+}
+
 export async function runGhWrapper(argv, {
   env = process.env,
   cwd = process.cwd(),
   selfPath = process.argv[1],
-  store = createStore(),
+  store = null,
+  homeDir = SYSTEM_HOME,
   spawnFn = spawn,
   stderr = process.stderr
 } = {}) {
+  const activeStore = store || resolveShimStore(env, { homeDir });
   const realGh = env.FIELD_REPORT_REAL_GH || findRealGh({ envPath: env.PATH, selfPath });
   if (!realGh) {
     stderr.write("fr-gh: real 'gh' binary not found on PATH (install GitHub CLI)\n");
@@ -63,7 +81,7 @@ export async function runGhWrapper(argv, {
   }
 
   const check = await checkBranchOpenGate({
-    store,
+    store: activeStore,
     cwd,
     explicitRepo: classified.explicitRepo,
     explicitBranch: classified.explicitHead,

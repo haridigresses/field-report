@@ -90,17 +90,59 @@ export function classifyGhArgs(argv) {
   return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
 }
 
+const SHELL_WRAPPER_WORDS = new Set(["env", "command", "exec", "time", "nohup", "nice", "sudo", "caffeinate", "xargs", "then", "do", "else", "elif", "!"]);
+const WRAPPER_VALUE_FLAGS = {
+  env: new Set(["-u", "-C", "-P"]),
+  exec: new Set(["-a"]),
+  nice: new Set(["-n"]),
+  sudo: new Set(["-u", "-g", "-C", "-D", "-R", "-T", "-p", "-r", "-t"]),
+  caffeinate: new Set(["-t", "-w"]),
+  xargs: new Set(["-n", "-L", "-P", "-I", "-J", "-s", "-E", "-d"])
+};
+
 // Quote-, command-substitution-, and heredoc-aware shell command splitter so
-// multi-line bodies (`--body "$(cat <<'EOF'\n- a; b\nEOF\n)" --draft`) and
-// quoted operators (`--title "a | b" --head feat/other`) never truncate argv.
+// multi-line bodies (`--body "$(cat <<'EOF'\n- a; b\nEOF\n)" --draft`),
+// subshells/braces (`(gh pr create ...)`, `{ gh pr create; }`), background `&`,
+// and wrapper prefixes (`exec -a`, `sudo -n`, `time -p`, `env -S "..."`) never evade or truncate argv.
 export function extractShellGhInvocations(commandText) {
   const commands = splitAndTokenizeShell(String(commandText || ""));
   const invocations = [];
   for (const tokens of commands) {
     if (!tokens.length) continue;
     let start = 0;
-    while (start < tokens.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start]) || tokens[start] === "env" || tokens[start] === "command")) {
-      start += 1;
+    let reparsed = null;
+    while (start < tokens.length) {
+      const tok = tokens[start];
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok) || SHELL_WRAPPER_WORDS.has(tok)) {
+        start += 1;
+        if (tok === "env" || tok === "command" || tok === "exec" || tok === "time" || tok === "nice" || tok === "sudo" || tok === "caffeinate" || tok === "xargs") {
+          const valueFlags = WRAPPER_VALUE_FLAGS[tok] || new Set();
+          while (start < tokens.length && tokens[start].startsWith("-")) {
+            const flag = tokens[start];
+            start += 1;
+            if (flag === "--") break;
+            if (tok === "env" && (flag === "-S" || flag.startsWith("--split-string") || (/^-[A-Za-z]*S/.test(flag) && !flag.startsWith("--")))) {
+              const inlineRest = /^-[A-Za-z]*S(.+)$/.exec(flag)?.[1];
+              const splitArg = flag.includes("=") ? flag.slice(flag.indexOf("=") + 1) : (inlineRest || tokens[start++] || "");
+              const inner = splitAndTokenizeShell(splitArg)[0] || [];
+              reparsed = [...inner, ...tokens.slice(start)];
+              break;
+            }
+            if (valueFlags.has(flag) && start < tokens.length) start += 1;
+          }
+          if (reparsed) break;
+          // `env` can carry VAR=val assignments after its own flags (e.g. `env -i FOO=1 gh ...`).
+          continue;
+        }
+        continue;
+      }
+      break;
+    }
+    if (reparsed) {
+      for (const nested of extractShellGhInvocations(reparsed.map((t) => `'${t.replaceAll("'", "'\\''")}'`).join(" "))) {
+        invocations.push(nested);
+      }
+      continue;
     }
     if (start < tokens.length && (tokens[start] === "gh" || tokens[start].endsWith("/gh"))) {
       invocations.push(tokens.slice(start + 1));
@@ -233,7 +275,11 @@ function splitAndTokenizeShell(input) {
       i += 1;
       continue;
     }
-    if (ch === ";" || ch === "|") {
+    if (ch === ";" || ch === "|" || ch === "(" || ch === ")" || ch === "{" || ch === "}") {
+      flushCommand();
+      continue;
+    }
+    if (ch === "&" && input[i - 1] !== ">" && input[i - 1] !== "<" && input[i + 1] !== ">") {
       flushCommand();
       continue;
     }

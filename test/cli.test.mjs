@@ -83,6 +83,7 @@ test("end-to-end branch-keyed loop: zero registration, worktree support, converg
     ...process.env,
     ZDOTDIR: root,
     FIELD_REPORT_STATE_ROOT: state,
+    FIELD_REPORT_ALLOW_TEST_ROOT: "1",
     FIELD_REPORT_CONFIG: configFile,
     FIELD_REPORT_REAL_GH: mockRealGh,
     FR_SESSION_ID: "sess-e2e",

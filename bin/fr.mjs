@@ -36,7 +36,8 @@ import {
   mrrTarget,
   projectForCheckout,
   pullRequest,
-  readMergeRules
+  readMergeRules,
+  verifyBrrAtBaseHead
 } from "../src/repository.mjs";
 import { buildReviewPrompt, crrModelCandidates, executeRoleReview, seatModelCandidates } from "../src/runner.mjs";
 import { configSource, seatConfig, seatFor } from "../src/seats.mjs";
@@ -366,7 +367,9 @@ async function main() {
 
     let brr = null;
     if (flags.brr && flags.brr !== true) {
-      brr = { source: flags.brr, text: await readFile(path.resolve(flags.brr), "utf8") };
+      const brrText = await readFile(path.resolve(flags.brr), "utf8");
+      const verified = await verifyBrrAtBaseHead(target.repoRoot, target.baseHead, flags.brr, brrText);
+      brr = { source: verified.source, text: brrText, authoritative: verified.authoritative };
     } else {
       brr = await detectRepoBrr(target.repoRoot, target.baseHead, inventory.files);
     }

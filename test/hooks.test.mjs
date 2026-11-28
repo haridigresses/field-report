@@ -67,6 +67,25 @@ test("classifyGhArgs and extractShellGhInvocations separate open PRs, draft PRs,
   assert.equal(pipedTitle.length, 1);
   assert.equal(classifyGhArgs(pipedTitle[0]).explicitHead, "feat/other");
   assert.equal(classifyGhArgs(["pr", "create", "--draft=true"]).action, "draft-pr");
+
+  // Subshell, brace group, background &, if/then, and wrapper prefixes (`exec -a`, `sudo -n`, `time -p`, `caffeinate -t`, `env -S`) all extract gh (F25).
+  for (const snippet of [
+    "(FIELD_REPORT_STATE_ROOT=/tmp/x gh pr create --title x)",
+    "{ gh pr create --title x; }",
+    "exec env -i gh pr create --title x",
+    "exec -a gh /opt/homebrew/bin/gh pr create --title x",
+    "sudo -n gh pr create --title x",
+    "caffeinate -t 3600 gh pr create --title x",
+    "time -p nohup /opt/homebrew/bin/gh pr ready 49",
+    "env -S 'FOO=1 gh pr create --title x'",
+    "env -iS 'FOO=1 gh pr create --title x'",
+    "true & gh pr create --title x",
+    "if true; then gh pr create --title x; fi"
+  ]) {
+    const extracted = extractShellGhInvocations(snippet);
+    assert.equal(extracted.length, 1, `expected gh invocation from: ${snippet}`);
+    assert.match(classifyGhArgs(extracted[0]).action, /^(?:open-pr|ready-pr)$/);
+  }
 });
 
 test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse + fr-gh block un-MRR'd PR open without [y/N]", async () => {
@@ -176,6 +195,20 @@ test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse 
   assert.equal(blockedCode, 1);
   assert.equal(spawned, 0);
   assert.match(errChunks.join(""), /Field Report BLOCKED 'gh pr create'/);
+
+  // Caller-supplied HOME and FIELD_REPORT_STATE_ROOT without FIELD_REPORT_ALLOW_TEST_ROOT=1 are ignored by fr-gh shim (F25).
+  const homeRoot = await mkdtemp(path.join(os.tmpdir(), "fr-shim-home-"));
+  const canonicalState = path.join(homeRoot, ".local", "state", "field-report");
+  const canonicalStore = createStore(canonicalState);
+  await canonicalStore.saveProject({ id: "demo", repoPath: repo, githubRepo: "owner/demo" });
+  const canonicalCheck = await runGhWrapper(["pr", "create", "--title", "x"], {
+    env: { HOME: path.join(root, "forged-empty-home"), FIELD_REPORT_STATE_ROOT: path.join(root, "forged-empty-state"), FIELD_REPORT_REAL_GH: "/usr/bin/true" },
+    homeDir: homeRoot,
+    cwd: repo,
+    spawnFn: mockSpawn,
+    stderr: { write: () => {} }
+  });
+  assert.equal(canonicalCheck, 1, "forged HOME / FIELD_REPORT_STATE_ROOT must not disable canonical gate");
 
   errChunks.length = 0;
   const draftCode = await runGhWrapper(["pr", "create", "--draft", "--title", "wip"], {
