@@ -47,9 +47,7 @@ test("classifyGhArgs and extractShellGhInvocations separate open PRs, draft PRs,
   assert.equal(classifyGhArgs(["pr", "ready", "49"]).selector, "49");
   assert.equal(classifyGhArgs(["pr", "create", "--title", "-H", "--draft"]).action, "draft-pr");
   assert.equal(classifyGhArgs(["pr", "create", "--title", "-H", "--draft"]).explicitHead, null);
-  assert.equal(classifyGhArgs(["api", "repos/owner/repo/pulls", "-f", "title=x", "-f", "head=feat/y", "-f", "base=main"]).action, "open-pr");
-  assert.equal(classifyGhArgs(["api", "repos/owner/repo/pulls", "-f", "title=x", "-F", "draft=true"]).action, "draft-pr");
-  assert.equal(classifyGhArgs(["api", "graphql", "-f", "query=mutation { markPullRequestReadyForReview(input:{pullRequestId:\"1\"}) { clientMutationId } }"]).action, "open-pr");
+  assert.equal(classifyGhArgs(["api", "repos/owner/repo/pulls"]).action, "allow");
   assert.equal(classifyGhArgs(["pr", "ready", "--undo", "49"]).action, "allow");
   assert.equal(classifyGhArgs(["pr", "view", "49"]).action, "allow");
   assert.equal(classifyGhArgs(["issue", "create", "-t", "todo"]).action, "allow");

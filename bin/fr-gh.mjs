@@ -21,10 +21,7 @@ export function findRealGh({ envPath = process.env.PATH || "", selfPath = proces
   ].filter(Boolean);
   const candidates = [
     ...backupDirs.map((dir) => path.join(dir, "gh.real")),
-    ...String(envPath).split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, "gh")),
-    "/opt/homebrew/bin/gh",
-    "/usr/local/bin/gh",
-    "/usr/bin/gh"
+    ...String(envPath).split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, "gh"))
   ];
   for (const candidate of candidates) {
     try {

@@ -17,10 +17,10 @@ function stripOwnerPrefix(headSpec) {
 }
 
 const PR_CREATE_VALUE_FLAGS = new Set(["-R", "--repo", "-h", "--hostname", "-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--body-file", "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project", "-r", "--reviewer", "-T", "--template", "-t", "--title"]);
-const API_VALUE_FLAGS = new Set(["-X", "--method", "-H", "--header", "-f", "--raw-field", "-F", "--field", "--input", "-q", "--jq", "-t", "--template", "--hostname"]);
 
-// Single-pass option-aware classifier for gh invocations (`gh pr create`,
-// `gh pr ready`, and `gh api` PR-create/ready mutations).
+// Single-pass option-aware classifier for the normal gh PR-open paths
+// (`gh pr create` without `--draft` and `gh pr ready`). Raw HTTP tools (`gh api`,
+// `curl`) are intentionally out of scope of local command classification.
 export function classifyGhArgs(argv) {
   const args = Array.isArray(argv) ? argv.map(String) : [];
   let index = 0;
@@ -52,43 +52,6 @@ export function classifyGhArgs(argv) {
   const command = args[index];
   const subcommand = args[index + 1];
   const rest = args.slice(index + 2);
-
-  if (command === "api") {
-    const apiArgs = args.slice(index + 1);
-    let endpoint = null;
-    let method = null;
-    const fields = [];
-    for (let i = 0; i < apiArgs.length; i += 1) {
-      const arg = apiArgs[i];
-      if (arg === "--") break;
-      if ((arg === "-X" || arg === "--method") && apiArgs[i + 1] != null) { method = apiArgs[i + 1].toUpperCase(); i += 1; continue; }
-      if (arg.startsWith("--method=")) { method = arg.slice("--method=".length).toUpperCase(); continue; }
-      if ((arg === "-f" || arg === "--raw-field" || arg === "-F" || arg === "--field") && apiArgs[i + 1] != null) { fields.push(apiArgs[i + 1]); i += 1; continue; }
-      if (API_VALUE_FLAGS.has(arg)) { i += 1; continue; }
-      if (!arg.startsWith("-") && !endpoint) endpoint = arg;
-    }
-    const joinedFields = fields.join("\n");
-    if (endpoint === "graphql" && /createPullRequest|markPullRequestReadyForReview/i.test(joinedFields) && !/isDraft\s*:\s*true/i.test(joinedFields)) {
-      return { action: "open-pr", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
-    }
-    const pullsMatch = String(endpoint || "").match(/^(?:\/)?repos\/([^/]+\/[^/]+)\/pulls(?:\/(\d+))?$/i);
-    if (pullsMatch) {
-      const repoSlug = pullsMatch[1] !== "{owner}/{repo}" ? pullsMatch[1] : explicitRepo;
-      const hasFields = fields.length > 0;
-      const effectiveMethod = method || (hasFields ? "POST" : "GET");
-      const isDraftTrue = fields.some((f) => /^draft=(?:true|1)$/i.test(f));
-      const isDraftFalse = fields.some((f) => /^draft=(?:false|0)$/i.test(f));
-      const headField = fields.find((f) => /^head=/i.test(f));
-      const explicitHead = headField ? stripOwnerPrefix(headField.slice("head=".length)) : null;
-      if (!pullsMatch[2] && effectiveMethod === "POST") {
-        return { action: isDraftTrue ? "draft-pr" : "open-pr", cleanedArgs: args, explicitRepo: repoSlug, explicitHead, selector: null };
-      }
-      if (pullsMatch[2] && (effectiveMethod === "PATCH" || effectiveMethod === "POST") && isDraftFalse) {
-        return { action: "ready-pr", cleanedArgs: args, explicitRepo: repoSlug, explicitHead: null, selector: pullsMatch[2] };
-      }
-    }
-    return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
-  }
 
   if (command !== "pr" || !subcommand) return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
   if (rest.includes("--help") || rest.includes("-h")) return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
@@ -176,8 +139,10 @@ export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicit
   const currentCommon = await gitCommonDir(cwd);
   if (explicitRepo) {
     matched = projects.find((project) => project.githubRepo?.toLowerCase() === String(explicitRepo).toLowerCase()) || null;
-  }
-  if (!matched && currentCommon) {
+    // If an explicit -R/--repo names a repository NOT registered in Field Report,
+    // do not misattribute it to whatever repo `cwd` happens to be inside.
+    if (!matched) return { managed: false };
+  } else if (currentCommon) {
     for (const project of projects) {
       const projectCommon = project.commonDir || await gitCommonDir(project.repoPath);
       if (projectCommon && projectCommon === currentCommon) { matched = project; break; }
@@ -275,10 +240,15 @@ export async function handleHostHook(event, rawStdin, { store, cwd = process.cwd
           break;
         }
       }
-    } else if (/(?:create|open)_pull_request/i.test(toolName) && toolInput.draft !== true) {
-      needsGate = true;
-      if (toolInput.owner && toolInput.repo) explicitRepo = `${toolInput.owner}/${toolInput.repo}`;
-      if (toolInput.head) explicitBranch = stripOwnerPrefix(toolInput.head);
+    } else if (/(?:create|open)_pull_request|pull_request_write/i.test(toolName) && toolInput.draft !== true) {
+      if (!/pull_request_write/i.test(toolName) || !toolInput.method || /create|open|ready/i.test(String(toolInput.method))) {
+        needsGate = true;
+        if (toolInput.owner && toolInput.repo) explicitRepo = `${toolInput.owner}/${toolInput.repo}`;
+        if (toolInput.head) explicitBranch = stripOwnerPrefix(toolInput.head);
+        if (toolInput.pull_number || toolInput.pullNumber || toolInput.number) {
+          selector = String(toolInput.pull_number || toolInput.pullNumber || toolInput.number);
+        }
+      }
     } else if (/(?:ready_for_review|mark_pull_request_ready)/i.test(toolName) || (/update_pull_request/i.test(toolName) && toolInput.draft === false)) {
       needsGate = true;
       if (toolInput.owner && toolInput.repo) explicitRepo = `${toolInput.owner}/${toolInput.repo}`;

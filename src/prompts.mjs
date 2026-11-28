@@ -156,11 +156,11 @@ export async function buildUserContract({ store, project, sessionId = null, env 
   }
   if (selected.length) {
     const budget = Math.max(8_000, maxBytes - Buffer.byteLength(sections.join("\n\n"), "utf8"));
-    sections.push(`### VERBATIM USER PROMPTS (session ${resolvedSession}; chronological — later user instructions override earlier ones)\n${formatCappedPrompts(selected, budget)}`);
+    sections.push(`### VERBATIM USER PROMPTS (session ${resolvedSession}; chronological — later user instructions override earlier ones; note that one session may span multiple branches/PRs, so do NOT flag asks belonging to other branches or deferred follow-up PRs as missing here)\n${formatCappedPrompts(selected, budget)}`);
   } else if (intentFileText?.trim()) {
     sections.push(`### SUPPLIED INTENT CONTEXT (--intent-file; verify carefully against scope creep)\n${intentFileText.trim().slice(0, maxBytes)}`);
   } else {
-    sections.push("### NO CAPTURED USER PROMPTS OR BRR\nNo BRR plan or session-matched user prompts were found. Flag any non-obvious product behavior, UX choice, or scope expansion in `questions` for the user rather than assuming it was requested.");
+    sections.push("### NO CAPTURED USER PROMPTS OR BRR (host may not offer a prompt hook)\nNo BRR plan or hook-captured user prompts were found for this session (hosts such as Codex, Devin, and Agy may not emit a prompt hook). Note this absence as a limitation in `summary` and review intent against the commit messages and builder notes in BUILDER TECHNICAL RATIONALE (putting unsettled product choices in `questions`), rather than returning `NO_GO` solely because prompts were not captured.");
   }
   return {
     text: sections.join("\n\n"),

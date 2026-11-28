@@ -4,15 +4,15 @@ Field Report gets AI coding agents' changes reviewed by three independent seats 
 
 ## Core Rules
 
-1. **No non-draft PR before MRR is `READY`.**
-   - `PreToolUse` hooks (Claude Code, Cursor) and the `~/.local/bin/gh` wrapper block non-draft `gh pr create`, `gh pr ready`, `gh api` pull-request open/ready calls, and GitHub MCP PR-open calls in enabled repos until `fr gate open` is `READY`. (This local boundary prevents cooperative/habitual agent skips without repo clutter; a required GitHub status check is the optional backstop against raw HTTP calls.)
+1. **No non-draft PR before MRR is `READY` (blocks the normal paths).**
+   - `PreToolUse` hooks (Claude Code, Cursor) and the `~/.local/bin/gh` wrapper (which locates the real `gh` dynamically on `PATH` skipping itself, or uses `~/.local/bin/gh.real` if `gh` lived there) block non-draft `gh pr create`, `gh pr ready`, and GitHub MCP PR-open calls in enabled repos until `fr gate open` is `READY`. Raw HTTP/API calls (`gh api`, `curl`) are out of scope locally; a required GitHub status check is the optional backstop against adversarial bypass.
    - Opening a **Draft PR** (`gh pr create --draft`) before MRR is allowed so CI can run early. Whenever an agent mentions or hands off a pre-MRR Draft PR, it must explicitly tell the user that MRR has not been run yet.
-   - Humans can mark any Draft PR ready on GitHub, invoke the system `gh` binary by full path (or `~/.local/bin/gh.real` if `gh` lived in `~/.local/bin`), accept findings (`fr accept <F-id> --reason "<reason>" --actor "<name>"`), and merge.
+   - Humans can mark any Draft PR ready on GitHub, invoke the underlying `gh` binary by full path, accept findings (`fr accept <F-id> --reason "<reason>" --actor "<name>"`), and merge.
 
 2. **Three seats, strict context separation.**
    - **`correctness`** and **`design`** see **only** `git diff <baseHead>..<head>` (plus `merge-ready-review.md` if present and their own open findings on a rerun)—zero session history.
    - **`intent`** receives two strictly separated sections alongside the diff:
-     1. **`USER CONTRACT` (authoritative):** A pre-existing/signed-off BRR plan (only auto-loaded from `baseHead`, never from candidate-edited files in the diff) + verbatim user prompts captured for the session (`UserPromptSubmit` / `beforeSubmitPrompt` hook, stored locally in `prompts/<project>/<session>.jsonl` with a 14-day retention window and capped at 40 KB when sent to the configured `intent` seat provider, with later prompts overriding earlier ones). The `intent` seat composes its **Intent Playback** (`intentSummary`) strictly from this section.
+     1. **`USER CONTRACT` (authoritative):** A pre-existing/signed-off BRR plan (only auto-loaded from `baseHead`, never from candidate-edited files in the diff) + verbatim user prompts captured per session (`UserPromptSubmit` / `beforeSubmitPrompt` hook, stored locally in `prompts/<project>/<session>.jsonl` with a 14-day retention window and capped at 40 KB when sent to the configured `intent` seat provider, with later prompts overriding earlier ones and awareness that one session may span multiple branches/PRs). On hosts without a prompt hook (`codex`, `devin`, `agy`), `intent` notes missing prompts as a limitation in `summary` and reviews against commit messages and `--notes` rather than returning `NO_GO`.
      2. **`BUILDER TECHNICAL RATIONALE` (non-contract context):** `git log <baseHead>..<head>` + optional `fr mrr --notes "..."`. Explains technical file/dependency mechanics only; never excuses unrequested product scope.
 
 3. **Convergence without model shopping.**
