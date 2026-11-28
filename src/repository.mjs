@@ -15,6 +15,25 @@ export async function gitCommonDir(cwd = process.cwd()) {
   catch { return null; }
 }
 
+export function parseGitHubSlug(remoteUrl) {
+  const text = String(remoteUrl || "").trim();
+  if (!text) return null;
+  const httpsMatch = text.match(/^https?:\/\/[^/]+\/([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i);
+  if (httpsMatch) return httpsMatch[1];
+  const sshMatch = text.match(/^(?:ssh:\/\/[^/]+\/|[^@/\s]+@[^:/\s]+:)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i);
+  if (sshMatch) return sshMatch[1];
+  return null;
+}
+
+export async function gitOriginSlug(cwd = process.cwd()) {
+  try {
+    const url = await run("git", ["config", "--get", "remote.origin.url"], cwd, 5_000);
+    return parseGitHubSlug(url);
+  } catch {
+    return null;
+  }
+}
+
 export async function checkout(cwd = process.cwd()) {
   const [root, commonDir, branch, head, status] = await Promise.all([
     run("git", ["rev-parse", "--show-toplevel"], cwd),

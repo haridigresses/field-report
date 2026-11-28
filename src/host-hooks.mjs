@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { quote } from "./hooks.mjs";
 import { capturePromptFromHook, readConfiguredProjects } from "./prompts.mjs";
-import { ancestorHeads, checkout, gitCommonDir, mrrTarget, resolvePullRequestRef } from "./repository.mjs";
+import { ancestorHeads, checkout, gitCommonDir, gitOriginSlug, mrrTarget, resolvePullRequestRef } from "./repository.mjs";
 import { describePlans, describeTodos, plansFor, todosFor } from "./store.mjs";
 import { evaluateMrrGate, openReasons } from "./policy.mjs";
 
@@ -254,16 +254,30 @@ export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicit
 
   let matched = null;
   const currentCommon = await gitCommonDir(cwd);
-  if (explicitRepo) {
-    matched = projects.find((project) => project.githubRepo?.toLowerCase() === String(explicitRepo).toLowerCase()) || null;
-    // If an explicit -R/--repo names a repository NOT registered in Field Report,
-    // do not misattribute it to whatever repo `cwd` happens to be inside.
-    if (!matched) return { managed: false };
-  } else if (currentCommon) {
+  let cwdProject = null;
+  if (currentCommon) {
     for (const project of projects) {
       const projectCommon = project.commonDir || await gitCommonDir(project.repoPath);
-      if (projectCommon && projectCommon === currentCommon) { matched = project; break; }
+      if (projectCommon && projectCommon === currentCommon) { cwdProject = project; break; }
     }
+  }
+
+  if (explicitRepo) {
+    const wanted = String(explicitRepo).toLowerCase();
+    for (const project of projects) {
+      const slug = project.githubRepo || await gitOriginSlug(project.repoPath);
+      if (slug && slug.toLowerCase() === wanted) { matched = project; break; }
+    }
+    if (!matched && cwdProject) {
+      const cwdSlug = cwdProject.githubRepo || await gitOriginSlug(cwdProject.repoPath);
+      // Only treat explicitRepo as unmanaged when cwdProject has a known GitHub
+      // slug that provably differs from explicitRepo; if cwdProject was registered
+      // without --github and has a non-GitHub/local origin, still gate cwdProject.
+      if (!cwdSlug || cwdSlug.toLowerCase() === wanted) matched = cwdProject;
+    }
+    if (!matched) return { managed: false };
+  } else {
+    matched = cwdProject;
   }
   if (!matched) return { managed: false };
 

@@ -119,6 +119,19 @@ test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse 
   const mcpBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "mcp__github__create_pull_request", cwd: repo, tool_input: { owner: "owner", repo: "demo", title: "x" } }), { store });
   assert.equal(mcpBlocked.exitCode, 2);
 
+  // Explicit -R pointing to a provably DIFFERENT unregistered repo while inside `demo` (whose githubRepo is owner/demo) is unmanaged/allowed.
+  const otherRepoAllowed = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R other/unregistered --title x" } }), { store });
+  assert.equal(otherRepoAllowed.exitCode, 0);
+
+  // Project registered WITHOUT --github (`githubRepo: null`) STILL blocks both MCP create_pull_request and `gh pr create -R` (F21).
+  await store.updateProject("demo", { githubRepo: "" });
+  assert.equal((await store.project("demo")).githubRepo, null);
+  const mcpNoGithubBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "mcp__github__create_pull_request", cwd: repo, tool_input: { owner: "owner", repo: "demo", title: "x" } }), { store });
+  assert.equal(mcpNoGithubBlocked.exitCode, 2);
+  const dashRNoGithubBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R owner/demo --title x" } }), { store });
+  assert.equal(dashRNoGithubBlocked.exitCode, 2);
+  await store.updateProject("demo", { githubRepo: "owner/demo" });
+
   const cursorBlocked = await handleHostHook("pre-tool", JSON.stringify({ hook_event_name: "beforeShellExecution", workspace_roots: [repo], command: "gh pr ready 12" }), { store });
   assert.equal(JSON.parse(cursorBlocked.stdout).permission, "deny");
 
