@@ -123,6 +123,7 @@ test("fr seats prints the resolved panel and native --brief follows config", asy
   const briefOut = JSON.parse(await run(["mrr", "--brief", "--seat", "design"]));
   assert.equal(briefOut.brief.model, "gemini-4-neon");
   assert.deepEqual(briefOut.brief.seatModels, ["gemini-4-neon"]);
-  // Minting a second brief on the same head is refused (prevents discarding a NO_GO).
-  await assert.rejects(run(["mrr", "--brief", "--seat", "design"]), /Brief already issued for design on head/);
+  // Repeating --brief before recording returns the same brief ID rather than minting a second one.
+  const retryBrief = JSON.parse(await run(["mrr", "--brief", "--seat", "design"]));
+  assert.equal(retryBrief.brief.id, briefOut.brief.id);
 });

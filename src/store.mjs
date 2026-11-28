@@ -244,8 +244,17 @@ export function createStore(root = defaultStateRoot()) {
     const brief = { ...value, id: value.id || randomUUID(), projectId: pid, branch: branchName, createdAt: new Date().toISOString() };
     return locked(async () => {
       const priorBriefs = await briefs(pid, branchName);
-      if (brief.kind === "mrr" && priorBriefs.some((item) => item.kind === "mrr" && item.role === brief.role && item.head === brief.head)) {
-        throw new Error(`Brief already issued for ${brief.role} on head ${String(brief.head).slice(0, 12)}; record that brief or commit a fix before minting a new one`);
+      const existing = brief.kind === "mrr"
+        ? priorBriefs.find((item) => item.kind === "mrr" && item.role === brief.role && item.head === brief.head)
+        : null;
+      if (existing) {
+        const priorReviews = await reviews(pid, branchName);
+        if (priorReviews.some((r) => r.runId === existing.id)) {
+          throw new Error(`Brief for ${brief.role} on head ${String(brief.head).slice(0, 12)} was already recorded`);
+        }
+        // Idempotently return the existing unrecorded brief for this (role, head) so
+        // a lost native subagent run can be retried without minting a second brief ID.
+        return existing;
       }
       return appendJsonl(branchFile("briefs", pid, branchName), brief);
     });

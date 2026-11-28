@@ -123,13 +123,28 @@ test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse 
   const otherRepoAllowed = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R other/unregistered --title x" } }), { store });
   assert.equal(otherRepoAllowed.exitCode, 0);
 
-  // Project registered WITHOUT --github (`githubRepo: null`) STILL blocks both MCP create_pull_request and `gh pr create -R` (F21).
+  // Project registered WITHOUT --github (`githubRepo: null`) STILL blocks MCP create_pull_request,
+  // Cursor stdio beforeMCPExecution (with top-level `command` + string `tool_input` — F22),
+  // and fork workflows (`origin` = fork/demo, `upstream` = owner/demo — F21 + F23).
   await store.updateProject("demo", { githubRepo: "" });
   assert.equal((await store.project("demo")).githubRepo, null);
-  const mcpNoGithubBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "mcp__github__create_pull_request", cwd: repo, tool_input: { owner: "owner", repo: "demo", title: "x" } }), { store });
-  assert.equal(mcpNoGithubBlocked.exitCode, 2);
-  const dashRNoGithubBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R owner/demo --title x" } }), { store });
-  assert.equal(dashRNoGithubBlocked.exitCode, 2);
+  await exec("git", ["-C", repo, "remote", "set-url", "origin", "https://github.com/forkuser/demo.git"]);
+  await exec("git", ["-C", repo, "remote", "add", "upstream", "git@github.com:owner/demo.git"]);
+
+  const cursorStdioMcpBlocked = await handleHostHook("pre-tool", JSON.stringify({
+    hook_event_name: "beforeMCPExecution",
+    workspace_roots: [repo],
+    tool_name: "create_pull_request",
+    command: "npx -y @modelcontextprotocol/server-github",
+    tool_input: JSON.stringify({ owner: "owner", repo: "demo", title: "x", head: "feat/unreviewed" })
+  }), { store });
+  assert.equal(JSON.parse(cursorStdioMcpBlocked.stdout).permission, "deny");
+
+  const dashRForkBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R owner/demo --title x" } }), { store });
+  assert.equal(dashRForkBlocked.exitCode, 2);
+
+  await exec("git", ["-C", repo, "remote", "set-url", "origin", origin]);
+  await exec("git", ["-C", repo, "remote", "remove", "upstream"]);
   await store.updateProject("demo", { githubRepo: "owner/demo" });
 
   const cursorBlocked = await handleHostHook("pre-tool", JSON.stringify({ hook_event_name: "beforeShellExecution", workspace_roots: [repo], command: "gh pr ready 12" }), { store });

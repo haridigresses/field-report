@@ -25,12 +25,18 @@ export function parseGitHubSlug(remoteUrl) {
   return null;
 }
 
-export async function gitOriginSlug(cwd = process.cwd()) {
+export async function gitRemoteSlugs(cwd = process.cwd()) {
   try {
-    const url = await run("git", ["config", "--get", "remote.origin.url"], cwd, 5_000);
-    return parseGitHubSlug(url);
+    const out = await run("git", ["config", "--get-regexp", "^remote\\..*\\.url$"], cwd, 5_000);
+    const slugs = new Set();
+    for (const line of out.split("\n").filter(Boolean)) {
+      const url = line.replace(/^remote\.[^\s]+\.url\s+/, "");
+      const slug = parseGitHubSlug(url);
+      if (slug) slugs.add(slug.toLowerCase());
+    }
+    return slugs;
   } catch {
-    return null;
+    return new Set();
   }
 }
 

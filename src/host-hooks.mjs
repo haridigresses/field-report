@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { quote } from "./hooks.mjs";
 import { capturePromptFromHook, readConfiguredProjects } from "./prompts.mjs";
-import { ancestorHeads, checkout, gitCommonDir, gitOriginSlug, mrrTarget, resolvePullRequestRef } from "./repository.mjs";
+import { ancestorHeads, checkout, gitCommonDir, gitRemoteSlugs, mrrTarget, resolvePullRequestRef } from "./repository.mjs";
 import { describePlans, describeTodos, plansFor, todosFor } from "./store.mjs";
 import { evaluateMrrGate, openReasons } from "./policy.mjs";
 
@@ -265,15 +265,16 @@ export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicit
   if (explicitRepo) {
     const wanted = String(explicitRepo).toLowerCase();
     for (const project of projects) {
-      const slug = project.githubRepo || await gitOriginSlug(project.repoPath);
-      if (slug && slug.toLowerCase() === wanted) { matched = project; break; }
+      if (project.githubRepo?.toLowerCase() === wanted) { matched = project; break; }
+      const slugs = await gitRemoteSlugs(project.repoPath);
+      if (slugs.has(wanted)) { matched = project; break; }
     }
     if (!matched && cwdProject) {
-      const cwdSlug = cwdProject.githubRepo || await gitOriginSlug(cwdProject.repoPath);
-      // Only treat explicitRepo as unmanaged when cwdProject has a known GitHub
-      // slug that provably differs from explicitRepo; if cwdProject was registered
-      // without --github and has a non-GitHub/local origin, still gate cwdProject.
-      if (!cwdSlug || cwdSlug.toLowerCase() === wanted) matched = cwdProject;
+      const cwdSlugs = await gitRemoteSlugs(cwdProject.repoPath);
+      if (cwdProject.githubRepo) cwdSlugs.add(cwdProject.githubRepo.toLowerCase());
+      // Only treat explicitRepo as unmanaged when cwdProject has known GitHub
+      // remote slug(s) and NONE of them match explicitRepo.
+      if (cwdSlugs.size === 0 || cwdSlugs.has(wanted)) matched = cwdProject;
     }
     if (!matched) return { managed: false };
   } else {
@@ -352,15 +353,21 @@ export async function handleHostHook(event, rawStdin, { store, cwd = process.cwd
   }
 
   if (event === "pre-tool") {
+    const hookEventName = String(payload.hook_event_name || "");
     const toolName = String(payload.tool_name || payload.toolName || "");
-    const toolInput = payload.tool_input || payload.arguments || payload.input || {};
-    const commandText = toolInput.command || payload.command || "";
+    let rawInput = payload.tool_input ?? payload.arguments ?? payload.input ?? {};
+    if (typeof rawInput === "string") {
+      try { rawInput = JSON.parse(rawInput); } catch { rawInput = {}; }
+    }
+    const toolInput = rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? rawInput : {};
+    const isMcpEvent = hookEventName === "beforeMCPExecution" || (toolName !== "" && !/^(?:Bash|Shell|Terminal|run_command)$/i.test(toolName));
+    const commandText = !isMcpEvent ? (toolInput.command || payload.command || "") : "";
     let needsGate = false;
     let explicitRepo = null;
     let explicitBranch = null;
     let selector = null;
 
-    if (commandText) {
+    if (!isMcpEvent && commandText) {
       for (const ghArgs of extractShellGhInvocations(commandText)) {
         const classified = classifyGhArgs(ghArgs);
         if (classified.action === "open-pr" || classified.action === "ready-pr") {
@@ -371,7 +378,7 @@ export async function handleHostHook(event, rawStdin, { store, cwd = process.cwd
           break;
         }
       }
-    } else if (/(?:create|open)_pull_request|pull_request_write/i.test(toolName) && toolInput.draft !== true) {
+    } else if (isMcpEvent && /(?:create|open)_pull_request|pull_request_write/i.test(toolName) && toolInput.draft !== true) {
       if (!/pull_request_write/i.test(toolName) || !toolInput.method || /create|open|ready/i.test(String(toolInput.method))) {
         needsGate = true;
         if (toolInput.owner && toolInput.repo) explicitRepo = `${toolInput.owner}/${toolInput.repo}`;
