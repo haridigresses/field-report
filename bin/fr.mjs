@@ -120,7 +120,7 @@ async function evaluateBranchMrr(project, target) {
     store.reviews(project.id, target.branch),
     store.dispositions(project.id, target.branch)
   ]);
-  const ancestors = await ancestorHeads(target.repoRoot, reviews.map((r) => r.head), target.head);
+  const ancestors = await ancestorHeads(target.repoRoot, reviews.map((r) => r.head), target.head, target.baseHead);
   const gate = evaluateMrrGate({ target, reviews, dispositions, ancestors });
   return { reviews, dispositions, ancestors, gate };
 }
@@ -172,11 +172,22 @@ async function main() {
   }
 
   if (command === "_hook") {
-    const raw = await readStdin();
-    const res = await handleHostHook(subcommand, raw, { store });
-    if (res.stdout) process.stdout.write(res.stdout);
-    if (res.stderr) process.stderr.write(res.stderr);
-    process.exitCode = res.exitCode;
+    const raw = await readStdin().catch(() => "");
+    try {
+      const res = await handleHostHook(subcommand, raw, { store });
+      if (res.stdout) process.stdout.write(res.stdout);
+      if (res.stderr) process.stderr.write(res.stderr);
+      process.exitCode = res.exitCode;
+    } catch (error) {
+      if (subcommand === "pre-tool") {
+        const msg = `Field Report hook error (failing closed): ${error.message}`;
+        const isCursor = /"hook_event_name"\s*:\s*"before|"workspace_roots"/.test(raw);
+        if (isCursor) process.stdout.write(`${JSON.stringify({ permission: "deny", user_message: msg, agent_message: msg })}\n`);
+        else { process.stderr.write(`${msg}\n`); process.exitCode = 2; }
+      } else {
+        process.exitCode = 0;
+      }
+    }
     return;
   }
 

@@ -55,6 +55,17 @@ test("classifyGhArgs and extractShellGhInvocations separate open PRs, draft PRs,
   const cmds = extractShellGhInvocations("git push -u origin feat/x && FOO=1 gh pr create --title 'Ship it'");
   assert.equal(cmds.length, 1);
   assert.equal(classifyGhArgs(cmds[0]).action, "open-pr");
+
+  // Multi-line heredoc inside $(...) followed by --draft must keep --draft intact (F18).
+  const heredocDraft = extractShellGhInvocations(`gh pr create --title "Fix" --body "$(cat <<'EOF'\n## Summary\n- a; b\nEOF\n)" --draft`);
+  assert.equal(heredocDraft.length, 1);
+  assert.equal(classifyGhArgs(heredocDraft[0]).action, "draft-pr");
+
+  // Quoted pipe in --title must not truncate trailing --head (F18).
+  const pipedTitle = extractShellGhInvocations(`gh pr create --title "a | b" --head feat/other`);
+  assert.equal(pipedTitle.length, 1);
+  assert.equal(classifyGhArgs(pipedTitle[0]).explicitHead, "feat/other");
+  assert.equal(classifyGhArgs(["pr", "create", "--draft=true"]).action, "draft-pr");
 });
 
 test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse + fr-gh block un-MRR'd PR open without [y/N]", async () => {
@@ -157,4 +168,38 @@ test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse 
     stderr: { write: (s) => errChunks.push(s) }
   });
   assert.equal(numericReadyBlocked, 1, "gh pr ready 99 must evaluate PR #99's branch (feat/unreviewed), not current checkout");
+
+  // Corrupt review JSONL causes PreToolUse to fail CLOSED (exit 2 on Claude, permission:deny on Cursor) — F17.
+  await mkdir(path.join(root, "state", "branches", "demo"), { recursive: true });
+  await writeFile(path.join(root, "state", "branches", "demo", "feat%2Fother-branch.jsonl"), "{corrupt-json\n");
+  const corruptClaude = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create --title x" } }), { store });
+  assert.equal(corruptClaude.exitCode, 2);
+  assert.match(corruptClaude.stderr, /failed closed/);
+  const corruptCursor = await handleHostHook("pre-tool", JSON.stringify({ hook_event_name: "beforeShellExecution", workspace_roots: [repo], command: "gh pr create --title x" }), { store });
+  assert.equal(JSON.parse(corruptCursor.stdout).permission, "deny");
+
+  // Reused branch name after merging an earlier branch into main does NOT inherit old GOs (F16).
+  const { ancestorHeads } = await import("../src/repository.mjs");
+  const baseRepo = path.join(root, "reuse-repo");
+  await exec("git", ["init", "-b", "main", baseRepo]);
+  await exec("git", ["-C", baseRepo, "config", "user.email", "fr@example.invalid"]);
+  await exec("git", ["-C", baseRepo, "config", "user.name", "FR"]);
+  await writeFile(path.join(baseRepo, "f.txt"), "0\n");
+  await exec("git", ["-C", baseRepo, "add", "f.txt"]);
+  await exec("git", ["-C", baseRepo, "commit", "-m", "base"]);
+  await exec("git", ["-C", baseRepo, "checkout", "-b", "feat/reused"]);
+  await writeFile(path.join(baseRepo, "f.txt"), "1\n");
+  await exec("git", ["-C", baseRepo, "commit", "-am", "first-arc"]);
+  const oldMergedHead = (await exec("git", ["-C", baseRepo, "rev-parse", "HEAD"])).stdout.trim();
+  await exec("git", ["-C", baseRepo, "checkout", "main"]);
+  await exec("git", ["-C", baseRepo, "merge", "--ff-only", "feat/reused"]);
+  await exec("git", ["-C", baseRepo, "branch", "-D", "feat/reused"]);
+  const newBaseHead = (await exec("git", ["-C", baseRepo, "rev-parse", "HEAD"])).stdout.trim();
+  await exec("git", ["-C", baseRepo, "checkout", "-b", "feat/reused"]);
+  await writeFile(path.join(baseRepo, "f.txt"), "2\n");
+  await exec("git", ["-C", baseRepo, "commit", "-am", "second-arc"]);
+  const newHead = (await exec("git", ["-C", baseRepo, "rev-parse", "HEAD"])).stdout.trim();
+  const bounded = await ancestorHeads(baseRepo, [oldMergedHead], newHead, newBaseHead);
+  assert.equal(bounded.has(oldMergedHead), false, "merged commit on baseHead must not count for reused branch");
+  assert.equal(bounded.get(newHead), 0);
 });

@@ -67,7 +67,8 @@ export function classifyGhArgs(argv) {
       if ((arg === "-H" || arg === "--head") && rest[i + 1] != null) { explicitHead = stripOwnerPrefix(rest[i + 1]); i += 1; continue; }
       if (arg.startsWith("--head=")) { explicitHead = stripOwnerPrefix(arg.slice("--head=".length)); continue; }
       if (PR_CREATE_VALUE_FLAGS.has(arg)) { i += 1; continue; }
-      if (arg === "--draft" || arg === "-d") { isDraft = true; continue; }
+      if (arg === "--draft" || arg === "-d" || arg === "--draft=true") { isDraft = true; continue; }
+      if (arg === "--draft=false") { isDraft = false; continue; }
       if (/^-[A-Za-z]{2,}$/.test(arg) && !PR_CREATE_VALUE_FLAGS.has(arg.slice(0, 2)) && arg.includes("d")) { isDraft = true; continue; }
     }
     return { action: isDraft ? "draft-pr" : "open-pr", cleanedArgs: args, explicitRepo, explicitHead, selector: null };
@@ -89,11 +90,13 @@ export function classifyGhArgs(argv) {
   return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
 }
 
+// Quote-, command-substitution-, and heredoc-aware shell command splitter so
+// multi-line bodies (`--body "$(cat <<'EOF'\n- a; b\nEOF\n)" --draft`) and
+// quoted operators (`--title "a | b" --head feat/other`) never truncate argv.
 export function extractShellGhInvocations(commandText) {
-  const segments = String(commandText || "").split(/(?:&&|\|\||;|\||\n)/);
+  const commands = splitAndTokenizeShell(String(commandText || ""));
   const invocations = [];
-  for (const segment of segments) {
-    const tokens = tokenizeShell(segment.trim());
+  for (const tokens of commands) {
     if (!tokens.length) continue;
     let start = 0;
     while (start < tokens.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[start]) || tokens[start] === "env" || tokens[start] === "command")) {
@@ -106,29 +109,121 @@ export function extractShellGhInvocations(commandText) {
   return invocations;
 }
 
-function tokenizeShell(input) {
-  const tokens = [];
+function splitAndTokenizeShell(input) {
+  const commands = [];
+  let cmdTokens = [];
   let current = "";
-  let quoteChar = null;
+  let hasToken = false;
+  const stack = []; // "SQ" | "DQ" | "SUBST" | "BT"
+  const heredocs = [];
+
+  const flushToken = () => {
+    if (hasToken || current.length > 0) {
+      cmdTokens.push(current);
+      current = "";
+      hasToken = false;
+    }
+  };
+  const flushCommand = () => {
+    flushToken();
+    if (cmdTokens.length) {
+      commands.push(cmdTokens);
+      cmdTokens = [];
+    }
+  };
+
   for (let i = 0; i < input.length; i += 1) {
     const ch = input[i];
-    if (quoteChar) {
-      if (ch === quoteChar) quoteChar = null;
-      else if (ch === "\\" && quoteChar === "\"" && i + 1 < input.length) { current += input[i + 1]; i += 1; }
+    const top = stack[stack.length - 1] || null;
+
+    if (top === "SQ") {
+      if (ch === "'") stack.pop();
       else current += ch;
-    } else if (ch === "'" || ch === "\"") {
-      quoteChar = ch;
-    } else if (/\s/.test(ch)) {
-      if (current) { tokens.push(current); current = ""; }
-    } else if (ch === "\\" && i + 1 < input.length) {
-      current += input[i + 1];
-      i += 1;
-    } else {
-      current += ch;
+      continue;
     }
+    if (top === "BT") {
+      if (ch === "\\" && i + 1 < input.length) { current += input[i + 1]; i += 1; }
+      else if (ch === "`") stack.pop();
+      else current += ch;
+      continue;
+    }
+    if (top === "DQ") {
+      if (ch === "\"") stack.pop();
+      else if (ch === "$" && input[i + 1] === "(") { current += "$("; stack.push("SUBST"); i += 1; }
+      else if (ch === "`") { current += "`"; stack.push("BT"); }
+      else if (ch === "\\" && i + 1 < input.length) { current += input[i + 1]; i += 1; }
+      else current += ch;
+      continue;
+    }
+    if (top === "SUBST") {
+      if (ch === ")") stack.pop();
+      else if (ch === "'") stack.push("SQ");
+      else if (ch === "\"") stack.push("DQ");
+      else if (ch === "$" && input[i + 1] === "(") { stack.push("SUBST"); i += 1; }
+      else if (ch === "`") stack.push("BT");
+      else if (ch === "\\" && i + 1 < input.length) { i += 1; }
+      current += ch;
+      continue;
+    }
+
+    // Top-level unquoted shell context:
+    if (ch === "'") { hasToken = true; stack.push("SQ"); continue; }
+    if (ch === "\"") { hasToken = true; stack.push("DQ"); continue; }
+    if (ch === "$" && input[i + 1] === "(") { hasToken = true; current += "$("; stack.push("SUBST"); i += 1; continue; }
+    if (ch === "`") { hasToken = true; current += "`"; stack.push("BT"); continue; }
+    if (ch === "\\" && i + 1 < input.length) { hasToken = true; current += input[i + 1]; i += 1; continue; }
+
+    // Top-level heredoc operator (<<EOF, <<'EOF', <<-EOF)
+    if (ch === "<" && input[i + 1] === "<") {
+      flushToken();
+      let rest = input.slice(i + 2);
+      let consumed = 2;
+      if (rest.startsWith("-")) { rest = rest.slice(1); consumed += 1; }
+      const match = rest.match(/^\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/);
+      if (match) {
+        heredocs.push(match[2]);
+        i += consumed + match[0].length - 1;
+        continue;
+      }
+    }
+
+    if (ch === "\n") {
+      flushCommand();
+      while (heredocs.length > 0) {
+        const delim = heredocs.shift();
+        let lineStart = i + 1;
+        while (lineStart <= input.length) {
+          const nl = input.indexOf("\n", lineStart);
+          const lineEnd = nl < 0 ? input.length : nl;
+          if (input.slice(lineStart, lineEnd).trim() === delim) {
+            i = nl < 0 ? input.length : nl;
+            break;
+          }
+          if (nl < 0) { i = input.length; break; }
+          lineStart = nl + 1;
+        }
+      }
+      continue;
+    }
+
+    if ((ch === "&" && input[i + 1] === "&") || (ch === "|" && input[i + 1] === "|")) {
+      flushCommand();
+      i += 1;
+      continue;
+    }
+    if (ch === ";" || ch === "|") {
+      flushCommand();
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      flushToken();
+      continue;
+    }
+    hasToken = true;
+    current += ch;
   }
-  if (current) tokens.push(current);
-  return tokens;
+  flushCommand();
+  return commands;
 }
 
 export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicitRepo = null, explicitBranch = null, selector = null, ghBin = "gh" }) {
@@ -177,7 +272,7 @@ export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicit
     store.reviews(matched.id, target.branch),
     store.dispositions(matched.id, target.branch)
   ]);
-  const ancestors = await ancestorHeads(target.repoRoot, reviews.map((r) => r.head), target.head);
+  const ancestors = await ancestorHeads(target.repoRoot, reviews.map((r) => r.head), target.head, target.baseHead);
   const gate = evaluateMrrGate({ target, reviews, dispositions, ancestors });
   const extra = state.branch === target.branch ? openReasons({ checkout: state, target }) : [];
   const reasons = [...gate.reasons, ...extra];
@@ -261,20 +356,32 @@ export async function handleHostHook(event, rawStdin, { store, cwd = process.cwd
       return { exitCode: 0, stdout: isCursor ? `${JSON.stringify({ permission: "allow" })}\n` : "", stderr: "" };
     }
 
-    const check = await checkBranchOpenGate({ store, cwd: hookCwd, explicitRepo, explicitBranch, selector, ghBin });
-    if (!check.managed || check.ready) {
-      return { exitCode: 0, stdout: isCursor ? `${JSON.stringify({ permission: "allow" })}\n` : "", stderr: "" };
-    }
+    try {
+      const check = await checkBranchOpenGate({ store, cwd: hookCwd, explicitRepo, explicitBranch, selector, ghBin });
+      if (!check.managed || check.ready) {
+        return { exitCode: 0, stdout: isCursor ? `${JSON.stringify({ permission: "allow" })}\n` : "", stderr: "" };
+      }
 
-    const blockMsg = `Field Report BLOCKED opening/readying a PR on ${check.project.id}${check.branch ? `/${check.branch}` : ""}: ${check.reasons.join("; ")}. Run 'fr mrr' on this branch until READY before opening a non-draft PR.`;
-    if (isCursor) {
-      return {
-        exitCode: 0,
-        stdout: `${JSON.stringify({ permission: "deny", user_message: blockMsg, agent_message: blockMsg })}\n`,
-        stderr: ""
-      };
+      const blockMsg = `Field Report BLOCKED opening/readying a PR on ${check.project.id}${check.branch ? `/${check.branch}` : ""}: ${check.reasons.join("; ")}. Run 'fr mrr' on this branch until READY before opening a non-draft PR.`;
+      if (isCursor) {
+        return {
+          exitCode: 0,
+          stdout: `${JSON.stringify({ permission: "deny", user_message: blockMsg, agent_message: blockMsg })}\n`,
+          stderr: ""
+        };
+      }
+      return { exitCode: 2, stdout: "", stderr: `${blockMsg}\n` };
+    } catch (error) {
+      const errMsg = `Field Report PreToolUse check failed closed: ${error.message}`;
+      if (isCursor) {
+        return {
+          exitCode: 0,
+          stdout: `${JSON.stringify({ permission: "deny", user_message: errMsg, agent_message: errMsg })}\n`,
+          stderr: ""
+        };
+      }
+      return { exitCode: 2, stdout: "", stderr: `${errMsg}\n` };
     }
-    return { exitCode: 2, stdout: "", stderr: `${blockMsg}\n` };
   }
 
   return { exitCode: 0, stdout: "", stderr: "" };

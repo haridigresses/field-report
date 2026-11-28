@@ -182,7 +182,23 @@ export async function reviewThreads(project, number, cwd = process.cwd(), { ghBi
   });
 }
 
-export async function ancestorHeads(repoRoot, heads, head) {
+// Recorded heads strictly within baseHead..head (or ancestors of head when
+// baseHead is omitted), mapped to how many commits behind head they are.
+// Bounding to baseHead..head ensures a reused branch name never inherits GOs
+// from an earlier branch that was already merged into base.
+export async function ancestorHeads(repoRoot, heads, head, baseHead = null) {
+  if (baseHead) {
+    try {
+      const out = await run("git", ["rev-list", `${baseHead}..${head}`], repoRoot);
+      const commits = out ? out.split("\n").filter(Boolean) : [];
+      const result = new Map();
+      commits.forEach((sha, index) => result.set(sha, index));
+      if (!result.has(head)) result.set(head, 0);
+      return result;
+    } catch {
+      return new Map([[head, 0]]);
+    }
+  }
   const result = new Map([[head, 0]]);
   await Promise.all([...new Set(heads)].filter((item) => item && item !== head).map(async (item) => {
     try {
