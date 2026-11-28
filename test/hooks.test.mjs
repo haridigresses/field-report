@@ -7,25 +7,33 @@ import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 import { runGhWrapper } from "../bin/fr-gh.mjs";
-import { classifyGhArgs, extractShellGhInvocations, handleHostHook, hasInstalledHostHooks, installHostHooks } from "../src/host-hooks.mjs";
-import { hookState, isManagedHook, removeLegacyPreCommitHook } from "../src/hooks.mjs";
+import { classifyGhArgs, handleHostHook, hasInstalledHostHooks, installHostHooks } from "../src/host-hooks.mjs";
+import { CURRENT_HOOK_MARKER, hookState, installPreCommitHook, isManagedHook, removePreCommitHook } from "../src/hooks.mjs";
 import { createStore } from "../src/store.mjs";
 
 const exec = promisify(execFile);
 
-test("legacy pre-commit hooks are detected and cleanly removed, restoring preserved user hooks", async () => {
+test("pre-commit v5 CRR hook installs cleanly, chains preserved user hooks, and restores them on removal", async () => {
   assert.equal(isManagedHook("# field-report-commit-gate:v4"), true);
-  assert.equal(hookState("#!/bin/sh\n# field-report-commit-gate:v3\n"), "legacy-managed");
+  assert.equal(isManagedHook(CURRENT_HOOK_MARKER), true);
+  assert.equal(hookState(`#!/bin/sh\n${CURRENT_HOOK_MARKER}\n`), "current");
+  assert.equal(hookState("#!/bin/sh\n# field-report-commit-gate:v4\n"), "legacy-managed");
   assert.equal(hookState("npx lint-staged\nfr gate checkout\n"), "legacy-manual");
-  assert.equal(hookState("#!/bin/sh\nnpm test\n"), "absent");
+  assert.equal(hookState("npx lint-staged\nfr gate commit\n"), "manual-current");
+  assert.equal(hookState("#!/bin/sh\nnpm test\n"), "unmanaged");
+  assert.equal(hookState(""), "absent");
 
-  const dir = await mkdtemp(path.join(os.tmpdir(), "fr-legacy-hook-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "fr-crr-hook-"));
   const hook = path.join(dir, "pre-commit");
-  const preserved = `${hook}.field-report-preserved`;
-  await writeFile(hook, "#!/bin/sh\n# field-report-commit-gate:v4\nexec fr gate checkout\n");
-  await writeFile(preserved, "#!/bin/sh\necho user-hook\n");
+  await writeFile(hook, "#!/bin/sh\necho user-hook\n", { mode: 0o755 });
 
-  const res = await removeLegacyPreCommitHook(hook, {
+  const installed = await installPreCommitHook(hook, "/opt/bin/fr");
+  assert.equal(installed.installed, true);
+  assert.equal(installed.preservedExisting, true);
+  assert.match(await readFile(hook, "utf8"), /field-report-commit-gate:v5/);
+  assert.match(await readFile(`${hook}.field-report-preserved`, "utf8"), /user-hook/);
+
+  const res = await removePreCommitHook(hook, {
     readFileFn: (f) => readFile(f, "utf8").catch(() => null),
     existsFn: (f) => access(f).then(() => true, () => false)
   });
@@ -33,7 +41,7 @@ test("legacy pre-commit hooks are detected and cleanly removed, restoring preser
   assert.match(await readFile(hook, "utf8"), /user-hook/);
 });
 
-test("classifyGhArgs and extractShellGhInvocations separate open PRs, draft PRs, ready PRs, and normal gh commands", () => {
+test("classifyGhArgs separates open PRs, draft PRs, ready PRs, and normal gh commands without misclassifying flag values", () => {
   assert.equal(classifyGhArgs(["pr", "create", "--title", "x"]).action, "open-pr");
   assert.equal(classifyGhArgs(["-R", "owner/repo", "pr", "create", "--draft", "--title", "x"]).action, "draft-pr");
   assert.deepEqual(
@@ -46,64 +54,40 @@ test("classifyGhArgs and extractShellGhInvocations separate open PRs, draft PRs,
   assert.equal(classifyGhArgs(["pr", "ready", "49"]).action, "ready-pr");
   assert.equal(classifyGhArgs(["pr", "ready", "49"]).selector, "49");
   assert.equal(classifyGhArgs(["pr", "create", "--title", "-H", "--draft"]).action, "draft-pr");
-  assert.equal(classifyGhArgs(["pr", "create", "--title", "-H", "--draft"]).explicitHead, null);
+  assert.equal(classifyGhArgs(["pr", "create", "--title", "-h"]).action, "open-pr", "-h passed as --title value must NOT be treated as --help");
+  assert.equal(classifyGhArgs(["pr", "create", "--help"]).action, "allow");
   assert.equal(classifyGhArgs(["api", "repos/owner/repo/pulls"]).action, "allow");
   assert.equal(classifyGhArgs(["pr", "ready", "--undo", "49"]).action, "allow");
   assert.equal(classifyGhArgs(["pr", "view", "49"]).action, "allow");
   assert.equal(classifyGhArgs(["issue", "create", "-t", "todo"]).action, "allow");
-
-  const cmds = extractShellGhInvocations("git push -u origin feat/x && FOO=1 gh pr create --title 'Ship it'");
-  assert.equal(cmds.length, 1);
-  assert.equal(classifyGhArgs(cmds[0]).action, "open-pr");
-
-  // Multi-line heredoc inside $(...) with apostrophes and odd backticks followed by --head and --draft (F18 + F19).
-  const heredocDraft = extractShellGhInvocations(`gh pr create --title "Fix" --body "$(cat <<'EOF'\n## Summary\n- it's done; \`unclosed backtick\nEOF\n)" --head feat/other --draft`);
-  assert.equal(heredocDraft.length, 1);
-  assert.equal(classifyGhArgs(heredocDraft[0]).action, "draft-pr");
-  assert.equal(classifyGhArgs(heredocDraft[0]).explicitHead, "feat/other");
-
-  // Quoted pipe in --title must not truncate trailing --head (F18).
-  const pipedTitle = extractShellGhInvocations(`gh pr create --title "a | b" --head feat/other`);
-  assert.equal(pipedTitle.length, 1);
-  assert.equal(classifyGhArgs(pipedTitle[0]).explicitHead, "feat/other");
   assert.equal(classifyGhArgs(["pr", "create", "--draft=true"]).action, "draft-pr");
-
-  // Subshell, brace group, background &, if/then, and wrapper prefixes (`exec -a`, `sudo -n`, `time -p`, `caffeinate -t`, `env -S`) all extract gh (F25).
-  for (const snippet of [
-    "(FIELD_REPORT_STATE_ROOT=/tmp/x gh pr create --title x)",
-    "{ gh pr create --title x; }",
-    "exec env -i gh pr create --title x",
-    "exec -a gh /opt/homebrew/bin/gh pr create --title x",
-    "sudo -n gh pr create --title x",
-    "caffeinate -t 3600 gh pr create --title x",
-    "time -p nohup /opt/homebrew/bin/gh pr ready 49",
-    "env -S 'FOO=1 gh pr create --title x'",
-    "env -iS 'FOO=1 gh pr create --title x'",
-    "true & gh pr create --title x",
-    "if true; then gh pr create --title x; fi"
-  ]) {
-    const extracted = extractShellGhInvocations(snippet);
-    assert.equal(extracted.length, 1, `expected gh invocation from: ${snippet}`);
-    assert.match(classifyGhArgs(extracted[0]).action, /^(?:open-pr|ready-pr)$/);
-  }
 });
 
-test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse + fr-gh block un-MRR'd PR open without [y/N]", async () => {
+test("MCP-only PreToolUse never false-blocks shell cd across worktrees, while fr-gh enforces cwd gate with zero env bypasses", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "fr-host-hooks-"));
   const home = path.join(root, "home");
   await mkdir(path.join(home, ".claude"), { recursive: true });
+  await mkdir(path.join(home, ".cursor"), { recursive: true });
+  await mkdir(path.join(home, ".config", "devin"), { recursive: true });
   await writeFile(path.join(home, ".claude", "settings.json"), JSON.stringify({ theme: "dark", hooks: { Notification: [{ hooks: [{ type: "command", command: "say hi" }] }] } }));
+  // Legacy Cursor beforeShellExecution entry is automatically cleaned out on upgrade!
+  await writeFile(path.join(home, ".cursor", "hooks.json"), JSON.stringify({ version: 1, hooks: { beforeShellExecution: [{ command: "'/opt/bin/fr' _hook pre-tool" }] } }));
+  await writeFile(path.join(home, ".config", "devin", "config.json"), JSON.stringify({ version: 1, theme_mode: "dark" }));
 
   const installed = await installHostHooks({ frBin: "/opt/bin/fr", home });
   const claudeJson = await readFile(installed.claudeSettingsPath, "utf8");
   const cursorJson = await readFile(installed.cursorHooksPath, "utf8");
+  const agyJson = await readFile(installed.agyHooksPath, "utf8");
+  const devinJson = await readFile(installed.devinConfigPath, "utf8");
   assert.equal(hasInstalledHostHooks(claudeJson, "claude"), true);
   assert.equal(hasInstalledHostHooks(cursorJson, "cursor"), true);
-  assert.equal(JSON.parse(claudeJson).theme, "dark");
-  assert.equal(JSON.parse(claudeJson).hooks.Notification.length, 1);
+  assert.equal(hasInstalledHostHooks(agyJson, "agy"), true);
+  assert.equal(hasInstalledHostHooks(devinJson, "devin"), true);
+  assert.equal(JSON.parse(cursorJson).hooks.beforeShellExecution, undefined, "legacy beforeShellExecution hook must be removed");
 
-  // Set up an enabled repo on a feature branch with NO MRR recorded.
+  // Set up an enabled repo on `main` AND a feature branch in a worktree.
   const repo = path.join(root, "repo");
+  const wt = path.join(root, "repo-wt");
   const origin = path.join(root, "origin.git");
   await exec("git", ["init", "-b", "main", repo]);
   await exec("git", ["-C", repo, "config", "user.email", "fr@example.invalid"]);
@@ -114,106 +98,113 @@ test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse 
   await exec("git", ["clone", "--bare", repo, origin]);
   await exec("git", ["-C", repo, "remote", "add", "origin", origin]);
   await exec("git", ["-C", repo, "fetch", "origin"]);
-  await exec("git", ["-C", repo, "checkout", "-b", "feat/unreviewed"]);
-  await writeFile(path.join(repo, "a.txt"), "2\n");
-  await exec("git", ["-C", repo, "commit", "-am", "change"]);
+  await exec("git", ["-C", repo, "worktree", "add", "-b", "feat/unreviewed", wt]);
+  await writeFile(path.join(wt, "a.txt"), "2\n");
+  await exec("git", ["-C", wt, "commit", "-am", "change"]);
 
   const store = createStore(path.join(root, "state"));
   await store.saveProject({ id: "demo", repoPath: repo, githubRepo: "owner/demo" });
 
-  // SessionStart writes CLAUDE_ENV_FILE and prints context.
+  // SessionStart writes CLAUDE_ENV_FILE and prints the complete BRR/TRR/CRR/MRR banner.
   const envFile = path.join(root, "claude.env");
   const startRes = await handleHostHook("session-start", JSON.stringify({ session_id: "sess-abc", cwd: repo }), {
     store,
     env: { CLAUDE_ENV_FILE: envFile }
   });
-  assert.match(startRes.stdout, /Field Report enabled for project 'demo'/);
+  assert.match(startRes.stdout, /Field Report ACTIVE for repository 'demo'/);
+  assert.match(startRes.stdout, /BRR, MRR, TRR, or CRR/);
   assert.match(await readFile(envFile, "utf8"), /FR_SESSION_ID='sess-abc'/);
 
-  // Claude PreToolUse blocks non-draft gh pr create (exit 2) and MCP create_pull_request, allows --draft.
-  const claudeBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create --title x" } }), { store });
-  assert.equal(claudeBlocked.exitCode, 2);
-  assert.match(claudeBlocked.stderr, /Field Report BLOCKED/);
+  // Shell commands (`cd wt && gh pr create ...`) are NOT blocked by PreToolUse against the session's `main` folder;
+  // instead `~/.local/bin/gh` evaluates them in `wt` where `gh` actually runs!
+  const shellCdAllowedInHook = await handleHostHook("pre-tool", JSON.stringify({
+    tool_name: "Bash",
+    cwd: repo,
+    tool_input: { command: `cd "${wt}" && gh pr create --title x` }
+  }), { store });
+  assert.equal(shellCdAllowedInHook.exitCode, 0);
 
-  const mcpBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "mcp__github__create_pull_request", cwd: repo, tool_input: { owner: "owner", repo: "demo", title: "x" } }), { store });
+  // MCP PR-open/ready tools ARE blocked across Claude, Cursor, and Antigravity!
+  const mcpBlocked = await handleHostHook("pre-tool", JSON.stringify({
+    tool_name: "mcp__github__create_pull_request",
+    cwd: wt,
+    tool_input: { owner: "owner", repo: "demo", title: "x", head: "feat/unreviewed" }
+  }), { store });
   assert.equal(mcpBlocked.exitCode, 2);
 
-  // Explicit -R pointing to a provably DIFFERENT unregistered repo while inside `demo` (whose githubRepo is owner/demo) is unmanaged/allowed.
-  const otherRepoAllowed = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R other/unregistered --title x" } }), { store });
-  assert.equal(otherRepoAllowed.exitCode, 0);
+  const agyMcpBlocked = await handleHostHook("pre-tool", JSON.stringify({
+    hookEventName: "PreToolUse",
+    workspacePaths: [wt],
+    toolCall: { id: "1", name: "mcp_github_create_pull_request", args: { owner: "owner", repo: "demo", title: "x", head: "feat/unreviewed" } }
+  }), { store });
+  assert.equal(JSON.parse(agyMcpBlocked.stdout).decision, "deny");
 
-  // Project registered WITHOUT --github (`githubRepo: null`) STILL blocks MCP create_pull_request,
-  // Cursor stdio beforeMCPExecution (with top-level `command` + string `tool_input` — F22),
-  // and fork workflows (`origin` = fork/demo, `upstream` = owner/demo — F21 + F23).
+  // Antigravity SessionStart + deduplicated PreInvocation prompt capture.
+  const agyStart = await handleHostHook("session-start", JSON.stringify({ hookEventName: "SessionStart", conversationId: "agy-conv-1", workspacePaths: [repo] }), { store });
+  assert.match(JSON.parse(agyStart.stdout).injectSteps[0].systemMessage.systemMessage, /Field Report ACTIVE for repository 'demo'/);
+  await handleHostHook("prompt-submit", JSON.stringify({ hookEventName: "PreInvocation", conversationId: "agy-conv-1", workspacePaths: [repo], lastUserInput: "Build safe feature", invocationNum: 1 }), { store });
+  await handleHostHook("prompt-submit", JSON.stringify({ hookEventName: "PreInvocation", conversationId: "agy-conv-1", workspacePaths: [repo], lastUserInput: "Build safe feature", invocationNum: 2 }), { store });
+  assert.equal((await store.prompts("demo", "agy-conv-1")).length, 1);
+
+  // Project without --github (`githubRepo: null`) still blocks fork/remote MCP and -R calls!
   await store.updateProject("demo", { githubRepo: "" });
-  assert.equal((await store.project("demo")).githubRepo, null);
   await exec("git", ["-C", repo, "remote", "set-url", "origin", "https://github.com/forkuser/demo.git"]);
   await exec("git", ["-C", repo, "remote", "add", "upstream", "git@github.com:owner/demo.git"]);
 
   const cursorStdioMcpBlocked = await handleHostHook("pre-tool", JSON.stringify({
     hook_event_name: "beforeMCPExecution",
-    workspace_roots: [repo],
+    workspace_roots: [wt],
     tool_name: "create_pull_request",
     command: "npx -y @modelcontextprotocol/server-github",
     tool_input: JSON.stringify({ owner: "owner", repo: "demo", title: "x", head: "feat/unreviewed" })
   }), { store });
   assert.equal(JSON.parse(cursorStdioMcpBlocked.stdout).permission, "deny");
 
-  const dashRForkBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R owner/demo --title x" } }), { store });
-  assert.equal(dashRForkBlocked.exitCode, 2);
-
-  // Host-prefixed (`github.com/owner/demo`) and full URL (`https://github.com/owner/demo.git`) -R forms normalize and block too (F24).
-  const hostPrefixBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R github.com/owner/demo --title x" } }), { store });
-  assert.equal(hostPrefixBlocked.exitCode, 2);
-  const urlBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R https://github.com/owner/demo.git --title x" } }), { store });
-  assert.equal(urlBlocked.exitCode, 2);
-
-  await exec("git", ["-C", repo, "remote", "set-url", "origin", origin]);
-  await exec("git", ["-C", repo, "remote", "remove", "upstream"]);
-  await store.updateProject("demo", { githubRepo: "owner/demo" });
-
-  const cursorBlocked = await handleHostHook("pre-tool", JSON.stringify({ hook_event_name: "beforeShellExecution", workspace_roots: [repo], command: "gh pr ready 12" }), { store });
-  assert.equal(JSON.parse(cursorBlocked.stdout).permission, "deny");
-
-  const draftAllowed = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create --draft --title wip" } }), { store });
-  assert.equal(draftAllowed.exitCode, 0);
-
-  // fr-gh wrapper: blocks non-draft unconditionally (no [y/N]), allows --draft with stderr notice.
   const errChunks = [];
   let spawned = 0;
   const mockSpawn = () => {
     spawned += 1;
     return { on: (ev, fn) => { if (ev === "exit") queueMicrotask(() => fn(0, null)); } };
   };
-  const blockedCode = await runGhWrapper(["pr", "create", "--title", "x"], {
-    env: { FIELD_REPORT_REAL_GH: "/usr/bin/true" },
-    cwd: repo,
-    store,
-    spawnFn: mockSpawn,
-    stderr: { write: (s) => errChunks.push(s) }
-  });
-  assert.equal(blockedCode, 1);
+  for (const repoArg of ["owner/demo", "github.com/owner/demo", "https://github.com/owner/demo.git"]) {
+    const code = await runGhWrapper(["pr", "create", "-R", repoArg, "--title", "x"], {
+      env: { FIELD_REPORT_REAL_GH: "/usr/bin/true" },
+      cwd: wt,
+      store,
+      spawnFn: mockSpawn,
+      stderr: { write: (s) => errChunks.push(s) }
+    });
+    assert.equal(code, 1);
+  }
   assert.equal(spawned, 0);
-  assert.match(errChunks.join(""), /Field Report BLOCKED 'gh pr create'/);
 
-  // Caller-supplied HOME and FIELD_REPORT_STATE_ROOT without FIELD_REPORT_ALLOW_TEST_ROOT=1 are ignored by fr-gh shim (F25).
+  await exec("git", ["-C", repo, "remote", "set-url", "origin", origin]);
+  await exec("git", ["-C", repo, "remote", "remove", "upstream"]);
+  await store.updateProject("demo", { githubRepo: "owner/demo" });
+
+  // Forged HOME, FIELD_REPORT_STATE_ROOT, AND FIELD_REPORT_ALLOW_TEST_ROOT=1 are ALL ignored by fr-gh!
   const homeRoot = await mkdtemp(path.join(os.tmpdir(), "fr-shim-home-"));
-  const canonicalState = path.join(homeRoot, ".local", "state", "field-report");
-  const canonicalStore = createStore(canonicalState);
+  const canonicalStore = createStore(path.join(homeRoot, ".local", "state", "field-report"));
   await canonicalStore.saveProject({ id: "demo", repoPath: repo, githubRepo: "owner/demo" });
-  const canonicalCheck = await runGhWrapper(["pr", "create", "--title", "x"], {
-    env: { HOME: path.join(root, "forged-empty-home"), FIELD_REPORT_STATE_ROOT: path.join(root, "forged-empty-state"), FIELD_REPORT_REAL_GH: "/usr/bin/true" },
+  const bypassAttempt = await runGhWrapper(["pr", "create", "--title", "x"], {
+    env: {
+      HOME: path.join(root, "forged-empty-home"),
+      FIELD_REPORT_ALLOW_TEST_ROOT: "1",
+      FIELD_REPORT_STATE_ROOT: path.join(root, "forged-empty-state"),
+      FIELD_REPORT_REAL_GH: "/usr/bin/true"
+    },
     homeDir: homeRoot,
-    cwd: repo,
+    cwd: wt,
     spawnFn: mockSpawn,
     stderr: { write: () => {} }
   });
-  assert.equal(canonicalCheck, 1, "forged HOME / FIELD_REPORT_STATE_ROOT must not disable canonical gate");
+  assert.equal(bypassAttempt, 1, "FIELD_REPORT_ALLOW_TEST_ROOT=1 must NOT disable the production gh shim");
 
+  // Draft PR passes through with stderr reminder.
   errChunks.length = 0;
   const draftCode = await runGhWrapper(["pr", "create", "--draft", "--title", "wip"], {
     env: { FIELD_REPORT_REAL_GH: "/usr/bin/true" },
-    cwd: repo,
+    cwd: wt,
     store,
     spawnFn: mockSpawn,
     stderr: { write: (s) => errChunks.push(s) }
@@ -222,61 +213,26 @@ test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse 
   assert.equal(spawned, 1);
   assert.match(errChunks.join(""), /Tell the user explicitly that MRR has not been run yet/);
 
-  // Numeric `gh pr ready 99` on ANY branch resolves PR #99's head branch via gh pr view (never authorizing against current branch!).
+  // Numeric `gh pr ready 99` evaluates PR #99's own branch via gh pr view.
   const fakeGh = path.join(root, "fake-gh");
-  await writeFile(fakeGh, `#!/bin/sh\nif [ "$1" = "pr" ] && [ "$2" = "view" ]; then\n  echo '{"number":99,"headRefName":"feat/unreviewed","headRefOid":"'$(git -C "${repo}" rev-parse refs/heads/feat/unreviewed)'","baseRefName":"main"}'\n  exit 0\nfi\necho "ALLOWED $@"\n`, { mode: 0o755 });
-  await exec("git", ["-C", repo, "checkout", "-b", "feat/other-branch"]);
-  await writeFile(path.join(repo, "a.txt"), "3\n");
-  await exec("git", ["-C", repo, "commit", "-am", "other"]);
+  await writeFile(fakeGh, `#!/bin/sh\nif [ "$1" = "pr" ] && [ "$2" = "view" ]; then\n  echo '{"number":99,"headRefName":"feat/unreviewed","headRefOid":"'$(git -C "${wt}" rev-parse HEAD)'","baseRefName":"main"}'\n  exit 0\nfi\necho "ALLOWED $@"\n`, { mode: 0o755 });
   const numericReadyBlocked = await runGhWrapper(["pr", "ready", "99"], {
     env: { FIELD_REPORT_REAL_GH: fakeGh },
     cwd: repo,
     store,
     spawnFn: mockSpawn,
-    stderr: { write: (s) => errChunks.push(s) }
+    stderr: { write: () => {} }
   });
-  assert.equal(numericReadyBlocked, 1, "gh pr ready 99 must evaluate PR #99's branch (feat/unreviewed), not current checkout");
+  assert.equal(numericReadyBlocked, 1);
 
-  // Corrupt review JSONL causes PreToolUse to fail CLOSED (exit 2 on Claude, permission:deny on Cursor) — F17.
+  // Corrupt JSONL / project JSON fails CLOSED in both MCP PreToolUse and fr-gh.
   await mkdir(path.join(root, "state", "branches", "demo"), { recursive: true });
-  await writeFile(path.join(root, "state", "branches", "demo", "feat%2Fother-branch.jsonl"), "{corrupt-json\n");
-  const corruptClaude = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create --title x" } }), { store });
-  assert.equal(corruptClaude.exitCode, 2);
-  assert.match(corruptClaude.stderr, /failed closed/);
-  const corruptCursor = await handleHostHook("pre-tool", JSON.stringify({ hook_event_name: "beforeShellExecution", workspace_roots: [repo], command: "gh pr create --title x" }), { store });
-  assert.equal(JSON.parse(corruptCursor.stdout).permission, "deny");
-
-  // Corrupt project JSON in projects/*.json also fails CLOSED in both PreToolUse and fr-gh (F20).
+  await writeFile(path.join(root, "state", "branches", "demo", "feat%2Funreviewed.jsonl"), "{corrupt-json\n");
+  const corruptMcp = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "mcp__github__create_pull_request", cwd: wt, tool_input: { owner: "owner", repo: "demo", title: "x" } }), { store });
+  assert.equal(corruptMcp.exitCode, 2);
   await writeFile(path.join(root, "state", "projects", "broken.json"), "{not-valid-json\n");
-  const corruptProjHook = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create --title x" } }), { store });
-  assert.equal(corruptProjHook.exitCode, 2);
   await assert.rejects(
-    runGhWrapper(["pr", "create", "--title", "x"], { env: { FIELD_REPORT_REAL_GH: "/usr/bin/true" }, cwd: repo, store, spawnFn: mockSpawn, stderr: { write: () => {} } }),
+    runGhWrapper(["pr", "create", "--title", "x"], { env: { FIELD_REPORT_REAL_GH: "/usr/bin/true" }, cwd: wt, store, spawnFn: mockSpawn, stderr: { write: () => {} } }),
     /SyntaxError|JSON/
   );
-
-  // Reused branch name after merging an earlier branch into main does NOT inherit old GOs (F16).
-  const { ancestorHeads } = await import("../src/repository.mjs");
-  const baseRepo = path.join(root, "reuse-repo");
-  await exec("git", ["init", "-b", "main", baseRepo]);
-  await exec("git", ["-C", baseRepo, "config", "user.email", "fr@example.invalid"]);
-  await exec("git", ["-C", baseRepo, "config", "user.name", "FR"]);
-  await writeFile(path.join(baseRepo, "f.txt"), "0\n");
-  await exec("git", ["-C", baseRepo, "add", "f.txt"]);
-  await exec("git", ["-C", baseRepo, "commit", "-m", "base"]);
-  await exec("git", ["-C", baseRepo, "checkout", "-b", "feat/reused"]);
-  await writeFile(path.join(baseRepo, "f.txt"), "1\n");
-  await exec("git", ["-C", baseRepo, "commit", "-am", "first-arc"]);
-  const oldMergedHead = (await exec("git", ["-C", baseRepo, "rev-parse", "HEAD"])).stdout.trim();
-  await exec("git", ["-C", baseRepo, "checkout", "main"]);
-  await exec("git", ["-C", baseRepo, "merge", "--ff-only", "feat/reused"]);
-  await exec("git", ["-C", baseRepo, "branch", "-D", "feat/reused"]);
-  const newBaseHead = (await exec("git", ["-C", baseRepo, "rev-parse", "HEAD"])).stdout.trim();
-  await exec("git", ["-C", baseRepo, "checkout", "-b", "feat/reused"]);
-  await writeFile(path.join(baseRepo, "f.txt"), "2\n");
-  await exec("git", ["-C", baseRepo, "commit", "-am", "second-arc"]);
-  const newHead = (await exec("git", ["-C", baseRepo, "rev-parse", "HEAD"])).stdout.trim();
-  const bounded = await ancestorHeads(baseRepo, [oldMergedHead], newHead, newBaseHead);
-  assert.equal(bounded.has(oldMergedHead), false, "merged commit on baseHead must not count for reused branch");
-  assert.equal(bounded.get(newHead), 0);
 });

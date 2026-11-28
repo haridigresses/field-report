@@ -9,8 +9,9 @@ import { promisify } from "node:util";
 import { findRealGh } from "./fr-gh.mjs";
 import { doctor, formatDoctor } from "../src/doctor.mjs";
 import { normalizeReview, parseEnvelope } from "../src/envelope.mjs";
-import { removeLegacyPreCommitHook } from "../src/hooks.mjs";
+import { installProjectPreCommitHook, removePreCommitHook } from "../src/hooks.mjs";
 import { handleHostHook, installHostHooks } from "../src/host-hooks.mjs";
+import { installHostOnboarding, linkSkills } from "../src/install.mjs";
 import {
   assertSeatOpen,
   botsReasons,
@@ -22,7 +23,6 @@ import {
   renderFieldReportMarkdown,
   REVIEW_ROLES,
   seatingFor,
-  seatStatus,
   validateReview
 } from "../src/policy.mjs";
 import { buildUserContract } from "../src/prompts.mjs";
@@ -30,6 +30,7 @@ import {
   ancestorHeads,
   checkout,
   commitLog,
+  commitTreeState,
   crrTarget,
   detectRepoBrr,
   diffInventory,
@@ -48,8 +49,13 @@ const exec = promisify(execFile);
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const store = createStore();
 
+function frLauncherPath(home = process.env.FIELD_REPORT_HOME || os.homedir()) {
+  if (process.env.FIELD_REPORT_FR_BIN) return process.env.FIELD_REPORT_FR_BIN;
+  return path.join(home, ".local", "bin", "fr");
+}
+
 function usage() {
-  return `Field Report — independent pre-PR review gate
+  return `Field Report — independent commit CRR & pre-PR MRR review gate
 
 fr version
 fr init [--host-hooks]
@@ -59,15 +65,16 @@ fr project add <id> --repo <path> [--label <label>] [--github owner/repo] [--bas
 fr project update <id> [--label <label>] [--repo <path>] [--github owner/repo] [--base main] [--todos github|linear|notion|ref] [--todos-reference <text>|--clear-todos-reference] [--plans repo|linear|notion|ref] [--plans-reference <text>|--clear-plans-reference]
 fr project list
 fr project remove <id>
-fr crr [--model <id>] [--brief]
+fr crr [--model <id>] [--brief] [--record <file> --brief-id <uuid>]
 fr mrr [--seat correctness|design|intent] [--all] [--model <id>] [--notes <text>] [--brr <file>] [--intent-file <file>] [--session <id>] [--brief] [--record <file> --brief-id <uuid>]
 fr accept <F-id> --reason <text> --actor <who>
 fr status
+fr gate commit
 fr gate open
 fr gate bots
 fr ui [--port <n>]
 
-Reviews are keyed automatically by repository + branch + commit HEAD.
+Reviews are keyed automatically by repository + branch + commit/tree SHA.
 No branch registration. Field Report never merges.`;
 }
 
@@ -148,19 +155,17 @@ function printGateSummary(project, target, gate, extraReasons = []) {
   return { ready, text: lines.join("\n") };
 }
 
-async function cleanRegisteredPreCommitHooks() {
-  let cleaned = 0;
+async function syncRegisteredPreCommitHooks(frBin) {
+  let installed = 0;
+  const externalWarnings = [];
   for (const project of await store.projects()) {
-    try {
-      const hookOut = (await exec("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: project.repoPath, timeout: 5_000 })).stdout.trim();
-      const res = await removeLegacyPreCommitHook(hookOut, {
-        readFileFn: (f) => readFile(f, "utf8").catch(() => null),
-        existsFn: (f) => access(f).then(() => true, () => false)
-      });
-      if (res.removed) cleaned += 1;
-    } catch {}
+    const res = await installProjectPreCommitHook(project.repoPath, frBin);
+    if (res.installed) installed += 1;
+    else if (res.externalHooksPath && !res.alreadyCallsFr) {
+      externalWarnings.push(`${project.id}: core.hooksPath (${res.externalHooksPath}) does not call 'fr gate commit'`);
+    }
   }
-  return cleaned;
+  return { installed, externalWarnings };
 }
 
 async function main() {
@@ -182,10 +187,13 @@ async function main() {
     } catch (error) {
       if (subcommand === "pre-tool") {
         const msg = `Field Report hook error (failing closed): ${error.message}`;
-        const isCursor = /"hook_event_name"\s*:\s*"before|"workspace_roots"/.test(raw);
-        if (isCursor) process.stdout.write(`${JSON.stringify({ permission: "deny", user_message: msg, agent_message: msg })}\n`);
+        const isAgy = /"hookEventName"\s*:|"workspacePaths"\s*:|"toolCall"\s*:/.test(raw);
+        const isCursor = !isAgy && /"hook_event_name"\s*:\s*"before|"workspace_roots"/.test(raw);
+        if (isAgy) process.stdout.write(`${JSON.stringify({ decision: "deny", reason: msg })}\n`);
+        else if (isCursor) process.stdout.write(`${JSON.stringify({ permission: "deny", user_message: msg, agent_message: msg })}\n`);
         else { process.stderr.write(`${msg}\n`); process.exitCode = 2; }
       } else {
+        if (/"hookEventName"\s*:|"workspacePaths"\s*:/.test(raw)) process.stdout.write("{}\n");
         process.exitCode = 0;
       }
     }
@@ -210,15 +218,24 @@ async function main() {
 
   if (command === "init") {
     const root = await store.init();
-    const cleaned = await cleanRegisteredPreCommitHooks();
+    const home = process.env.FIELD_REPORT_HOME || os.homedir();
+    const frBin = frLauncherPath(home);
+    const hookSync = await syncRegisteredPreCommitHooks(frBin);
     let hooksNote = "";
-    const customStateOnly = Boolean(process.env.FIELD_REPORT_STATE_ROOT && !flags["host-hooks"]);
+    const customStateOnly = Boolean(process.env.FIELD_REPORT_STATE_ROOT && !flags["host-hooks"] && !process.env.FIELD_REPORT_HOME);
     if (!customStateOnly) {
-      const home = process.env.FIELD_REPORT_HOME || os.homedir();
-      const hooks = await installHostHooks({ frBin: path.join(home, ".local", "bin", "fr"), home });
-      hooksNote = `\nHost hooks: ${hooks.claudeSettingsPath}, ${hooks.cursorHooksPath}`;
+      await linkSkills(runtimeRoot, home);
+      const hooks = await installHostHooks({ frBin, home });
+      const onboarding = await installHostOnboarding({ repoRoot: runtimeRoot, home });
+      hooksNote = `\nHost hooks: ${[hooks.claudeSettingsPath, hooks.cursorHooksPath, hooks.agyHooksPath, hooks.devinConfigPath].filter(Boolean).join(", ")}\nAlways-on rules: ${onboarding.claudeMdPath}, ${onboarding.codexMdPath}, ${onboarding.cursorRulePath}, ${onboarding.agyRulesPath}`;
+      if (onboarding.repairedShellFiles.length) {
+        hooksNote += `\nRepaired shell alias (--append-system-prompt-file): ${onboarding.repairedShellFiles.join(", ")}`;
+      }
     }
-    console.log(`Initialized Field Report state at ${root}${cleaned ? ` (removed ${cleaned} legacy pre-commit hook(s))` : ""}${hooksNote}`);
+    for (const warn of hookSync.externalWarnings) console.error(`WARN ${warn}`);
+    const hasLegacyWorkstreams = await access(path.join(root, "workstreams")).then(() => true, () => false);
+    const legacyNote = hasLegacyWorkstreams ? "\nNote: legacy v2 folders (workstreams/) detected in state root — branch-keyed v3 does not carry forward v2 workstream reviews." : "";
+    console.log(`Initialized Field Report state at ${root}${hookSync.installed ? ` (installed CRR pre-commit hook on ${hookSync.installed} project(s))` : ""}${hooksNote}${legacyNote}`);
     return;
   }
 
@@ -252,6 +269,7 @@ async function main() {
       todos: destinationFlags(flags, "todos"),
       plans: destinationFlags(flags, "plans")
     });
+    await installProjectPreCommitHook(project.repoPath, frLauncherPath());
     console.log(JSON.stringify(project, null, 2));
     return;
   }
@@ -266,6 +284,7 @@ async function main() {
       todos: destinationFlags(flags, "todos"),
       plans: destinationFlags(flags, "plans")
     });
+    await installProjectPreCommitHook(project.repoPath, frLauncherPath());
     console.log(JSON.stringify(project, null, 2));
     return;
   }
@@ -279,7 +298,15 @@ async function main() {
 
   if (command === "project" && subcommand === "remove") {
     const projectId = requireValue(third, "Specify project <id>");
+    let targetRepoPath = null;
+    try { targetRepoPath = (await store.project(projectId)).repoPath; } catch {}
     const removed = await store.removeProject(projectId);
+    if (targetRepoPath) {
+      try {
+        const hookOut = (await exec("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: targetRepoPath, timeout: 5_000 })).stdout.trim();
+        await removePreCommitHook(hookOut);
+      } catch {}
+    }
     console.log(`Removed project ${removed.project}${removed.branches.length ? ` and ${removed.branches.length} branch review record(s)` : ""}.`);
     return;
   }
@@ -287,11 +314,34 @@ async function main() {
   if (command === "crr") {
     const project = await requireActiveProject();
     const target = await crrTarget(project, process.cwd());
+
+    if (flags.record) {
+      const file = requireValue(flags.record, "Specify --record <review.json>");
+      const briefId = requireValue(flags["brief-id"], "Specify --brief-id <uuid>");
+      const savedBriefs = await store.briefs(project.id, target.branch);
+      const brief = savedBriefs.find((item) => item.id === briefId && item.kind === "crr");
+      if (!brief) throw new Error(`Unknown CRR brief ID ${briefId} on ${project.id}/${target.branch}`);
+      const rawText = await readFile(file, "utf8");
+      const parsed = parseEnvelope(rawText);
+      const normalized = normalizeReview(parsed, brief, `native:${brief.model}:${brief.id.slice(0, 8)}`);
+      const validated = validateReview(normalized, brief);
+      await store.addReview(project.id, target.branch, { ...validated, rawSource: rawText.slice(0, 100_000) });
+      console.log(`CRR (${validated.model}): ${validated.verdict}`);
+      console.log(formatScoreRow(validated));
+      console.log(`  Summary: ${validated.summary}`);
+      for (const finding of validated.findings) console.log(`  - ${finding}`);
+      if (validated.verdict !== "GO") process.exitCode = 1;
+      return;
+    }
+
     const [inventory, mergeRules] = await Promise.all([diffInventory(target), readMergeRules(target.repoRoot)]);
+    if (target.hasUntracked) {
+      console.error("WARN Note: untracked files exist and were not staged; run 'git add' and re-run 'fr crr' if you intend to commit them.");
+    }
 
     if (flags.brief) {
       const seated = seatingFor(CRR_ROLE, flags.model === true ? null : flags.model || "local", "native");
-      const brief = {
+      const brief = await store.addBrief(project.id, target.branch, {
         id: randomUUID(),
         kind: "crr",
         role: CRR_ROLE,
@@ -301,7 +351,7 @@ async function main() {
         ...(target.tree ? { tree: target.tree } : {}),
         model: seated.model,
         route: "native"
-      };
+      });
       console.log(JSON.stringify({ brief, prompt: buildReviewPrompt({ brief, target, inventory, mergeRules }) }, null, 2));
       return;
     }
@@ -316,6 +366,7 @@ async function main() {
       mergeRules,
       onWarn: (msg) => console.error(`WARN ${msg}`)
     });
+    await store.addReview(project.id, target.branch, review);
     console.log(`CRR (${review.model}): ${review.verdict}`);
     console.log(formatScoreRow(review));
     console.log(`  Summary: ${review.summary}`);
@@ -332,7 +383,6 @@ async function main() {
     }
     const target = await mrrTarget(project, process.cwd());
 
-    // Native escape hatch: allowed ONLY when the seat's config explicitly lists a launch="native" model.
     if (flags.record) {
       const file = requireValue(flags.record, "Specify --record <review.json>");
       const briefId = requireValue(flags["brief-id"], "Specify --brief-id <uuid>");
@@ -394,7 +444,6 @@ async function main() {
       throw new Error(`Unknown seat '${requestedSeat}'; seats are ${REVIEW_ROLES.join(", ")}`);
     }
 
-    // Native brief generation mode (--brief --seat <role>): requires launch="native" in config.
     if (flags.brief) {
       const role = requireValue(requestedSeat, "Specify --seat <correctness|design|intent> with --brief");
       assertSeatOpen(existing.reviews, { role, target });
@@ -424,10 +473,6 @@ async function main() {
       return;
     }
 
-    // Determine which seats need to run:
-    // - `--seat <role>`: run that specific seat (must not already be recorded on this exact HEAD).
-    // - `--all`: run every seat not yet recorded on this exact HEAD (for user-requested final MRR).
-    // - default (`fr mrr`): run only seats whose status is `missing` or `blocked` (convergent!).
     let rolesToRun;
     if (requestedSeat) {
       assertSeatOpen(existing.reviews, { role: requestedSeat, target });
@@ -532,6 +577,30 @@ async function main() {
 
     const { gate } = await evaluateBranchMrr(project, target);
     console.log(printGateSummary(project, target, gate, openReasons({ checkout: state, target })).text);
+    return;
+  }
+
+  if (command === "gate" && subcommand === "commit") {
+    const project = await projectForCheckout(await store.projects(), process.cwd());
+    if (!project) return; // Unregistered repository: allow commit cleanly.
+    const commitState = await commitTreeState(process.cwd());
+    if (commitState.headTree && commitState.stagedTree === commitState.headTree) {
+      return; // No-op tree commit (e.g. message-only --amend or --allow-empty).
+    }
+    const branchReviews = await store.reviews(project.id, commitState.branch);
+    const matchingCrr = branchReviews.filter((item) => item.kind === "crr" && item.tree === commitState.stagedTree);
+    const goReview = matchingCrr.find((item) => item.verdict === "GO");
+    if (goReview) {
+      return;
+    }
+    const lastNoGo = matchingCrr[matchingCrr.length - 1];
+    if (lastNoGo?.verdict === "NO_GO") {
+      console.error(`Field Report BLOCKED commit on ${project.id}/${commitState.branch}: CRR returned NO_GO for staged tree ${commitState.stagedTree.slice(0, 12)} (${lastNoGo.findings.join(" | ")}).\nFix the defects, stage with 'git add', and rerun 'fr crr'.`);
+      process.exitCode = 1;
+      return;
+    }
+    console.error(`Field Report BLOCKED commit on ${project.id}/${commitState.branch}: no GO 'fr crr' recorded for staged tree ${commitState.stagedTree.slice(0, 12)}.\nStage your changes ('git add') and run 'fr crr' before committing.`);
+    process.exitCode = 1;
     return;
   }
 

@@ -1,17 +1,14 @@
 #!/usr/bin/env node
-import { execFile } from "node:child_process";
-import { access, chmod, copyFile, constants, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { chmod, copyFile, constants, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-import { quote, removeLegacyPreCommitHook } from "../src/hooks.mjs";
+import { installProjectPreCommitHook, quote } from "../src/hooks.mjs";
 import { installHostHooks } from "../src/host-hooks.mjs";
-import { linkSkills } from "../src/install.mjs";
+import { installHostOnboarding, linkSkills } from "../src/install.mjs";
 import { configPath } from "../src/seats.mjs";
 import { createStore } from "../src/store.mjs";
 
-const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const home = os.homedir();
 const binDir = path.join(home, ".local", "bin");
@@ -48,22 +45,17 @@ for (const [name, script] of launchers) {
   await replace(target, (temporary) => writeFile(temporary, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(source)} "$@"\n`, { mode: 0o755 }));
 }
 
+const frBin = path.join(binDir, "fr");
 const skills = await linkSkills(root, home);
 const store = createStore();
 const state = await store.init();
-const hooks = await installHostHooks({ frBin: path.join(binDir, "fr"), home });
+const hooks = await installHostHooks({ frBin, home });
+const onboarding = await installHostOnboarding({ repoRoot: root, home });
 
-// Clean up any legacy Field Report pre-commit hooks on registered projects.
-let cleanedHooks = 0;
+let installedHooks = 0;
 for (const project of await store.projects()) {
-  try {
-    const hookOut = (await exec("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: project.repoPath, timeout: 5_000 })).stdout.trim();
-    const res = await removeLegacyPreCommitHook(hookOut, {
-      readFileFn: (f) => readFile(f, "utf8").catch(() => null),
-      existsFn: (f) => access(f).then(() => true, () => false)
-    });
-    if (res.removed) cleanedHooks += 1;
-  } catch {}
+  const res = await installProjectPreCommitHook(project.repoPath, frBin);
+  if (res.installed) installedHooks += 1;
 }
 
 const seats = configPath();
@@ -78,9 +70,11 @@ try {
 
 process.stdout.write([
   `Installed launchers in ${binDir}: ${launchers.map(([name]) => name).join(", ")}`,
-  `Host hooks configured: ${hooks.claudeSettingsPath}, ${hooks.cursorHooksPath}`,
-  `Skill links: ${skills.join(", ")}`,
-  `Canonical state: ${state}${cleanedHooks ? ` (removed ${cleanedHooks} legacy pre-commit hook(s))` : ""}`,
+  `Host hooks configured: ${[hooks.claudeSettingsPath, hooks.cursorHooksPath, hooks.agyHooksPath, hooks.devinConfigPath].filter(Boolean).join(", ")}`,
+  `Always-on rules configured: ${onboarding.claudeMdPath}, ${onboarding.codexMdPath}, ${onboarding.cursorRulePath}, ${onboarding.agyRulesPath}`,
+  onboarding.repairedShellFiles.length ? `Repaired shell alias (--append-system-prompt-file): ${onboarding.repairedShellFiles.join(", ")}` : "",
+  `Skill links (${skills.length}): ${skills.join(", ")}`,
+  `Canonical state: ${state}${installedHooks ? ` (installed CRR pre-commit hook on ${installedHooks} project(s))` : ""}`,
   seatsNote,
   "Next: fr doctor"
-].join("\n") + "\n");
+].filter(Boolean).join("\n") + "\n");

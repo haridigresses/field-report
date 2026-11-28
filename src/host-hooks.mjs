@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { quote } from "./hooks.mjs";
@@ -16,11 +16,13 @@ function stripOwnerPrefix(headSpec) {
   return colon >= 0 ? text.slice(colon + 1) : text;
 }
 
+const GLOBAL_VALUE_FLAGS = new Set(["-R", "--repo", "-h", "--hostname", "--jq", "-q", "--template", "-t"]);
 const PR_CREATE_VALUE_FLAGS = new Set(["-R", "--repo", "-h", "--hostname", "-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--body-file", "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project", "-r", "--reviewer", "-T", "--template", "-t", "--title"]);
 
-// Single-pass option-aware classifier for the normal gh PR-open paths
-// (`gh pr create` without `--draft` and `gh pr ready`). Raw HTTP tools (`gh api`,
-// `curl`) are intentionally out of scope of local command classification.
+// Option-aware classifier for real argv passed to ~/.local/bin/gh (`gh pr create`
+// without `--draft` and `gh pr ready`). Shell command strings are NOT parsed in
+// PreToolUse — ~/.local/bin/gh executes in the actual working directory after any
+// shell `cd` or worktree switch, avoiding false blocks against the session folder.
 export function classifyGhArgs(argv) {
   const args = Array.isArray(argv) ? argv.map(String) : [];
   let index = 0;
@@ -28,6 +30,9 @@ export function classifyGhArgs(argv) {
 
   while (index < args.length) {
     const token = args[index];
+    if (token === "--help" || token === "help") {
+      return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
+    }
     if ((token === "-R" || token === "--repo") && args[index + 1] != null) {
       explicitRepo = args[index + 1];
       index += 2;
@@ -38,7 +43,7 @@ export function classifyGhArgs(argv) {
       index += 1;
       continue;
     }
-    if ((token === "-h" || token === "--hostname") && args[index + 1] != null) {
+    if (GLOBAL_VALUE_FLAGS.has(token) && args[index + 1] != null) {
       index += 2;
       continue;
     }
@@ -54,7 +59,6 @@ export function classifyGhArgs(argv) {
   const rest = args.slice(index + 2);
 
   if (command !== "pr" || !subcommand) return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
-  if (rest.includes("--help") || rest.includes("-h")) return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
 
   if (subcommand === "create") {
     let isDraft = false;
@@ -62,6 +66,7 @@ export function classifyGhArgs(argv) {
     for (let i = 0; i < rest.length; i += 1) {
       const arg = rest[i];
       if (arg === "--") break;
+      if (arg === "--help" || arg === "-h") return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
       if ((arg === "-R" || arg === "--repo") && rest[i + 1] != null) { explicitRepo = rest[i + 1]; i += 1; continue; }
       if (arg.startsWith("--repo=")) { explicitRepo = arg.slice("--repo=".length); continue; }
       if ((arg === "-H" || arg === "--head") && rest[i + 1] != null) { explicitHead = stripOwnerPrefix(rest[i + 1]); i += 1; continue; }
@@ -79,7 +84,7 @@ export function classifyGhArgs(argv) {
     for (let i = 0; i < rest.length; i += 1) {
       const arg = rest[i];
       if (arg === "--") break;
-      if (arg === "--undo") return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
+      if (arg === "--help" || arg === "-h" || arg === "--undo") return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
       if ((arg === "-R" || arg === "--repo") && rest[i + 1] != null) { explicitRepo = rest[i + 1]; i += 1; continue; }
       if (arg.startsWith("--repo=")) { explicitRepo = arg.slice("--repo=".length); continue; }
       if (!arg.startsWith("-") && !selector) selector = arg;
@@ -88,210 +93,6 @@ export function classifyGhArgs(argv) {
   }
 
   return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
-}
-
-const SHELL_WRAPPER_WORDS = new Set(["env", "command", "exec", "time", "nohup", "nice", "sudo", "caffeinate", "xargs", "then", "do", "else", "elif", "!"]);
-const WRAPPER_VALUE_FLAGS = {
-  env: new Set(["-u", "-C", "-P"]),
-  exec: new Set(["-a"]),
-  nice: new Set(["-n"]),
-  sudo: new Set(["-u", "-g", "-C", "-D", "-R", "-T", "-p", "-r", "-t"]),
-  caffeinate: new Set(["-t", "-w"]),
-  xargs: new Set(["-n", "-L", "-P", "-I", "-J", "-s", "-E", "-d"])
-};
-
-// Quote-, command-substitution-, and heredoc-aware shell command splitter so
-// multi-line bodies (`--body "$(cat <<'EOF'\n- a; b\nEOF\n)" --draft`),
-// subshells/braces (`(gh pr create ...)`, `{ gh pr create; }`), background `&`,
-// and wrapper prefixes (`exec -a`, `sudo -n`, `time -p`, `env -S "..."`) never evade or truncate argv.
-export function extractShellGhInvocations(commandText) {
-  const commands = splitAndTokenizeShell(String(commandText || ""));
-  const invocations = [];
-  for (const tokens of commands) {
-    if (!tokens.length) continue;
-    let start = 0;
-    let reparsed = null;
-    while (start < tokens.length) {
-      const tok = tokens[start];
-      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok) || SHELL_WRAPPER_WORDS.has(tok)) {
-        start += 1;
-        if (tok === "env" || tok === "command" || tok === "exec" || tok === "time" || tok === "nice" || tok === "sudo" || tok === "caffeinate" || tok === "xargs") {
-          const valueFlags = WRAPPER_VALUE_FLAGS[tok] || new Set();
-          while (start < tokens.length && tokens[start].startsWith("-")) {
-            const flag = tokens[start];
-            start += 1;
-            if (flag === "--") break;
-            if (tok === "env" && (flag === "-S" || flag.startsWith("--split-string") || (/^-[A-Za-z]*S/.test(flag) && !flag.startsWith("--")))) {
-              const inlineRest = /^-[A-Za-z]*S(.+)$/.exec(flag)?.[1];
-              const splitArg = flag.includes("=") ? flag.slice(flag.indexOf("=") + 1) : (inlineRest || tokens[start++] || "");
-              const inner = splitAndTokenizeShell(splitArg)[0] || [];
-              reparsed = [...inner, ...tokens.slice(start)];
-              break;
-            }
-            if (valueFlags.has(flag) && start < tokens.length) start += 1;
-          }
-          if (reparsed) break;
-          // `env` can carry VAR=val assignments after its own flags (e.g. `env -i FOO=1 gh ...`).
-          continue;
-        }
-        continue;
-      }
-      break;
-    }
-    if (reparsed) {
-      for (const nested of extractShellGhInvocations(reparsed.map((t) => `'${t.replaceAll("'", "'\\''")}'`).join(" "))) {
-        invocations.push(nested);
-      }
-      continue;
-    }
-    if (start < tokens.length && (tokens[start] === "gh" || tokens[start].endsWith("/gh"))) {
-      invocations.push(tokens.slice(start + 1));
-    }
-  }
-  return invocations;
-}
-
-function splitAndTokenizeShell(input) {
-  const commands = [];
-  let cmdTokens = [];
-  let current = "";
-  let hasToken = false;
-  const stack = []; // "SQ" | "DQ" | "SUBST" | "BT"
-  const heredocs = [];
-
-  const flushToken = () => {
-    if (hasToken || current.length > 0) {
-      cmdTokens.push(current);
-      current = "";
-      hasToken = false;
-    }
-  };
-  const flushCommand = () => {
-    flushToken();
-    if (cmdTokens.length) {
-      commands.push(cmdTokens);
-      cmdTokens = [];
-    }
-  };
-
-  const consumeHeredocs = (newlineIndex) => {
-    let cursor = newlineIndex;
-    while (heredocs.length > 0) {
-      const delim = heredocs.shift();
-      let lineStart = cursor + 1;
-      while (lineStart <= input.length) {
-        const nl = input.indexOf("\n", lineStart);
-        const lineEnd = nl < 0 ? input.length : nl;
-        if (input.slice(lineStart, lineEnd).trim() === delim) {
-          cursor = nl < 0 ? input.length : nl;
-          break;
-        }
-        if (nl < 0) { cursor = input.length; break; }
-        lineStart = nl + 1;
-      }
-    }
-    return cursor;
-  };
-
-  const tryQueueHeredoc = (pos) => {
-    if (input[pos] !== "<" || input[pos + 1] !== "<" || input[pos + 2] === "<") return 0;
-    let rest = input.slice(pos + 2);
-    let consumed = 2;
-    if (rest.startsWith("-")) { rest = rest.slice(1); consumed += 1; }
-    const match = rest.match(/^\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/);
-    if (!match) return 0;
-    heredocs.push(match[2]);
-    return consumed + match[0].length;
-  };
-
-  for (let i = 0; i < input.length; i += 1) {
-    const ch = input[i];
-    const top = stack[stack.length - 1] || null;
-
-    if (top === "SQ") {
-      if (ch === "'") stack.pop();
-      else current += ch;
-      continue;
-    }
-    if (top === "BT") {
-      if (ch === "\\" && i + 1 < input.length) { current += input[i + 1]; i += 1; }
-      else if (ch === "`") stack.pop();
-      else current += ch;
-      continue;
-    }
-    if (top === "DQ") {
-      if (ch === "\"") stack.pop();
-      else if (ch === "$" && input[i + 1] === "(") { current += "$("; stack.push("SUBST"); i += 1; }
-      else if (ch === "`") { current += "`"; stack.push("BT"); }
-      else if (ch === "\\" && i + 1 < input.length) { current += input[i + 1]; i += 1; }
-      else current += ch;
-      continue;
-    }
-    if (top === "SUBST") {
-      const hdLen = tryQueueHeredoc(i);
-      if (hdLen > 0) {
-        current += input.slice(i, i + hdLen);
-        i += hdLen - 1;
-        continue;
-      }
-      if (ch === "\n" && heredocs.length > 0) {
-        const endIdx = consumeHeredocs(i);
-        current += input.slice(i, Math.min(endIdx + 1, input.length));
-        i = endIdx;
-        continue;
-      }
-      if (ch === ")") { stack.pop(); current += ch; continue; }
-      if (ch === "'") { stack.push("SQ"); current += ch; continue; }
-      if (ch === "\"") { stack.push("DQ"); current += ch; continue; }
-      if (ch === "$" && input[i + 1] === "(") { stack.push("SUBST"); current += "$("; i += 1; continue; }
-      if (ch === "`") { stack.push("BT"); current += ch; continue; }
-      if (ch === "\\" && i + 1 < input.length) { current += input.slice(i, i + 2); i += 1; continue; }
-      current += ch;
-      continue;
-    }
-
-    // Top-level unquoted shell context:
-    if (ch === "'") { hasToken = true; stack.push("SQ"); continue; }
-    if (ch === "\"") { hasToken = true; stack.push("DQ"); continue; }
-    if (ch === "$" && input[i + 1] === "(") { hasToken = true; current += "$("; stack.push("SUBST"); i += 1; continue; }
-    if (ch === "`") { hasToken = true; current += "`"; stack.push("BT"); continue; }
-    if (ch === "\\" && i + 1 < input.length) { hasToken = true; current += input[i + 1]; i += 1; continue; }
-
-    const topHdLen = tryQueueHeredoc(i);
-    if (topHdLen > 0) {
-      flushToken();
-      i += topHdLen - 1;
-      continue;
-    }
-
-    if (ch === "\n") {
-      flushCommand();
-      if (heredocs.length > 0) i = consumeHeredocs(i);
-      continue;
-    }
-
-    if ((ch === "&" && input[i + 1] === "&") || (ch === "|" && input[i + 1] === "|")) {
-      flushCommand();
-      i += 1;
-      continue;
-    }
-    if (ch === ";" || ch === "|" || ch === "(" || ch === ")" || ch === "{" || ch === "}") {
-      flushCommand();
-      continue;
-    }
-    if (ch === "&" && input[i - 1] !== ">" && input[i - 1] !== "<" && input[i + 1] !== ">") {
-      flushCommand();
-      continue;
-    }
-    if (/\s/.test(ch)) {
-      flushToken();
-      continue;
-    }
-    hasToken = true;
-    current += ch;
-  }
-  flushCommand();
-  return commands;
 }
 
 export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicitRepo = null, explicitBranch = null, selector = null, ghBin = "gh" }) {
@@ -321,8 +122,6 @@ export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicit
       if (cwdProject.githubRepo) {
         cwdSlugs.add((parseGitHubSlug(cwdProject.githubRepo) || cwdProject.githubRepo).toLowerCase());
       }
-      // Only treat explicitRepo as unmanaged when cwdProject has known GitHub
-      // remote slug(s) and NONE of them match explicitRepo.
       if (cwdSlugs.size === 0 || cwdSlugs.has(wanted)) matched = cwdProject;
     }
     if (!matched) return { managed: false };
@@ -365,69 +164,99 @@ export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicit
   return { managed: true, project: matched, branch: target.branch, target, gate, ready: reasons.length === 0, reasons };
 }
 
+function hookAllowOutput({ isAntigravity, isCursor }) {
+  if (isAntigravity) return { exitCode: 0, stdout: `${JSON.stringify({ decision: "allow" })}\n`, stderr: "" };
+  if (isCursor) return { exitCode: 0, stdout: `${JSON.stringify({ permission: "allow" })}\n`, stderr: "" };
+  return { exitCode: 0, stdout: "", stderr: "" };
+}
+
+function hookDenyOutput(message, { isAntigravity, isCursor }) {
+  if (isAntigravity) return { exitCode: 0, stdout: `${JSON.stringify({ decision: "deny", reason: message })}\n`, stderr: "" };
+  if (isCursor) return { exitCode: 0, stdout: `${JSON.stringify({ permission: "deny", user_message: message, agent_message: message })}\n`, stderr: "" };
+  return { exitCode: 2, stdout: "", stderr: `${message}\n` };
+}
+
+function buildEnabledSessionBanner(matched, sessionId) {
+  const sessionHint = sessionId ? ` (session: ${sessionId})` : "";
+  const sessionFlag = sessionId ? ` --session ${sessionId}` : "";
+  return [
+    `Field Report ACTIVE for repository '${matched.id}'${sessionHint} (base: ${matched.baseBranch || "main"}).`,
+    `- Applies to ALL work in this repo: audits, gap analyses, BRR, TRR, CRR, MRR, coding, PRs, and every delegated subagent/worker brief.`,
+    `- Terminology mandate: whenever BRR, MRR, TRR, or CRR is requested, load the 'brr' or 'field-report' skill and use the configured multi-provider panel ('fr seats') — never invent custom definitions or single-model substitutes.`,
+    `- Todos: ${describeTodos(todosFor(matched), matched)}`,
+    `- Plans: ${describePlans(plansFor(matched))}`,
+    `- Commit gate: stage changes ('git add') and run 'fr crr' before 'git commit' (enforced by hooks/pre-commit on staged tree SHA).`,
+    `- PR-open gate: run 3-seat 'fr mrr${sessionFlag}' until 'fr gate open' is READY before any non-draft PR ('gh pr create --draft' allowed for early CI if you tell the user MRR has not run); never merge.`
+  ].join("\n");
+}
+
 export async function handleHostHook(event, rawStdin, { store, cwd = process.cwd(), env = process.env, ghBin = "gh" } = {}) {
   let payload = {};
   try { payload = JSON.parse(String(rawStdin || "").trim() || "{}"); } catch { payload = {}; }
-  const hookCwd = payload.cwd || (Array.isArray(payload.workspace_roots) ? payload.workspace_roots[0] : null) || cwd;
-  const isCursor = String(payload.hook_event_name || "").startsWith("before") || Array.isArray(payload.workspace_roots);
+  const isAntigravity = Boolean(payload.hookEventName || Array.isArray(payload.workspacePaths) || payload.toolCall);
+  const isCursor = !isAntigravity && (String(payload.hook_event_name || "").startsWith("before") || Array.isArray(payload.workspace_roots));
+  const candidateDirs = [
+    payload.cwd,
+    ...(Array.isArray(payload.workspacePaths) ? payload.workspacePaths : []),
+    ...(Array.isArray(payload.workspace_roots) ? payload.workspace_roots : []),
+    cwd
+  ].filter((entry) => typeof entry === "string" && entry.trim());
+  const hookCwd = candidateDirs[0] || cwd;
 
   if (event === "prompt-submit") {
-    await capturePromptFromHook(rawStdin, { store, cwd: hookCwd, env }).catch(() => {});
+    await capturePromptFromHook(rawStdin, { store, cwd: payload.cwd || null, env }).catch(() => {});
+    if (isAntigravity) return { exitCode: 0, stdout: "{}\n", stderr: "" };
     return { exitCode: 0, stdout: isCursor ? `${JSON.stringify({ continue: true })}\n` : "", stderr: "" };
   }
 
   if (event === "session-start") {
-    const sessionId = payload.session_id || payload.conversation_id || payload.sessionId || null;
+    const sessionId = payload.session_id || payload.conversation_id || payload.conversationId || payload.sessionId || null;
     if (sessionId && env.CLAUDE_ENV_FILE && /^[A-Za-z0-9._:-]+$/.test(String(sessionId))) {
       await appendFile(env.CLAUDE_ENV_FILE, `export FR_SESSION_ID=${quote(sessionId)}\n`).catch(() => {});
     }
     const projects = await readConfiguredProjects(store.root);
-    const currentCommon = await gitCommonDir(hookCwd);
     let matched = null;
-    if (currentCommon) {
+    for (const dir of candidateDirs) {
+      const currentCommon = await gitCommonDir(dir);
+      if (!currentCommon) continue;
       for (const project of projects) {
         const projectCommon = project.commonDir || await gitCommonDir(project.repoPath);
         if (projectCommon && projectCommon === currentCommon) { matched = project; break; }
       }
+      if (matched) break;
     }
-    if (!matched) return { exitCode: 0, stdout: "", stderr: "" };
-    const sessionHint = sessionId ? ` (session: ${sessionId})` : "";
-    const message = [
-      `Field Report enabled for project '${matched.id}'${sessionHint} (base: ${matched.baseBranch || "main"}).`,
-      `- Todos: ${describeTodos(todosFor(matched), matched)}`,
-      `- Plans: ${describePlans(plansFor(matched))}`,
-      `- Rules: run 'fr crr' before keep-commits; run 'fr mrr'${sessionId ? ` --session ${sessionId}` : ""} before opening/readying a PR (draft PRs allowed for CI — tell the user MRR has not run if handing off); never merge.`
-    ].join("\n");
+    if (!matched) return { exitCode: 0, stdout: isAntigravity ? "{}\n" : "", stderr: "" };
+    const message = buildEnabledSessionBanner(matched, sessionId);
+    if (isAntigravity) {
+      return {
+        exitCode: 0,
+        stdout: `${JSON.stringify({ injectSteps: [{ systemMessage: { systemMessage: message } }] })}\n`,
+        stderr: ""
+      };
+    }
     return { exitCode: 0, stdout: `${message}\n`, stderr: "" };
   }
 
+  // PreToolUse gates GitHub MCP PR-open/ready calls ONLY. Shell `gh` calls are
+  // gated by ~/.local/bin/gh in the actual directory where `gh` executes.
   if (event === "pre-tool") {
-    const hookEventName = String(payload.hook_event_name || "");
-    const toolName = String(payload.tool_name || payload.toolName || "");
-    let rawInput = payload.tool_input ?? payload.arguments ?? payload.input ?? {};
+    const hookEventName = String(payload.hook_event_name || payload.hookEventName || "");
+    const toolName = String(payload.tool_name || payload.toolName || payload.toolCall?.name || "");
+    if (hookEventName === "beforeShellExecution" || /^(?:Bash|Shell|Terminal|run_command|exec)$/i.test(toolName)) {
+      return hookAllowOutput({ isAntigravity, isCursor });
+    }
+
+    let rawInput = payload.tool_input ?? payload.toolCall?.args ?? payload.arguments ?? payload.input ?? {};
     if (typeof rawInput === "string") {
       try { rawInput = JSON.parse(rawInput); } catch { rawInput = {}; }
     }
     const toolInput = rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? rawInput : {};
-    const isMcpEvent = hookEventName === "beforeMCPExecution" || (toolName !== "" && !/^(?:Bash|Shell|Terminal|run_command)$/i.test(toolName));
-    const commandText = !isMcpEvent ? (toolInput.command || payload.command || "") : "";
     let needsGate = false;
     let explicitRepo = null;
     let explicitBranch = null;
     let selector = null;
 
-    if (!isMcpEvent && commandText) {
-      for (const ghArgs of extractShellGhInvocations(commandText)) {
-        const classified = classifyGhArgs(ghArgs);
-        if (classified.action === "open-pr" || classified.action === "ready-pr") {
-          needsGate = true;
-          explicitRepo = classified.explicitRepo;
-          explicitBranch = classified.explicitHead;
-          selector = classified.selector;
-          break;
-        }
-      }
-    } else if (isMcpEvent && /(?:create|open)_pull_request|pull_request_write/i.test(toolName) && toolInput.draft !== true) {
+    if (/(?:create|open)_pull_request|pull_request_write/i.test(toolName) && toolInput.draft !== true) {
       if (!/pull_request_write/i.test(toolName) || !toolInput.method || /create|open|ready/i.test(String(toolInput.method))) {
         needsGate = true;
         if (toolInput.owner && toolInput.repo) explicitRepo = `${toolInput.owner}/${toolInput.repo}`;
@@ -445,45 +274,50 @@ export async function handleHostHook(event, rawStdin, { store, cwd = process.cwd
     }
 
     if (!needsGate) {
-      return { exitCode: 0, stdout: isCursor ? `${JSON.stringify({ permission: "allow" })}\n` : "", stderr: "" };
+      return hookAllowOutput({ isAntigravity, isCursor });
     }
 
     try {
-      const check = await checkBranchOpenGate({ store, cwd: hookCwd, explicitRepo, explicitBranch, selector, ghBin });
+      let gateCwd = hookCwd;
+      for (const dir of candidateDirs) {
+        if (await gitCommonDir(dir)) { gateCwd = dir; break; }
+      }
+      const check = await checkBranchOpenGate({ store, cwd: gateCwd, explicitRepo, explicitBranch, selector, ghBin });
       if (!check.managed || check.ready) {
-        return { exitCode: 0, stdout: isCursor ? `${JSON.stringify({ permission: "allow" })}\n` : "", stderr: "" };
+        return hookAllowOutput({ isAntigravity, isCursor });
       }
 
       const blockMsg = `Field Report BLOCKED opening/readying a PR on ${check.project.id}${check.branch ? `/${check.branch}` : ""}: ${check.reasons.join("; ")}. Run 'fr mrr' on this branch until READY before opening a non-draft PR.`;
-      if (isCursor) {
-        return {
-          exitCode: 0,
-          stdout: `${JSON.stringify({ permission: "deny", user_message: blockMsg, agent_message: blockMsg })}\n`,
-          stderr: ""
-        };
-      }
-      return { exitCode: 2, stdout: "", stderr: `${blockMsg}\n` };
+      return hookDenyOutput(blockMsg, { isAntigravity, isCursor });
     } catch (error) {
       const errMsg = `Field Report PreToolUse check failed closed: ${error.message}`;
-      if (isCursor) {
-        return {
-          exitCode: 0,
-          stdout: `${JSON.stringify({ permission: "deny", user_message: errMsg, agent_message: errMsg })}\n`,
-          stderr: ""
-        };
-      }
-      return { exitCode: 2, stdout: "", stderr: `${errMsg}\n` };
+      return hookDenyOutput(errMsg, { isAntigravity, isCursor });
     }
   }
 
-  return { exitCode: 0, stdout: "", stderr: "" };
+  return { exitCode: 0, stdout: isAntigravity ? "{}\n" : "", stderr: "" };
 }
 
-async function writeJsonAtomic(file, data) {
+async function writeJsonAtomic(file, data, { mode } = {}) {
   await mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.next`;
-  await writeFile(temp, `${JSON.stringify(data, null, 2)}\n`);
+  await writeFile(temp, `${JSON.stringify(data, null, 2)}\n`, mode ? { mode } : undefined);
   await rename(temp, file);
+}
+
+function buildClaudeStyleHooks(priorHooks, frBin, { includePreCompact = false } = {}) {
+  const hooks = priorHooks && typeof priorHooks === "object" && !Array.isArray(priorHooks) ? { ...priorHooks } : {};
+  const isOurGroup = (group) => Array.isArray(group?.hooks) && group.hooks.some((h) => String(h?.command || "").includes(HOOK_MARKER));
+  const setHook = (eventName, matcher, sub) => {
+    const prior = Array.isArray(hooks[eventName]) ? hooks[eventName].filter((item) => !isOurGroup(item)) : [];
+    const entry = { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: `${quote(frBin)} _hook ${sub}` }] };
+    hooks[eventName] = [...prior, entry];
+  };
+  setHook("SessionStart", "", "session-start");
+  if (includePreCompact) setHook("PreCompact", "", "session-start");
+  setHook("UserPromptSubmit", "", "prompt-submit");
+  setHook("PreToolUse", "mcp__.*(?:pull_request|ready_for_review).*", "pre-tool");
+  return hooks;
 }
 
 export async function installHostHooks({ frBin, home = os.homedir() }) {
@@ -492,18 +326,7 @@ export async function installHostHooks({ frBin, home = os.homedir() }) {
   try { claude = JSON.parse(await readFile(claudeSettingsPath, "utf8")); }
   catch (error) { if (error.code !== "ENOENT") throw new Error(`Cannot parse ${claudeSettingsPath}: ${error.message}`); }
   if (!claude || typeof claude !== "object" || Array.isArray(claude)) claude = {};
-  const hooks = claude.hooks && typeof claude.hooks === "object" && !Array.isArray(claude.hooks) ? { ...claude.hooks } : {};
-
-  const isOurClaudeGroup = (group) => Array.isArray(group?.hooks) && group.hooks.some((h) => String(h?.command || "").includes(HOOK_MARKER));
-  const setClaudeHook = (eventName, matcher, sub) => {
-    const prior = Array.isArray(hooks[eventName]) ? hooks[eventName].filter((item) => !isOurClaudeGroup(item)) : [];
-    const entry = { ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: `${quote(frBin)} _hook ${sub}` }] };
-    hooks[eventName] = [...prior, entry];
-  };
-  setClaudeHook("SessionStart", "", "session-start");
-  setClaudeHook("UserPromptSubmit", "", "prompt-submit");
-  setClaudeHook("PreToolUse", "Bash|mcp__.*(?:pull_request|ready_for_review).*", "pre-tool");
-  claude.hooks = hooks;
+  claude.hooks = buildClaudeStyleHooks(claude.hooks, frBin, { includePreCompact: true });
   await writeJsonAtomic(claudeSettingsPath, claude);
 
   const cursorHooksPath = path.join(home, ".cursor", "hooks.json");
@@ -519,25 +342,71 @@ export async function installHostHooks({ frBin, home = os.homedir() }) {
     const prior = Array.isArray(chooks[eventName]) ? chooks[eventName].filter((item) => !isOurCursorEntry(item)) : [];
     chooks[eventName] = [...prior, { command: `${quote(frBin)} _hook ${sub}` }];
   };
+  // Remove any legacy beforeShellExecution hook so `cd worktree && gh ...` is handled by ~/.local/bin/gh.
+  if (Array.isArray(chooks.beforeShellExecution)) {
+    const cleaned = chooks.beforeShellExecution.filter((item) => !isOurCursorEntry(item));
+    if (cleaned.length) chooks.beforeShellExecution = cleaned;
+    else delete chooks.beforeShellExecution;
+  }
   setCursorHook("beforeSubmitPrompt", "prompt-submit");
-  setCursorHook("beforeShellExecution", "pre-tool");
   setCursorHook("beforeMCPExecution", "pre-tool");
   cursor.hooks = chooks;
   await writeJsonAtomic(cursorHooksPath, cursor);
 
-  return { claudeSettingsPath, cursorHooksPath };
+  // Antigravity plugin lifecycle hooks (~/.gemini/config/plugins/field-report/hooks.json).
+  const agyHooksPath = path.join(home, ".gemini", "config", "plugins", "field-report", "hooks.json");
+  let agy = {};
+  try { agy = JSON.parse(await readFile(agyHooksPath, "utf8")); }
+  catch (error) { if (error.code !== "ENOENT") throw new Error(`Cannot parse ${agyHooksPath}: ${error.message}`); }
+  if (!agy || typeof agy !== "object" || Array.isArray(agy)) agy = {};
+  agy["field-report"] = {
+    SessionStart: [{ type: "command", command: `${quote(frBin)} _hook session-start` }],
+    PreInvocation: [{ type: "command", command: `${quote(frBin)} _hook prompt-submit` }],
+    PreToolUse: [
+      {
+        matcher: "mcp_.*(?:pull_request|ready_for_review).*",
+        hooks: [{ type: "command", command: `${quote(frBin)} _hook pre-tool` }]
+      }
+    ]
+  };
+  await writeJsonAtomic(agyHooksPath, agy);
+
+  // Local Devin CLI config (~/.config/devin/config.json): configure hooks only when
+  // ~/.config/devin already exists so non-Devin machines stay clean, preserving 0o600.
+  const devinDir = path.join(home, ".config", "devin");
+  let devinConfigPath = null;
+  const hasDevinDir = await access(devinDir).then(() => true, () => false);
+  if (hasDevinDir) {
+    devinConfigPath = path.join(devinDir, "config.json");
+    let devin = {};
+    try { devin = JSON.parse(await readFile(devinConfigPath, "utf8")); }
+    catch (error) { if (error.code !== "ENOENT") throw new Error(`Cannot parse ${devinConfigPath}: ${error.message}`); }
+    if (!devin || typeof devin !== "object" || Array.isArray(devin)) devin = {};
+    devin.hooks = buildClaudeStyleHooks(devin.hooks, frBin, { includePreCompact: false });
+    await writeJsonAtomic(devinConfigPath, devin, { mode: 0o600 });
+  }
+
+  return { claudeSettingsPath, cursorHooksPath, agyHooksPath, devinConfigPath };
 }
 
 export function hasInstalledHostHooks(rawJson, kind) {
   if (!rawJson) return false;
   try {
     const parsed = JSON.parse(rawJson);
-    const serialized = JSON.stringify(parsed?.hooks || {});
+    if (kind === "agy") {
+      const serialized = JSON.stringify(parsed?.["field-report"] || {});
+      return serialized.includes("_hook session-start") && serialized.includes("_hook prompt-submit") && serialized.includes("_hook pre-tool");
+    }
+    const hooksObj = parsed?.hooks || {};
+    const serialized = JSON.stringify(hooksObj);
     if (kind === "claude") {
+      return Array.isArray(hooksObj.SessionStart) && Array.isArray(hooksObj.PreCompact) && serialized.includes("_hook session-start") && serialized.includes("_hook prompt-submit") && serialized.includes("_hook pre-tool");
+    }
+    if (kind === "devin") {
       return serialized.includes("_hook session-start") && serialized.includes("_hook prompt-submit") && serialized.includes("_hook pre-tool");
     }
     if (kind === "cursor") {
-      return serialized.includes("_hook prompt-submit") && serialized.includes("_hook pre-tool");
+      return serialized.includes("_hook prompt-submit") && serialized.includes("_hook pre-tool") && !JSON.stringify(hooksObj.beforeShellExecution || []).includes("_hook pre-tool");
     }
     return false;
   } catch {

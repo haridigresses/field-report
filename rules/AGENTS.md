@@ -1,0 +1,14 @@
+# Field Report — Always-On Rules
+
+1. **Terminology & Skill Mandate (All Tasks — Audits, Planning, Reviews, and Coding):**
+   - Whenever the user asks for or names `BRR`, `MRR`, `TRR`, `CRR`, or `Field Report` (including audits, gap analyses, or architecture reviews), load the installed `brr` or `field-report` skill and use the configured multi-provider panel (`fr seats`). **Never** invent custom definitions of BRR/MRR/TRR or substitute single-model subagents.
+2. **Check Repository Enablement First:**
+   - Check the `SessionStart` message or run `fr status`. If `fr status` prints `No Field Report project matches this checkout`, Field Report is not enabled for this repository — proceed normally and do **not** run `fr project add` unless the user asks.
+3. **In Enabled Repositories (Applies to Every Session, Orchestrator, `/swarm` Lead, and Subagent Brief):**
+   - **Subagent & Worker Briefs:** Whenever delegating coding, commits, or PR work to a builder/worker/subagent, **include Field Report requirements in its brief**. Never tell a subagent to skip `fr crr` or `fr mrr` or open a non-draft PR directly.
+   - **Product & Architecture Judgment:** Read `merge-ready-review.md` if present. Ask the user plainly before deciding unsettled product behavior, migrations, or security boundaries. File follow-up todos in `Todos:` (`fr status`).
+   - **Mechanical Commit-Time Gate (`fr crr`):** Stage changes (`git add`) and run `fr crr` before `git commit`. Enabled repos enforce a recorded `GO` CRR matching the staged `git write-tree` SHA via `fr gate commit`.
+   - **Mechanical Pre-PR Gate (`fr mrr` + `fr gate open`):** Never open or ready a non-draft PR (`gh pr create` without `--draft`, `gh pr ready`, `gh api`, `curl`, or MCP PR-open tools) until 3-seat `fr mrr` (`correctness`, `design`, `intent`) has run and `fr gate open` is `READY`. Always invoke `gh` on `PATH`.
+   - **Draft PRs:** `gh pr create --draft` is allowed before MRR when early CI is useful; if mentioning or handing off a Draft PR before MRR is `READY`, **explicitly tell the user that MRR has not been run yet**.
+   - **Converging & Never Merging:** Fix `NO_GO` defects on a new commit and rerun `fr mrr` (never shop on the same HEAD); record `fr accept <F-id> --reason <text> --actor <human>` **only** after explicit user acceptance; resolve fixed bot threads silently; reply at most once to human threads (never resolve human threads); never post `@bot` triggers unprompted; **never merge a PR**.
+   - **Bounded Reviewers:** Subagents or CLIs executing a `fr crr` or `fr mrr` brief follow **only** their supplied brief (read-only exact diff, no `fr` management commands, no MCP servers).

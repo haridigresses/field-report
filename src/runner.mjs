@@ -214,17 +214,22 @@ export async function executeRoleReview({
       }
 
       if (result.code === 0 && String(rawOutput || "").trim()) {
+        let parsed;
+        let validated;
         try {
-          const parsed = parseEnvelope(rawOutput);
+          parsed = parseEnvelope(rawOutput);
           const normalized = normalizeReview(parsed, brief, `cli:${entry.launch}:${entry.id}:${brief.id.slice(0, 8)}`);
-          const validated = validateReview(normalized, brief);
-          return { review: { ...validated, rawSource: String(rawOutput).slice(0, 100_000) }, brief, attempted: errors };
+          validated = validateReview(normalized, brief);
         } catch (parseError) {
-          const detail = `invalid review envelope from ${entry.id} (${entry.launch}): ${parseError.message}`;
-          errors.push(detail);
-          if (index + 1 < cliCandidates.length) onWarn(`${role}: ${detail}; trying fallback ${cliCandidates[index + 1].id}`);
-          continue;
+          // Do NOT fall back to a second model when a CLI exited 0 with malformed
+          // output — a malformed NO_GO must never shop to a fallback model.
+          throw new Error(`${role} model ${entry.id} (${entry.launch}) returned an invalid review envelope: ${parseError.message}`);
         }
+        return { review: { ...validated, rawSource: String(rawOutput).slice(0, 100_000) }, brief, attempted: errors };
+      }
+
+      if (result.timedOut) {
+        throw new Error(`${role} model ${entry.id} (${entry.launch}) timed out`);
       }
 
       const snippet = (result.stderr || result.stdout || `exit code ${result.code}`).trim().split("\n").slice(-3).join(" ").slice(0, 240);

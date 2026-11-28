@@ -53,10 +53,10 @@ test("session-keyed prompt capture works across main checkout and git worktrees 
     buildUserContract({ store, project, sessionId: "bogus", intentFileText: "Builder self-serving story" }),
     /No captured prompts found for --session 'bogus'/
   );
-  // Concurrent s1 & s2 without sessionId or envSession throws ambiguous multi-session error.
+  // Without --session or FR_SESSION_ID, buildUserContract NEVER guesses (even for 1 or 2 sessions) — asks for --session <id>!
   await assert.rejects(
     buildUserContract({ store, project, env: {} }),
-    /Multiple captured prompt sessions exist/
+    /Captured prompt session\(s\) exist.*pass --session <id>/
   );
   // Exported env session (e.g. FR_SESSION_ID on SessionStart) with 0 prompts degrades gracefully instead of throwing against historical sessions, and ignores --intent-file when historical sessions exist.
   const emptyEnvContract = await buildUserContract({

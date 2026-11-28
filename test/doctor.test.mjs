@@ -8,7 +8,8 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { agyModelIds, cursorModelIds, defaultProbe, devinModelIds, doctor, formatDoctor } from "../src/doctor.mjs";
 import { installHostHooks } from "../src/host-hooks.mjs";
-import { skillHostDirs, SKILL_NAMES } from "../src/install.mjs";
+import { installPreCommitHook } from "../src/hooks.mjs";
+import { installHostOnboarding, skillHostDirs, SKILL_NAMES } from "../src/install.mjs";
 import { parseSeatConfig } from "../src/seats.mjs";
 
 const exec = promisify(execFile);
@@ -36,7 +37,9 @@ async function installedHome() {
     await mkdir(host, { recursive: true });
     for (const name of SKILL_NAMES) await symlink(path.join(runtimeRoot, "skills", name), path.join(host, name));
   }
+  await mkdir(path.join(home, ".config", "devin"), { recursive: true });
   await installHostHooks({ frBin: path.join(binDir, "fr"), home });
+  await installHostOnboarding({ repoRoot: runtimeRoot, home });
   const stateRoot = path.join(home, "state");
   await mkdir(stateRoot);
   await writeFile(path.join(stateRoot, "config.json"), "{}");
@@ -76,15 +79,32 @@ test("model ID parsers handle cursor, agy, and devin output formats", () => {
   assert.deepEqual([...devinModelIds(JSON.stringify({ families: [{ slug: "swe-1.6", aliases: ["swe"], variants: [{ model_uid: "swe-1.6-fast" }] }] }))], ["swe-1.6", "swe", "swe-1.6-fast"]);
 });
 
-test("doctor passes on a fully installed machine across cursor, agy, devin, and claude", async () => {
+test("doctor passes on a fully installed machine across cursor, agy, devin, and claude with v5 CRR hook", async () => {
   const { home, stateRoot } = await installedHome();
-  const results = await doctor({ runtimeRoot, stateRoot, home, env: { PATH: path.join(home, ".local", "bin") }, nodeVersion: "24.1.0", loadConfig: () => config, probe: probeWith(allCommands) });
+  const repo = await mkdtemp(path.join(os.tmpdir(), "fr-doc-ok-repo-"));
+  await exec("git", ["init", "-q"], { cwd: repo });
+  await installPreCommitHook(path.join(repo, ".git", "hooks", "pre-commit"), path.join(home, ".local", "bin", "fr"));
+  const results = await doctor({
+    runtimeRoot,
+    stateRoot,
+    home,
+    env: { PATH: path.join(home, ".local", "bin") },
+    nodeVersion: "24.1.0",
+    loadConfig: () => config,
+    projects: [{ id: "okrepo", repoPath: repo }],
+    probe: probeWith(allCommands)
+  });
   assert.deepEqual(results.filter((item) => item.level !== "ok"), []);
   assert.match(formatDoctor(results), /Ready\.$/);
 });
 
-test("doctor warns on legacy pre-commit hooks and duplicate repository projects, and does not create state on a bare machine", async () => {
+test("doctor catches shell rc footguns, disabled hooks/plugins, legacy pre-commit hooks, and duplicate projects", async () => {
   const { home, stateRoot } = await installedHome();
+  await writeFile(path.join(home, ".zshrc"), "alias claude='command claude --system-prompt-file ~/.claude/my-rules.txt'\nalias gh='/opt/homebrew/bin/gh'\n");
+  await mkdir(path.join(home, ".gemini", "config"), { recursive: true });
+  await writeFile(path.join(home, ".gemini", "config", "config.json"), JSON.stringify({ plugins: { "field-report": { enabled: false } } }));
+  await writeFile(path.join(home, ".claude", "settings.local.json"), JSON.stringify({ disableAllHooks: true }));
+
   const repo = await mkdtemp(path.join(os.tmpdir(), "fr-doc-repo-"));
   await exec("git", ["init", "-q"], { cwd: repo });
   await mkdir(path.join(repo, ".git", "hooks"), { recursive: true });
@@ -100,6 +120,10 @@ test("doctor warns on legacy pre-commit hooks and duplicate repository projects,
     projects: [{ id: "one", repoPath: repo }, { id: "dup", repoPath: repo }],
     probe: probeWith(allCommands)
   });
+  assert.match(byLabel(results, "shell .zshrc:1").detail, /wipes Claude Code's built-in skill/);
+  assert.match(byLabel(results, "shell .zshrc:2").detail, /alias\/function for 'gh'/);
+  assert.equal(byLabel(results, "antigravity plugin").level, "fail");
+  assert.equal(byLabel(results, "claude local settings").level, "fail");
   assert.match(byLabel(results, "project one").detail, /legacy Field Report pre-commit hook/);
   assert.match(byLabel(results, "project dup").detail, /shares repository with project 'one'/);
 

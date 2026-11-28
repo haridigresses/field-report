@@ -5,7 +5,7 @@ import path from "node:path";
 import { findRealGh } from "../bin/fr-gh.mjs";
 import { hasInstalledHostHooks } from "./host-hooks.mjs";
 import { hookState } from "./hooks.mjs";
-import { REMOVED_SKILL_NAMES, skillHostDirs, SKILL_NAMES } from "./install.mjs";
+import { detectShellRcFootguns, hasInstalledOnboarding, REMOVED_SKILL_NAMES, SHELL_RC_FILES, skillHostDirs, SKILL_NAMES } from "./install.mjs";
 import { normalizeId, REVIEW_ROLES } from "./seats.mjs";
 
 export const BINARIES = { codex: "codex", claude: "claude", cursor: "cursor-agent", agy: "agy", devin: "devin" };
@@ -50,6 +50,18 @@ export function listedModel(launch, ids, cliModel) {
   return ids.has(cliModel) || Boolean(MODEL_LISTS[launch]?.bareIds && [...ids].some((id) => normalizeId(id) === cliModel));
 }
 
+function checkPathOrder(rawPath, binDir, ghShim, home) {
+  const pathDirs = String(rawPath || "").split(path.delimiter).filter(Boolean).map((entry) => path.resolve(entry));
+  const binIdx = pathDirs.indexOf(path.resolve(binDir));
+  if (binIdx < 0) return { ok: false, detail: `${binDir} is not on PATH; add it ahead of system bin dirs so 'fr' and the 'gh' PR gate run automatically` };
+  const realGh = findRealGh({ envPath: rawPath, selfPath: ghShim, home });
+  const realDirIdx = realGh ? pathDirs.indexOf(path.resolve(path.dirname(realGh))) : -1;
+  if (realDirIdx >= 0 && realDirIdx < binIdx) {
+    return { ok: false, detail: `${path.dirname(realGh)} precedes ${binDir} on PATH, shadowing the 'gh' PR gate wrapper; move ${binDir} first` };
+  }
+  return { ok: true, detail: `${binDir} is on PATH${realGh ? ` ahead of ${realGh}` : ""}` };
+}
+
 export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env = process.env, nodeVersion = process.versions.node, loadConfig, projects = null, probe = defaultProbe() }) {
   const results = [];
   const add = (level, label, detail) => results.push({ level, label, detail });
@@ -70,17 +82,16 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
   if (await probe.executable(ghShim)) add("ok", "gh gate wrapper", ghShim);
   else add("fail", "gh gate wrapper", `missing or non-executable ${ghShim}; run node scripts/install.mjs`);
 
-  const pathDirs = String(env.PATH || "").split(path.delimiter).filter(Boolean).map((entry) => path.resolve(entry));
-  const binIdx = pathDirs.indexOf(path.resolve(binDir));
-  if (binIdx < 0) {
-    add("warn", "PATH", `${binDir} is not on PATH; add it ahead of system bin dirs so 'fr' and the 'gh' PR gate run automatically`);
-  } else {
-    const realGh = findRealGh({ envPath: env.PATH, selfPath: ghShim });
-    const realDirIdx = realGh ? pathDirs.indexOf(path.resolve(path.dirname(realGh))) : -1;
-    if (realDirIdx >= 0 && realDirIdx < binIdx) {
-      add("warn", "PATH precedence", `${path.dirname(realGh)} precedes ${binDir} on PATH, shadowing the 'gh' PR gate wrapper; move ${binDir} first`);
-    } else {
-      add("ok", "PATH", `${binDir} is on PATH${realGh ? ` ahead of ${realGh}` : ""}`);
+  const currentPathCheck = checkPathOrder(env.PATH || "", binDir, ghShim, home);
+  add(currentPathCheck.ok ? "ok" : "warn", "PATH", currentPathCheck.detail);
+
+  // Audit shell rc files for destructive aliases (--system-prompt-file on claude, alias gh=).
+  for (const rcName of SHELL_RC_FILES) {
+    const rcPath = path.join(home, rcName);
+    const rcText = await probe.read(rcPath);
+    if (!rcText) continue;
+    for (const issue of detectShellRcFootguns(rcText)) {
+      add("warn", `shell ${rcName}:${issue.line}`, `${issue.detail} (${rcPath})`);
     }
   }
 
@@ -102,13 +113,66 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
     else add("ok", `skills ${host}`, "linked to this checkout");
   }
 
-  const claudeSettings = await probe.read(path.join(home, ".claude", "settings.json"));
-  if (hasInstalledHostHooks(claudeSettings, "claude")) add("ok", "claude hooks", "SessionStart, UserPromptSubmit, and PreToolUse installed");
-  else add("warn", "claude hooks", `Field Report hooks missing in ${path.join(home, ".claude", "settings.json")}; run fr init or node scripts/install.mjs`);
+  const claudeSettingsPath = path.join(home, ".claude", "settings.json");
+  const claudeSettings = await probe.read(claudeSettingsPath);
+  if (hasInstalledHostHooks(claudeSettings, "claude")) add("ok", "claude hooks", "SessionStart, PreCompact, UserPromptSubmit, and MCP PreToolUse installed");
+  else add("warn", "claude hooks", `Field Report hooks missing or stale in ${claudeSettingsPath}; run fr init or node scripts/install.mjs`);
 
-  const cursorHooks = await probe.read(path.join(home, ".cursor", "hooks.json"));
-  if (hasInstalledHostHooks(cursorHooks, "cursor")) add("ok", "cursor hooks", "beforeSubmitPrompt, beforeShellExecution, and beforeMCPExecution installed");
-  else add("warn", "cursor hooks", `Field Report hooks missing in ${path.join(home, ".cursor", "hooks.json")}; run fr init or node scripts/install.mjs`);
+  for (const [label, file] of [["claude settings", claudeSettingsPath], ["claude local settings", path.join(home, ".claude", "settings.local.json")]]) {
+    const raw = await probe.read(file);
+    if (!raw) continue;
+    try {
+      if (JSON.parse(raw)?.disableAllHooks === true) {
+        add("fail", label, `disableAllHooks=true in ${file} disables Field Report SessionStart, prompt capture, and MCP gate hooks`);
+      }
+    } catch {}
+  }
+
+  const cursorHooksPath = path.join(home, ".cursor", "hooks.json");
+  const cursorHooks = await probe.read(cursorHooksPath);
+  if (hasInstalledHostHooks(cursorHooks, "cursor")) add("ok", "cursor hooks", "beforeSubmitPrompt and beforeMCPExecution installed");
+  else add("warn", "cursor hooks", `Field Report hooks missing or stale in ${cursorHooksPath}; run fr init or node scripts/install.mjs`);
+
+  const agyHooksPath = path.join(home, ".gemini", "config", "plugins", "field-report", "hooks.json");
+  const agyHooks = await probe.read(agyHooksPath);
+  if (hasInstalledHostHooks(agyHooks, "agy")) add("ok", "antigravity hooks", "SessionStart, PreInvocation, and MCP PreToolUse installed");
+  else add("warn", "antigravity hooks", `Field Report hooks missing in ${agyHooksPath}; run fr init or node scripts/install.mjs`);
+
+  const agyConfigPath = path.join(home, ".gemini", "config", "config.json");
+  const agyConfigRaw = await probe.read(agyConfigPath);
+  if (agyConfigRaw) {
+    try {
+      const parsedAgy = JSON.parse(agyConfigRaw);
+      if (parsedAgy?.plugins?.["field-report"]?.enabled === false) {
+        add("fail", "antigravity plugin", `field-report plugin is disabled in ${agyConfigPath}; run 'agy plugin enable field-report' or enable it in Settings`);
+      }
+    } catch {}
+  }
+
+  const devinConfigPath = path.join(home, ".config", "devin", "config.json");
+  if (await probe.exists(devinConfigPath)) {
+    const devinCfgRaw = await probe.read(devinConfigPath);
+    if (hasInstalledHostHooks(devinCfgRaw, "devin")) add("ok", "devin hooks", "SessionStart, UserPromptSubmit, and MCP PreToolUse installed");
+    else add("warn", "devin hooks", `Field Report hooks missing in ${devinConfigPath}; run fr init or node scripts/install.mjs`);
+    try {
+      const parsedDevin = JSON.parse(devinCfgRaw);
+      if (parsedDevin?.read_config_from?.claude === false) {
+        add("warn", "devin rules", `read_config_from.claude=false in ${devinConfigPath} prevents Devin CLI from importing ~/.claude/CLAUDE.md`);
+      }
+    } catch {}
+  }
+
+  const onboardingChecks = [
+    ["host onboarding", path.join(home, ".local", "share", "field-report", "host-onboarding.md"), "markdown"],
+    ["claude rules", path.join(home, ".claude", "CLAUDE.md"), "markdown"],
+    ["codex rules", path.join(home, ".codex", "AGENTS.md"), "markdown"],
+    ["cursor rules", path.join(home, ".cursor", "rules", "field-report.mdc"), "cursor-mdc"],
+    ["antigravity rules", path.join(home, ".gemini", "config", "plugins", "field-report", "rules", "AGENTS.md"), "markdown"]
+  ];
+  for (const [label, targetPath, kind] of onboardingChecks) {
+    if (hasInstalledOnboarding(await probe.read(targetPath), kind)) add("ok", label, targetPath);
+    else add("warn", label, `always-on Field Report rule missing or stale in ${targetPath}; run fr init or node scripts/install.mjs`);
+  }
 
   const initialized = await probe.exists(path.join(stateRoot, "config.json"));
   if (initialized) add("ok", "state", stateRoot);
@@ -177,7 +241,7 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
     }
   }
 
-  const realGh = findRealGh({ envPath: env.PATH, selfPath: ghShim }) || "gh";
+  const realGh = findRealGh({ envPath: env.PATH, selfPath: ghShim, home }) || "gh";
   const gh = await probe.run(realGh, ["auth", "status"]);
   if (gh.code === 0) add("ok", "gh", `signed in (${realGh})`);
   else add("warn", "gh", gh.code === "ENOENT" ? "gh is not installed; PR creation and fr gate bots need it" : "gh is not signed in; run gh auth login");
@@ -203,10 +267,22 @@ export async function doctor({ runtimeRoot, stateRoot, home = os.homedir(), env 
 
     const hookRes = await probe.run("git", ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"], { cwd: project.repoPath });
     const hook = hookRes.code === 0 ? hookRes.stdout.trim() : null;
+    const isExternalHook = hook ? path.relative(path.resolve(commonDir), path.resolve(hook)).startsWith("..") : false;
     const state = hook ? hookState(await probe.read(hook)) : "absent";
-    if (state === "legacy-managed") add("warn", label, `legacy Field Report pre-commit hook at ${hook}; run 'fr init' to remove it`);
-    else if (state === "legacy-manual") add("warn", label, `${hook} still invokes 'fr gate checkout|commit'; remove that line from your hook manager`);
-    else add("ok", label, `enabled (${project.repoPath})`);
+    if (state === "current" || state === "manual-current") {
+      if (await probe.executable(hook)) add("ok", label, `enabled with CRR commit gate (${project.repoPath})`);
+      else add("warn", label, `pre-commit hook at ${hook} is not executable; run 'fr init'`);
+    } else if (isExternalHook) {
+      add("warn", label, `git core.hooksPath points to ${hook} (${state === "absent" ? "missing" : "does not invoke 'fr gate commit'"}); unset core.hooksPath or add 'fr gate commit' to ${hook}`);
+    } else if (state === "legacy-managed") {
+      add("warn", label, `legacy Field Report pre-commit hook at ${hook}; run 'fr init' to upgrade to v5 CRR gate`);
+    } else if (state === "legacy-manual") {
+      add("warn", label, `${hook} invokes obsolete 'fr gate checkout'; replace with 'fr gate commit'`);
+    } else if (state === "unmanaged") {
+      add("warn", label, `custom hook at ${hook} does not invoke 'fr gate commit'; run 'fr init' to chain it`);
+    } else {
+      add("warn", label, `missing pre-commit CRR gate hook at ${hook || "hooks/pre-commit"}; run 'fr init'`);
+    }
   }
 
   return results;

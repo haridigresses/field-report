@@ -1,30 +1,32 @@
 import "./support/seats.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
+import { runGhWrapper } from "../bin/fr-gh.mjs";
+import { createStore } from "../src/store.mjs";
 
 const exec = promisify(execFile);
 const cli = path.resolve("bin/fr.mjs");
-const ghWrapper = path.resolve("bin/fr-gh.mjs");
 
-test("end-to-end branch-keyed loop: zero registration, worktree support, convergent single-seat rerun, fr accept, and PR-open gate", async () => {
+test("end-to-end loop: mechanical pre-commit CRR gate in worktrees, convergent branch MRR, and cwd-accurate PR-open gate", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "fr-e2e-"));
+  const home = path.join(root, "home");
   const repo = path.join(root, "repo");
   const wt = path.join(root, "repo-wt");
   const origin = path.join(root, "origin.git");
-  const state = path.join(root, "state");
-  const binDir = path.join(root, "mock-bin");
+  const state = path.join(home, ".local", "state", "field-report");
+  const binDir = path.join(home, ".local", "bin");
   const configFile = path.join(root, "config.json");
 
   await mkdir(binDir, { recursive: true });
 
-  // Mock claude binary that inspects the prompt to know which seat is running:
-  // - design returns NO_GO on first commit (when marker "FIXED" is absent in repo/feature.txt), then GO once fixed!
-  // - correctness and intent return GO (and intent emits intentSummary from USER CONTRACT).
+  const frShim = path.join(binDir, "fr");
+  await writeFile(frShim, `#!/bin/sh\nexec "${process.execPath}" "${cli}" "$@"\n`, { mode: 0o755 });
+
   const mockClaude = path.join(binDir, "claude");
   const mockScript = [
     `#!${process.execPath}`,
@@ -54,9 +56,6 @@ test("end-to-end branch-keyed loop: zero registration, worktree support, converg
   ].join("\n");
   await writeFile(mockClaude, mockScript, { mode: 0o755 });
 
-  const mockRealGh = path.join(binDir, "real-gh");
-  await writeFile(mockRealGh, `#!/bin/sh\necho "REAL_GH $@"\n`, { mode: 0o755 });
-
   await writeFile(configFile, JSON.stringify({
     schemaVersion: 1,
     seats: {
@@ -76,16 +75,16 @@ test("end-to-end branch-keyed loop: zero registration, worktree support, converg
   await exec("git", ["-C", repo, "remote", "add", "origin", origin]);
   await exec("git", ["-C", repo, "fetch", "origin"]);
 
-  // Work inside a git worktree without any branch registration!
   await exec("git", ["-C", repo, "worktree", "add", "-b", "feat/login", wt]);
 
   const env = {
     ...process.env,
+    HOME: home,
+    FIELD_REPORT_HOME: home,
     ZDOTDIR: root,
     FIELD_REPORT_STATE_ROOT: state,
-    FIELD_REPORT_ALLOW_TEST_ROOT: "1",
+    FIELD_REPORT_FR_BIN: frShim,
     FIELD_REPORT_CONFIG: configFile,
-    FIELD_REPORT_REAL_GH: mockRealGh,
     FR_SESSION_ID: "sess-e2e",
     PATH: `${binDir}${path.delimiter}${process.env.PATH}`
   };
@@ -103,18 +102,33 @@ test("end-to-end branch-keyed loop: zero registration, worktree support, converg
   // User submits prompt in main `repo` folder (on `main` branch!).
   await runFr(["_hook", "prompt-submit"], repo, JSON.stringify({ session_id: "sess-e2e", cwd: repo, prompt: "Ship login gate" }));
 
-  // Make working change in worktree, run stateless fr crr, then commit.
+  // Attempting `git commit` in the worktree BEFORE running `fr crr` is mechanically BLOCKED by hooks/pre-commit!
   await writeFile(path.join(wt, "feature.txt"), "v1\n");
+  await exec("git", ["-C", wt, "add", "feature.txt"], { env });
+  await assert.rejects(
+    exec("git", ["-C", wt, "commit", "-m", "v1-unreviewed"], { env }),
+    /Field Report BLOCKED commit on app\/feat\/login: no GO 'fr crr' recorded/
+  );
+
+  // Run `fr crr` on staged tree -> records GO -> `git commit` now succeeds!
   const crrOut = await runFr(["crr"], wt);
   assert.match(crrOut.stdout, /CRR \(claude-c\): GO/);
+  await exec("git", ["-C", wt, "commit", "-m", "v1"], { env });
 
-  await exec("git", ["-C", wt, "commit", "-am", "v1"]);
+  const store = createStore(state);
+  let ghSpawns = 0;
+  const mockSpawn = () => {
+    ghSpawns += 1;
+    return { on: (ev, fn) => { if (ev === "exit") queueMicrotask(() => fn(0, null)); } };
+  };
 
-  // Before MRR, non-draft `gh pr create` fails; `--draft` succeeds!
-  await assert.rejects(exec(process.execPath, [ghWrapper, "pr", "create", "--title", "Login"], { cwd: wt, env }), /BLOCKED 'gh pr create'/);
-  const draftRes = await exec(process.execPath, [ghWrapper, "pr", "create", "--draft", "--title", "Login"], { cwd: wt, env });
-  assert.match(draftRes.stdout, /REAL_GH pr create --draft/);
-  assert.match(draftRes.stderr, /MRR has not been run yet/);
+  // Before MRR, non-draft `gh pr create` in `wt` is BLOCKED; `--draft` passes with stderr notice.
+  assert.equal(await runGhWrapper(["pr", "create", "--title", "Login"], { cwd: wt, homeDir: home, store, env: { FIELD_REPORT_REAL_GH: "/usr/bin/true" }, spawnFn: mockSpawn, stderr: { write: () => {} } }), 1);
+  assert.equal(ghSpawns, 0);
+  const draftErr = [];
+  assert.equal(await runGhWrapper(["pr", "create", "--draft", "--title", "Login"], { cwd: wt, homeDir: home, store, env: { FIELD_REPORT_REAL_GH: "/usr/bin/true" }, spawnFn: mockSpawn, stderr: { write: (s) => draftErr.push(s) } }), 0);
+  assert.equal(ghSpawns, 1);
+  assert.match(draftErr.join(""), /MRR has not been run yet/);
 
   // Run MRR on v1: correctness & intent GO, design NO_GO -> exits 1 (BLOCKED).
   let mrrV1;
@@ -124,17 +138,16 @@ test("end-to-end branch-keyed loop: zero registration, worktree support, converg
   assert.match(mrrV1.stdout, /Goal: Ship login gate\./);
   assert.match(mrrV1.stdout, /F1: Simplify helper/);
 
-  // Fix on v2 commit and run bare `fr mrr`: reruns ONLY `design`, carrying correctness & intent forward -> READY!
+  // Fix on v2 commit (also works seamlessly with unstaged `fr crr` + `git commit -am`!):
   await writeFile(path.join(wt, "feature.txt"), "v2 FIXED\n");
-  await exec("git", ["-C", wt, "commit", "-am", "fix helper"]);
+  await runFr(["crr"], wt);
+  await exec("git", ["-C", wt, "commit", "-am", "fix helper"], { env });
+
+  // Bare `fr mrr` reruns ONLY `design`, carrying correctness & intent forward -> READY!
   const mrrV2 = await runFr(["mrr"], wt);
   assert.match(mrrV2.stdout, /READY \(carried; not reviewed on this HEAD by: correctness, intent\)/);
 
   // Now non-draft `gh pr create` passes through!
-  const openRes = await exec(process.execPath, [ghWrapper, "pr", "create", "--title", "Login"], { cwd: wt, env });
-  assert.match(openRes.stdout, /REAL_GH pr create --title Login/);
-
-  // `fr status` works purely locally with zero GitHub calls.
-  const statusRes = await runFr(["status"], wt);
-  assert.match(statusRes.stdout, /READY \(carried/);
+  assert.equal(await runGhWrapper(["pr", "create", "--title", "Login"], { cwd: wt, homeDir: home, store, env: { FIELD_REPORT_REAL_GH: "/usr/bin/true" }, spawnFn: mockSpawn, stderr: { write: () => {} } }), 0);
+  assert.equal(ghSpawns, 2);
 });

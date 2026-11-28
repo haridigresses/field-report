@@ -123,4 +123,23 @@ test("executeRoleReview falls back on start failure (e.g. out of credits), but N
   });
   assert.equal(secondCalls, 1, "must not shop to fallback model after a valid NO_GO");
   assert.equal(settledFirst.review.model, "gpt-6-astra");
+
+  // Case 3: First model exits 0 with a malformed envelope -> throws immediately instead of shopping to fallback!
+  let malformedCalls = 0;
+  await assert.rejects(
+    executeRoleReview({
+      kind: "mrr",
+      role: "correctness",
+      target,
+      inventory,
+      candidates,
+      seatModels,
+      runShell: async () => {
+        malformedCalls += 1;
+        return { code: 0, stderr: "", stdout: "{\"verdict\":\"NO_GO\",\"broken\":true}" };
+      }
+    }),
+    /returned an invalid review envelope/
+  );
+  assert.equal(malformedCalls, 1, "malformed exit-0 output must NEVER fall back to a second model");
 });

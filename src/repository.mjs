@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -72,6 +73,20 @@ export async function projectForCheckout(projects, cwd = process.cwd()) {
   return null;
 }
 
+async function computeWorkingTreeSha(repoRoot) {
+  const indexPath = await run("git", ["rev-parse", "--path-format=absolute", "--git-path", "index"], repoRoot, 5_000);
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "fr-crr-idx-"));
+  const tempIndex = path.join(tempDir, "index");
+  try {
+    try { await copyFile(indexPath, tempIndex); } catch {}
+    const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
+    await exec("git", ["add", "-u"], { cwd: repoRoot, env, timeout: 15_000 });
+    return (await exec("git", ["write-tree"], { cwd: repoRoot, env, timeout: 15_000 })).stdout.trim();
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 export async function crrTarget(project, cwd = process.cwd()) {
   const state = await checkout(cwd);
   await assertProjectCheckout(project, state);
@@ -80,9 +95,43 @@ export async function crrTarget(project, cwd = process.cwd()) {
     const tree = await run("git", ["write-tree"], state.root);
     return { kind: "crr", mode: "staged", project: project.id, head: state.head, baseHead: state.head, tree, branch: state.branch, repoRoot: state.root, commonDir: state.commonDir };
   }
-  const working = await run("git", ["diff", "--no-ext-diff", "--no-textconv", "--find-renames", "--stat", "HEAD", "--"], state.root);
-  if (!working) throw new Error("CRR requires staged or tracked working-tree changes");
-  return { kind: "crr", mode: "working", project: project.id, head: state.head, baseHead: state.head, tree: null, branch: state.branch, repoRoot: state.root, commonDir: state.commonDir };
+  const [working, untracked] = await Promise.all([
+    run("git", ["diff", "--no-ext-diff", "--no-textconv", "--find-renames", "--stat", "HEAD", "--"], state.root),
+    run("git", ["ls-files", "--others", "--exclude-standard"], state.root)
+  ]);
+  if (!working) {
+    if (untracked) throw new Error("Untracked files exist with nothing staged; stage new files with 'git add' before running 'fr crr'");
+    throw new Error("CRR requires staged or tracked working-tree changes");
+  }
+  const tree = await computeWorkingTreeSha(state.root);
+  return {
+    kind: "crr",
+    mode: "working",
+    project: project.id,
+    head: state.head,
+    baseHead: state.head,
+    tree,
+    hasUntracked: Boolean(untracked),
+    branch: state.branch,
+    repoRoot: state.root,
+    commonDir: state.commonDir
+  };
+}
+
+export async function commitTreeState(cwd = process.cwd()) {
+  const [root, commonDir, branch, stagedTree] = await Promise.all([
+    run("git", ["rev-parse", "--show-toplevel"], cwd, 5_000),
+    run("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd, 5_000),
+    run("git", ["branch", "--show-current"], cwd, 5_000),
+    run("git", ["write-tree"], cwd, 5_000)
+  ]);
+  let head = null;
+  let headTree = null;
+  try {
+    head = await run("git", ["rev-parse", "HEAD"], cwd, 5_000);
+    headTree = await run("git", ["rev-parse", "HEAD^{tree}"], cwd, 5_000);
+  } catch {}
+  return { root, commonDir, branch: branch || "HEAD", head, headTree, stagedTree };
 }
 
 export async function mrrTarget(project, cwd = process.cwd(), explicitBranch = null, explicitHeadOid = null) {

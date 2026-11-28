@@ -7,17 +7,18 @@ import { pathToFileURL } from "node:url";
 import { checkBranchOpenGate, classifyGhArgs } from "../src/host-hooks.mjs";
 import { createStore } from "../src/store.mjs";
 
+// ~/.local/bin/gh wrapper: passes every command straight to the real gh binary
+// EXCEPT non-draft 'gh pr create' and 'gh pr ready' in Field Report-enabled
+// repositories when MRR is not READY. Evaluates process.cwd() (the actual
+// folder where gh runs) against the canonical user state root — no environment
+// variable can redirect the production shim to an empty state folder.
+
 const SYSTEM_HOME = (() => {
   try { return os.userInfo().homedir; } catch { return os.homedir(); }
 })();
+const SYSTEM_FALLBACK_GH = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"];
 
-// ~/.local/bin/gh wrapper: passes every command straight to the real gh binary
-// EXCEPT non-draft 'gh pr create' and 'gh pr ready' in Field Report-enabled
-// repositories when MRR is not READY. No interactive [y/N] prompt is offered
-// (PTY-capable agents could answer 'y'); humans can mark a Draft PR ready on
-// GitHub or invoke the system gh binary by its full path.
-
-export function findRealGh({ envPath = process.env.PATH || "", selfPath = process.argv[1], home = process.env.HOME || "" } = {}) {
+export function findRealGh({ envPath = process.env.PATH || "", selfPath = process.argv[1], home = SYSTEM_HOME, includeSystemFallbacks = true } = {}) {
   let selfReal = null;
   try { selfReal = realpathSync(selfPath); } catch { selfReal = path.resolve(selfPath || ""); }
   const backupDirs = [
@@ -26,7 +27,8 @@ export function findRealGh({ envPath = process.env.PATH || "", selfPath = proces
   ].filter(Boolean);
   const candidates = [
     ...backupDirs.map((dir) => path.join(dir, "gh.real")),
-    ...String(envPath).split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, "gh"))
+    ...String(envPath).split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, "gh")),
+    ...(includeSystemFallbacks ? SYSTEM_FALLBACK_GH : [])
   ];
   for (const candidate of candidates) {
     try {
@@ -52,13 +54,6 @@ export function canonicalStateRoot({ homeDir = SYSTEM_HOME } = {}) {
   return path.join(homeDir, ".local", "state", "field-report");
 }
 
-function resolveShimStore(env = process.env, { homeDir = SYSTEM_HOME } = {}) {
-  if (env.FIELD_REPORT_ALLOW_TEST_ROOT === "1" && env.FIELD_REPORT_STATE_ROOT) {
-    return createStore(path.resolve(env.FIELD_REPORT_STATE_ROOT));
-  }
-  return createStore(canonicalStateRoot({ homeDir }));
-}
-
 export async function runGhWrapper(argv, {
   env = process.env,
   cwd = process.cwd(),
@@ -68,8 +63,8 @@ export async function runGhWrapper(argv, {
   spawnFn = spawn,
   stderr = process.stderr
 } = {}) {
-  const activeStore = store || resolveShimStore(env, { homeDir });
-  const realGh = env.FIELD_REPORT_REAL_GH || findRealGh({ envPath: env.PATH, selfPath });
+  const activeStore = store || createStore(canonicalStateRoot({ homeDir }));
+  const realGh = env.FIELD_REPORT_REAL_GH || findRealGh({ envPath: env.PATH, selfPath, home: homeDir });
   if (!realGh) {
     stderr.write("fr-gh: real 'gh' binary not found on PATH (install GitHub CLI)\n");
     return 127;
