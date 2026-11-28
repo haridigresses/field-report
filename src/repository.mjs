@@ -16,12 +16,16 @@ export async function gitCommonDir(cwd = process.cwd()) {
 }
 
 export function parseGitHubSlug(remoteUrl) {
-  const text = String(remoteUrl || "").trim();
+  const text = String(remoteUrl || "").trim().replace(/\/+$/, "").replace(/\.git$/i, "");
   if (!text) return null;
-  const httpsMatch = text.match(/^https?:\/\/[^/]+\/([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i);
+  const httpsMatch = text.match(/^https?:\/\/[^/]+\/([^/\s]+\/[^/\s]+)$/i);
   if (httpsMatch) return httpsMatch[1];
-  const sshMatch = text.match(/^(?:ssh:\/\/[^/]+\/|[^@/\s]+@[^:/\s]+:)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i);
+  const sshMatch = text.match(/^(?:ssh:\/\/[^/]+\/|[^@/\s]+@[^:/\s]+:)([^/\s]+\/[^/\s]+)$/i);
   if (sshMatch) return sshMatch[1];
+  const hostSlugMatch = text.match(/^[A-Za-z0-9.-]+\.[A-Za-z]{2,}\/([^/\s]+\/[^/\s]+)$/);
+  if (hostSlugMatch) return hostSlugMatch[1];
+  const plainSlugMatch = text.match(/^([^/\s:]+\/[^/\s:]+)$/);
+  if (plainSlugMatch) return plainSlugMatch[1];
   return null;
 }
 

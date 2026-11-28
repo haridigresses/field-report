@@ -143,6 +143,12 @@ test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse 
   const dashRForkBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R owner/demo --title x" } }), { store });
   assert.equal(dashRForkBlocked.exitCode, 2);
 
+  // Host-prefixed (`github.com/owner/demo`) and full URL (`https://github.com/owner/demo.git`) -R forms normalize and block too (F24).
+  const hostPrefixBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R github.com/owner/demo --title x" } }), { store });
+  assert.equal(hostPrefixBlocked.exitCode, 2);
+  const urlBlocked = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create -R https://github.com/owner/demo.git --title x" } }), { store });
+  assert.equal(urlBlocked.exitCode, 2);
+
   await exec("git", ["-C", repo, "remote", "set-url", "origin", origin]);
   await exec("git", ["-C", repo, "remote", "remove", "upstream"]);
   await store.updateProject("demo", { githubRepo: "owner/demo" });

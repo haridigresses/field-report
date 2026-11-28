@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { quote } from "./hooks.mjs";
 import { capturePromptFromHook, readConfiguredProjects } from "./prompts.mjs";
-import { ancestorHeads, checkout, gitCommonDir, gitRemoteSlugs, mrrTarget, resolvePullRequestRef } from "./repository.mjs";
+import { ancestorHeads, checkout, gitCommonDir, gitRemoteSlugs, mrrTarget, parseGitHubSlug, resolvePullRequestRef } from "./repository.mjs";
 import { describePlans, describeTodos, plansFor, todosFor } from "./store.mjs";
 import { evaluateMrrGate, openReasons } from "./policy.mjs";
 
@@ -263,15 +263,18 @@ export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicit
   }
 
   if (explicitRepo) {
-    const wanted = String(explicitRepo).toLowerCase();
+    const wanted = (parseGitHubSlug(explicitRepo) || String(explicitRepo).trim()).toLowerCase();
     for (const project of projects) {
-      if (project.githubRepo?.toLowerCase() === wanted) { matched = project; break; }
+      const configuredSlug = project.githubRepo ? (parseGitHubSlug(project.githubRepo) || project.githubRepo).toLowerCase() : null;
+      if (configuredSlug === wanted) { matched = project; break; }
       const slugs = await gitRemoteSlugs(project.repoPath);
       if (slugs.has(wanted)) { matched = project; break; }
     }
     if (!matched && cwdProject) {
       const cwdSlugs = await gitRemoteSlugs(cwdProject.repoPath);
-      if (cwdProject.githubRepo) cwdSlugs.add(cwdProject.githubRepo.toLowerCase());
+      if (cwdProject.githubRepo) {
+        cwdSlugs.add((parseGitHubSlug(cwdProject.githubRepo) || cwdProject.githubRepo).toLowerCase());
+      }
       // Only treat explicitRepo as unmanaged when cwdProject has known GitHub
       // remote slug(s) and NONE of them match explicitRepo.
       if (cwdSlugs.size === 0 || cwdSlugs.has(wanted)) matched = cwdProject;
