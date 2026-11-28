@@ -56,10 +56,11 @@ test("classifyGhArgs and extractShellGhInvocations separate open PRs, draft PRs,
   assert.equal(cmds.length, 1);
   assert.equal(classifyGhArgs(cmds[0]).action, "open-pr");
 
-  // Multi-line heredoc inside $(...) followed by --draft must keep --draft intact (F18).
-  const heredocDraft = extractShellGhInvocations(`gh pr create --title "Fix" --body "$(cat <<'EOF'\n## Summary\n- a; b\nEOF\n)" --draft`);
+  // Multi-line heredoc inside $(...) with apostrophes and odd backticks followed by --head and --draft (F18 + F19).
+  const heredocDraft = extractShellGhInvocations(`gh pr create --title "Fix" --body "$(cat <<'EOF'\n## Summary\n- it's done; \`unclosed backtick\nEOF\n)" --head feat/other --draft`);
   assert.equal(heredocDraft.length, 1);
   assert.equal(classifyGhArgs(heredocDraft[0]).action, "draft-pr");
+  assert.equal(classifyGhArgs(heredocDraft[0]).explicitHead, "feat/other");
 
   // Quoted pipe in --title must not truncate trailing --head (F18).
   const pipedTitle = extractShellGhInvocations(`gh pr create --title "a | b" --head feat/other`);
@@ -177,6 +178,15 @@ test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse 
   assert.match(corruptClaude.stderr, /failed closed/);
   const corruptCursor = await handleHostHook("pre-tool", JSON.stringify({ hook_event_name: "beforeShellExecution", workspace_roots: [repo], command: "gh pr create --title x" }), { store });
   assert.equal(JSON.parse(corruptCursor.stdout).permission, "deny");
+
+  // Corrupt project JSON in projects/*.json also fails CLOSED in both PreToolUse and fr-gh (F20).
+  await writeFile(path.join(root, "state", "projects", "broken.json"), "{not-valid-json\n");
+  const corruptProjHook = await handleHostHook("pre-tool", JSON.stringify({ tool_name: "Bash", cwd: repo, tool_input: { command: "gh pr create --title x" } }), { store });
+  assert.equal(corruptProjHook.exitCode, 2);
+  await assert.rejects(
+    runGhWrapper(["pr", "create", "--title", "x"], { env: { FIELD_REPORT_REAL_GH: "/usr/bin/true" }, cwd: repo, store, spawnFn: mockSpawn, stderr: { write: () => {} } }),
+    /SyntaxError|JSON/
+  );
 
   // Reused branch name after merging an earlier branch into main does NOT inherit old GOs (F16).
   const { ancestorHeads } = await import("../src/repository.mjs");

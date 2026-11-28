@@ -53,16 +53,27 @@ export function parseHookInput(rawText, env = process.env) {
   return { prompt, sessionId, cwd, host, payload };
 }
 
-export async function readConfiguredProjects(stateRoot) {
+export async function readConfiguredProjects(stateRoot, { strict = false } = {}) {
   let files;
-  try { files = (await readdir(path.join(stateRoot, "projects"))).filter((name) => name.endsWith(".json")).sort(); }
-  catch { return []; }
+  try {
+    files = (await readdir(path.join(stateRoot, "projects"))).filter((name) => name.endsWith(".json")).sort();
+  } catch (error) {
+    if (error.code === "ENOENT" || !strict) return [];
+    throw error;
+  }
   const projects = [];
   for (const file of files) {
+    const full = path.join(stateRoot, "projects", file);
     try {
-      const parsed = JSON.parse(await readFile(path.join(stateRoot, "projects", file), "utf8"));
-      if (parsed?.id && parsed?.repoPath) projects.push(parsed);
-    } catch {}
+      const parsed = JSON.parse(await readFile(full, "utf8"));
+      if (!parsed?.id || !parsed?.repoPath) {
+        if (strict) throw new Error(`Invalid project file ${full}: missing id or repoPath`);
+        continue;
+      }
+      projects.push(parsed);
+    } catch (error) {
+      if (strict) throw error;
+    }
   }
   return projects;
 }

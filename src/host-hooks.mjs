@@ -132,6 +132,36 @@ function splitAndTokenizeShell(input) {
     }
   };
 
+  const consumeHeredocs = (newlineIndex) => {
+    let cursor = newlineIndex;
+    while (heredocs.length > 0) {
+      const delim = heredocs.shift();
+      let lineStart = cursor + 1;
+      while (lineStart <= input.length) {
+        const nl = input.indexOf("\n", lineStart);
+        const lineEnd = nl < 0 ? input.length : nl;
+        if (input.slice(lineStart, lineEnd).trim() === delim) {
+          cursor = nl < 0 ? input.length : nl;
+          break;
+        }
+        if (nl < 0) { cursor = input.length; break; }
+        lineStart = nl + 1;
+      }
+    }
+    return cursor;
+  };
+
+  const tryQueueHeredoc = (pos) => {
+    if (input[pos] !== "<" || input[pos + 1] !== "<" || input[pos + 2] === "<") return 0;
+    let rest = input.slice(pos + 2);
+    let consumed = 2;
+    if (rest.startsWith("-")) { rest = rest.slice(1); consumed += 1; }
+    const match = rest.match(/^\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/);
+    if (!match) return 0;
+    heredocs.push(match[2]);
+    return consumed + match[0].length;
+  };
+
   for (let i = 0; i < input.length; i += 1) {
     const ch = input[i];
     const top = stack[stack.length - 1] || null;
@@ -156,12 +186,24 @@ function splitAndTokenizeShell(input) {
       continue;
     }
     if (top === "SUBST") {
-      if (ch === ")") stack.pop();
-      else if (ch === "'") stack.push("SQ");
-      else if (ch === "\"") stack.push("DQ");
-      else if (ch === "$" && input[i + 1] === "(") { stack.push("SUBST"); i += 1; }
-      else if (ch === "`") stack.push("BT");
-      else if (ch === "\\" && i + 1 < input.length) { i += 1; }
+      const hdLen = tryQueueHeredoc(i);
+      if (hdLen > 0) {
+        current += input.slice(i, i + hdLen);
+        i += hdLen - 1;
+        continue;
+      }
+      if (ch === "\n" && heredocs.length > 0) {
+        const endIdx = consumeHeredocs(i);
+        current += input.slice(i, Math.min(endIdx + 1, input.length));
+        i = endIdx;
+        continue;
+      }
+      if (ch === ")") { stack.pop(); current += ch; continue; }
+      if (ch === "'") { stack.push("SQ"); current += ch; continue; }
+      if (ch === "\"") { stack.push("DQ"); current += ch; continue; }
+      if (ch === "$" && input[i + 1] === "(") { stack.push("SUBST"); current += "$("; i += 1; continue; }
+      if (ch === "`") { stack.push("BT"); current += ch; continue; }
+      if (ch === "\\" && i + 1 < input.length) { current += input.slice(i, i + 2); i += 1; continue; }
       current += ch;
       continue;
     }
@@ -173,36 +215,16 @@ function splitAndTokenizeShell(input) {
     if (ch === "`") { hasToken = true; current += "`"; stack.push("BT"); continue; }
     if (ch === "\\" && i + 1 < input.length) { hasToken = true; current += input[i + 1]; i += 1; continue; }
 
-    // Top-level heredoc operator (<<EOF, <<'EOF', <<-EOF)
-    if (ch === "<" && input[i + 1] === "<") {
+    const topHdLen = tryQueueHeredoc(i);
+    if (topHdLen > 0) {
       flushToken();
-      let rest = input.slice(i + 2);
-      let consumed = 2;
-      if (rest.startsWith("-")) { rest = rest.slice(1); consumed += 1; }
-      const match = rest.match(/^\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/);
-      if (match) {
-        heredocs.push(match[2]);
-        i += consumed + match[0].length - 1;
-        continue;
-      }
+      i += topHdLen - 1;
+      continue;
     }
 
     if (ch === "\n") {
       flushCommand();
-      while (heredocs.length > 0) {
-        const delim = heredocs.shift();
-        let lineStart = i + 1;
-        while (lineStart <= input.length) {
-          const nl = input.indexOf("\n", lineStart);
-          const lineEnd = nl < 0 ? input.length : nl;
-          if (input.slice(lineStart, lineEnd).trim() === delim) {
-            i = nl < 0 ? input.length : nl;
-            break;
-          }
-          if (nl < 0) { i = input.length; break; }
-          lineStart = nl + 1;
-        }
-      }
+      if (heredocs.length > 0) i = consumeHeredocs(i);
       continue;
     }
 
@@ -227,7 +249,7 @@ function splitAndTokenizeShell(input) {
 }
 
 export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicitRepo = null, explicitBranch = null, selector = null, ghBin = "gh" }) {
-  const projects = await readConfiguredProjects(store.root);
+  const projects = await readConfiguredProjects(store.root, { strict: true });
   if (!projects.length) return { managed: false };
 
   let matched = null;
