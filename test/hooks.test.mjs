@@ -44,6 +44,12 @@ test("classifyGhArgs and extractShellGhInvocations separate open PRs, draft PRs,
   assert.equal(classifyGhArgs(["pr", "create", "-df"]).action, "draft-pr");
   assert.equal(classifyGhArgs(["pr", "create", "-B", "develop"]).action, "open-pr");
   assert.equal(classifyGhArgs(["pr", "ready", "49"]).action, "ready-pr");
+  assert.equal(classifyGhArgs(["pr", "ready", "49"]).selector, "49");
+  assert.equal(classifyGhArgs(["pr", "create", "--title", "-H", "--draft"]).action, "draft-pr");
+  assert.equal(classifyGhArgs(["pr", "create", "--title", "-H", "--draft"]).explicitHead, null);
+  assert.equal(classifyGhArgs(["api", "repos/owner/repo/pulls", "-f", "title=x", "-f", "head=feat/y", "-f", "base=main"]).action, "open-pr");
+  assert.equal(classifyGhArgs(["api", "repos/owner/repo/pulls", "-f", "title=x", "-F", "draft=true"]).action, "draft-pr");
+  assert.equal(classifyGhArgs(["api", "graphql", "-f", "query=mutation { markPullRequestReadyForReview(input:{pullRequestId:\"1\"}) { clientMutationId } }"]).action, "open-pr");
   assert.equal(classifyGhArgs(["pr", "ready", "--undo", "49"]).action, "allow");
   assert.equal(classifyGhArgs(["pr", "view", "49"]).action, "allow");
   assert.equal(classifyGhArgs(["issue", "create", "-t", "todo"]).action, "allow");
@@ -138,4 +144,19 @@ test("installHostHooks preserves existing Claude/Cursor settings and PreToolUse 
   assert.equal(draftCode, 0);
   assert.equal(spawned, 1);
   assert.match(errChunks.join(""), /Tell the user explicitly that MRR has not been run yet/);
+
+  // Numeric `gh pr ready 99` on ANY branch resolves PR #99's head branch via gh pr view (never authorizing against current branch!).
+  const fakeGh = path.join(root, "fake-gh");
+  await writeFile(fakeGh, `#!/bin/sh\nif [ "$1" = "pr" ] && [ "$2" = "view" ]; then\n  echo '{"number":99,"headRefName":"feat/unreviewed","headRefOid":"'$(git -C "${repo}" rev-parse refs/heads/feat/unreviewed)'","baseRefName":"main"}'\n  exit 0\nfi\necho "ALLOWED $@"\n`, { mode: 0o755 });
+  await exec("git", ["-C", repo, "checkout", "-b", "feat/other-branch"]);
+  await writeFile(path.join(repo, "a.txt"), "3\n");
+  await exec("git", ["-C", repo, "commit", "-am", "other"]);
+  const numericReadyBlocked = await runGhWrapper(["pr", "ready", "99"], {
+    env: { FIELD_REPORT_REAL_GH: fakeGh },
+    cwd: repo,
+    store,
+    spawnFn: mockSpawn,
+    stderr: { write: (s) => errChunks.push(s) }
+  });
+  assert.equal(numericReadyBlocked, 1, "gh pr ready 99 must evaluate PR #99's branch (feat/unreviewed), not current checkout");
 });

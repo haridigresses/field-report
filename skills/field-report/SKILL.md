@@ -41,7 +41,7 @@ Fix any real defects it flags. If no CLI reviewer is configured, `fr crr --brief
 3. **Converging on `NO_GO`:**
    - Fix real defects on a new commit and rerun `fr mrr` (by default `fr mrr` reruns **only** missing or `NO_GO` seats; earlier `GO`s carry forward and show unreviewed commit deltas).
    - Never shop for a second review on the exact same commit HEAD.
-   - For an unlikely, fail-safe, or debatable finding, bring it to the user; **only** after the user explicitly accepts it, record `fr accept <F-id> --reason "<user's reason>"`.
+   - For an unlikely, fail-safe, or debatable finding, bring it to the user; **only** after the user explicitly accepts it, record `fr accept <F-id> --reason "<user's reason>" --actor "<user>"`.
    - Surface any `questions` printed by MRR directly to the user.
 4. **Draft PRs vs. Open PRs:**
    - Non-draft `gh pr create` and `gh pr ready` are **blocked** by Field Report until `fr gate open` is `READY`.

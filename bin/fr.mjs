@@ -60,7 +60,7 @@ fr project list
 fr project remove <id>
 fr crr [--model <id>] [--brief]
 fr mrr [--seat correctness|design|intent] [--all] [--model <id>] [--notes <text>] [--brr <file>] [--intent-file <file>] [--session <id>] [--brief] [--record <file> --brief-id <uuid>]
-fr accept <F-id> --reason <text> [--actor <who>]
+fr accept <F-id> --reason <text> --actor <who>
 fr status
 fr gate open
 fr gate bots
@@ -315,15 +315,21 @@ async function main() {
   if (command === "mrr") {
     const project = await requireActiveProject();
     const state = await checkout(process.cwd());
+    if (state.dirty) {
+      throw new Error("Working tree has uncommitted changes; commit or stash before running MRR");
+    }
     const target = await mrrTarget(project, process.cwd());
 
-    // Native escape hatch: record a previously generated native subagent brief.
+    // Native escape hatch: allowed ONLY when the seat's config explicitly lists a launch="native" model.
     if (flags.record) {
       const file = requireValue(flags.record, "Specify --record <review.json>");
       const briefId = requireValue(flags["brief-id"], "Specify --brief-id <uuid>");
       const savedBriefs = await store.briefs(project.id, target.branch);
       const brief = savedBriefs.find((item) => item.id === briefId);
       if (!brief) throw new Error(`Unknown brief ID ${briefId} on ${project.id}/${target.branch}`);
+      if (!seatFor(brief.role).models.some((m) => m.launch === "native" && m.id === brief.model)) {
+        throw new Error(`Seat ${brief.role} model ${brief.model} is not configured with launch="native" in ${configSource()}`);
+      }
       const rawText = await readFile(file, "utf8");
       const parsed = parseEnvelope(rawText);
       const normalized = normalizeReview(parsed, brief, `native:${brief.model}:${brief.id.slice(0, 8)}`);
@@ -331,16 +337,13 @@ async function main() {
       await store.addReview(project.id, target.branch, { ...validated, rawSource: rawText.slice(0, 100_000) }, {
         beforeAppend: (prior) => assertSeatOpen(prior, { role: brief.role, target: brief })
       });
+      const afterState = await checkout(process.cwd());
       const current = await evaluateBranchMrr(project, target);
       const reportFile = await persistReport(project, target, current.gate);
-      const summary = printGateSummary(project, target, current.gate, openReasons({ checkout: state, target }));
+      const summary = printGateSummary(project, target, current.gate, openReasons({ checkout: afterState, target }));
       console.log(`${summary.text}\nField Report saved: ${reportFile}`);
       if (!summary.ready) process.exitCode = 1;
       return;
-    }
-
-    if (state.dirty && !flags.brief) {
-      throw new Error("Working tree has uncommitted changes; commit or stash before running MRR");
     }
 
     const [inventory, mergeRules, logText, existing] = await Promise.all([
@@ -354,7 +357,7 @@ async function main() {
     if (flags.brr && flags.brr !== true) {
       brr = { source: flags.brr, text: await readFile(path.resolve(flags.brr), "utf8") };
     } else {
-      brr = await detectRepoBrr(target.repoRoot, inventory.files);
+      brr = await detectRepoBrr(target.repoRoot, target.baseHead, inventory.files);
     }
     const intentFileText = flags["intent-file"] && flags["intent-file"] !== true
       ? await readFile(path.resolve(flags["intent-file"]), "utf8")
@@ -377,11 +380,19 @@ async function main() {
       throw new Error(`Unknown seat '${requestedSeat}'; seats are ${REVIEW_ROLES.join(", ")}`);
     }
 
-    // Native brief generation mode (--brief --seat <role>).
+    // Native brief generation mode (--brief --seat <role>): requires launch="native" in config.
     if (flags.brief) {
       const role = requireValue(requestedSeat, "Specify --seat <correctness|design|intent> with --brief");
       assertSeatOpen(existing.reviews, { role, target });
-      const seated = seatingFor(role, flags.model === true ? null : flags.model, "native");
+      const nativeModels = seatFor(role).models.filter((m) => m.launch === "native");
+      if (!nativeModels.length) {
+        throw new Error(`Seat ${role} has no model with launch="native" in ${configSource()}; run 'fr mrr' directly instead of --brief`);
+      }
+      const chosenModel = flags.model && flags.model !== true ? flags.model : nativeModels[0].id;
+      const seated = seatingFor(role, chosenModel, "native");
+      if (!nativeModels.some((m) => m.id === seated.model)) {
+        throw new Error(`Model ${seated.model} in seats.${role} does not use launch="native"`);
+      }
       const priorFindings = existing.gate.seats?.[role]?.open || [];
       const brief = await store.addBrief(project.id, target.branch, {
         id: randomUUID(),
@@ -456,21 +467,22 @@ async function main() {
       }
     }
 
+    const afterState = await checkout(process.cwd());
     const updated = await evaluateBranchMrr(project, target);
     const reportFile = await persistReport(project, target, updated.gate);
     if (failures.length) {
       throw new Error(failures.join("\n"));
     }
-    const summary = printGateSummary(project, target, updated.gate, openReasons({ checkout: state, target }));
+    const summary = printGateSummary(project, target, updated.gate, openReasons({ checkout: afterState, target }));
     console.log(`${summary.text}\nField Report saved: ${reportFile}`);
     if (!summary.ready) process.exitCode = 1;
     return;
   }
 
   if (command === "accept") {
-    const findingId = requireValue(subcommand, "Usage: fr accept <F-id> --reason <text> [--actor <who>]").toUpperCase();
+    const findingId = requireValue(subcommand, "Usage: fr accept <F-id> --reason <text> --actor <who>").toUpperCase();
     const reason = requireValue(flags.reason, "Specify --reason <the user's explicit acceptance reason>");
-    const actor = flags.actor && flags.actor !== true ? flags.actor : "user";
+    const actor = requireValue(flags.actor, "Specify --actor <the human who accepted the finding>");
     const project = await requireActiveProject();
     const state = await checkout(process.cwd());
     if (state.branch === "HEAD" || state.branch === (project.baseBranch || "main")) {

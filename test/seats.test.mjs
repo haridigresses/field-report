@@ -115,7 +115,14 @@ test("fr seats prints the resolved panel and native --brief follows config", asy
   const out = await run(["seats"]);
   assert.match(out, /design: gemini-4-neon \(agy:gemini-4-neon-high, default\)/);
 
+  // --brief is refused unless the seat explicitly lists a launch="native" model.
+  await assert.rejects(run(["mrr", "--brief", "--seat", "design"]), /has no model with launch="native"/);
+
+  const withNative = { ...clone(), seats: { ...clone().seats, design: { models: [{ id: "gemini-4-neon", launch: "native" }] } } };
+  await writeFile(seats, JSON.stringify(withNative));
   const briefOut = JSON.parse(await run(["mrr", "--brief", "--seat", "design"]));
   assert.equal(briefOut.brief.model, "gemini-4-neon");
   assert.deepEqual(briefOut.brief.seatModels, ["gemini-4-neon"]);
+  // Minting a second brief on the same head is refused (prevents discarding a NO_GO).
+  await assert.rejects(run(["mrr", "--brief", "--seat", "design"]), /Brief already issued for design on head/);
 });

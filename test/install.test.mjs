@@ -39,8 +39,13 @@ test("installer writes fr, fr-cursor-review, fr-devin-review, and gh launchers, 
   delete env.FIELD_REPORT_CONFIG;
   delete env.XDG_CONFIG_HOME;
 
+  // Pre-existing real gh binary at ~/.local/bin/gh is backed up to ~/.local/bin/gh.real instead of lost.
+  await mkdir(path.join(home, ".local", "bin"), { recursive: true });
+  await writeFile(path.join(home, ".local", "bin", "gh"), "#!/bin/sh\necho real-user-gh\n", { mode: 0o755 });
+
   const { stdout } = await exec(process.execPath, [installer], { env });
   assert.match(stdout, /Installed launchers in .*: fr, fr-cursor-review, fr-devin-review, gh/);
+  assert.match(await readFile(path.join(home, ".local", "bin", "gh.real"), "utf8"), /real-user-gh/);
   assert.match(stdout, /Host hooks configured:/);
   const seats = path.join(home, ".config", "field-report", "config.json");
   assert.equal(await readFile(seats, "utf8"), await readFile(path.join(repoRoot, "config", "config.example.json"), "utf8"));

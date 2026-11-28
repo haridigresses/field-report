@@ -6,11 +6,11 @@ Field Report gets AI coding agents' changes reviewed by three independent review
 
 - **Enable once per repository:** Register a repo with `fr project add <id> --repo <path> [--github owner/repo]`. Every branch and `git worktree` of that repository is covered automatically (matched via `git-common-dir`).
 - **Pre-commit sanity check (`fr crr`):** Stateless single-reviewer check on staged or working changes before commits you intend to keep.
-- **Three-seat pre-PR review (`fr mrr`):** Spawns `correctness`, `design`, and `intent` in parallel across your configured CLIs (`codex`, `claude`, `cursor`, `agy`, `devin`, or `native` subagents):
+- **Three-seat pre-PR review (`fr mrr`):** Spawns `correctness`, `design`, and `intent` in parallel across your configured CLIs (`codex`, `claude`, `cursor`, `agy`, `devin`, or `native` subagents when configured):
   - `correctness` and `design` see **only** the diff (and `merge-ready-review.md` if present)—no session history.
-  - `intent` checks the diff against your signed-off **BRR plan** (when present) and verbatim user prompts captured silently via `UserPromptSubmit` / `beforeSubmitPrompt` hooks, kept strictly separate from commit messages / `--notes`.
-- **Hard local PR-open gate:** `PreToolUse` hooks (Claude Code, Cursor) and `~/.local/bin/gh` block non-draft `gh pr create` and `gh pr ready` until `fr gate open` is `READY`. Draft PRs (`gh pr create --draft`) are allowed anytime so CI can run early.
-- **Convergent reruns:** Fixing a `NO_GO` on a new commit and running `fr mrr` reruns **only** the failing seat; earlier `GO`s carry forward with unreviewed commit deltas shown, or settle via explicit user acceptance (`fr accept <F-id> --reason "..."`).
+  - `intent` checks the diff against any pre-existing **BRR plan** on `base` (or `--brr`) and verbatim user prompts captured silently via `UserPromptSubmit` / `beforeSubmitPrompt` hooks (stored locally with 14-day retention and capped at 40 KB in the `intent` brief), kept strictly separate from commit messages / `--notes`.
+- **Hard local PR-open gate:** `PreToolUse` hooks (Claude Code, Cursor) and `~/.local/bin/gh` (preserving any pre-existing `~/.local/bin/gh` at `gh.real`) block non-draft `gh pr create`, `gh pr ready`, `gh api` PR-open/ready mutations, and MCP PR-open calls until `fr gate open` is `READY`. Draft PRs (`gh pr create --draft`) are allowed anytime so CI can run early. (This guards cooperative local sessions without repo clutter; add a required GitHub status check if you also want an un-bypassable remote merge gate.)
+- **Convergent reruns:** Fixing a `NO_GO` on a new commit and running `fr mrr` reruns **only** the failing seat; earlier `GO`s carry forward with unreviewed commit deltas shown, or settle via explicit user acceptance (`fr accept <F-id> --reason "..." --actor "<name>"`).
 - **Calm post-open checks (`fr gate bots`):** Verifies GitHub checks ran and passed and review threads are resolved—resolving fixed bot threads silently and leaving human threads for the human reviewer without duplicate comment spam.
 
 ## Install
@@ -43,7 +43,7 @@ fr project list
 fr project remove <id>
 fr crr [--model <id>] [--brief]
 fr mrr [--seat correctness|design|intent] [--all] [--model <id>] [--notes <text>] [--brr <file>] [--intent-file <file>] [--session <id>] [--brief] [--record <file> --brief-id <uuid>]
-fr accept <F-id> --reason <text> [--actor <who>]
+fr accept <F-id> --reason <text> --actor <who>
 fr status
 fr gate open
 fr gate bots
@@ -60,10 +60,12 @@ Canonical runtime state lives outside your repositories at `~/.local/state/field
   projects/       # enabled repositories + todos/plans destinations
   branches/       # branch-keyed MRR review JSONL records
   dispositions/   # user finding acceptances
-  prompts/        # session-keyed verbatim user prompts
+  prompts/        # session-keyed verbatim user prompts (14-day retention)
   reports/        # rendered Markdown Field Reports per branch
-  briefs/         # native-subagent briefs (when launch="native")
+  briefs/         # native-subagent briefs (only when launch="native")
 ```
+
+Upgrading from schema v2 (workstreams/delegations) to schema v3 (branch-keyed reviews) is a hard cut: back up `~/.local/state/field-report`, remove legacy `workstreams`, `reviews`, `delegations`, `dispositions`, and `events`, then run `node scripts/install.mjs && fr init`.
 
 ## License
 

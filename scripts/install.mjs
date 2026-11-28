@@ -29,6 +29,18 @@ async function replace(file, writer) {
   await rename(temporary, file);
 }
 
+// If a real non-Field-Report 'gh' binary already lives at ~/.local/bin/gh,
+// preserve it at ~/.local/bin/gh.real so findRealGh finds it instead of losing it.
+const ghTarget = path.join(binDir, "gh");
+try {
+  const existingGh = await readFile(ghTarget, "utf8");
+  if (!existingGh.includes("fr-gh.mjs")) {
+    await rename(ghTarget, path.join(binDir, "gh.real"));
+  }
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
+
 for (const [name, script] of launchers) {
   const target = path.join(binDir, name);
   const source = path.join(root, "bin", script);

@@ -12,10 +12,15 @@ import { createStore } from "../src/store.mjs";
 // (PTY-capable agents could answer 'y'); humans can mark a Draft PR ready on
 // GitHub or invoke the system gh binary by its full path.
 
-export function findRealGh({ envPath = process.env.PATH || "", selfPath = process.argv[1] } = {}) {
+export function findRealGh({ envPath = process.env.PATH || "", selfPath = process.argv[1], home = process.env.HOME || "" } = {}) {
   let selfReal = null;
   try { selfReal = realpathSync(selfPath); } catch { selfReal = path.resolve(selfPath || ""); }
+  const backupDirs = [
+    selfPath ? path.dirname(path.resolve(selfPath)) : null,
+    home ? path.join(home, ".local", "bin") : null
+  ].filter(Boolean);
   const candidates = [
+    ...backupDirs.map((dir) => path.join(dir, "gh.real")),
     ...String(envPath).split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, "gh")),
     "/opt/homebrew/bin/gh",
     "/usr/local/bin/gh",
@@ -26,7 +31,7 @@ export function findRealGh({ envPath = process.env.PATH || "", selfPath = proces
       accessSync(candidate, constants.X_OK);
       const resolved = realpathSync(candidate);
       if (resolved === selfReal || path.resolve(candidate) === path.resolve(selfPath || "")) continue;
-      if (resolved.endsWith("fr-gh.mjs") || resolved.endsWith("/.local/bin/gh")) continue;
+      if (resolved.endsWith("fr-gh.mjs") || (resolved.endsWith("/.local/bin/gh") && !candidate.endsWith("gh.real"))) continue;
       return candidate;
     } catch {}
   }
@@ -64,7 +69,9 @@ export async function runGhWrapper(argv, {
     store,
     cwd,
     explicitRepo: classified.explicitRepo,
-    explicitBranch: classified.explicitHead || classified.selector
+    explicitBranch: classified.explicitHead,
+    selector: classified.selector,
+    ghBin: realGh
   });
   if (!check.managed || check.ready) {
     return execRealGh(realGh, classified.cleanedArgs, { env, cwd, spawnFn });

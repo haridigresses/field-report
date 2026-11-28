@@ -56,18 +56,32 @@ export async function crrTarget(project, cwd = process.cwd()) {
   return { kind: "crr", mode: "working", project: project.id, head: state.head, baseHead: state.head, tree: null, branch: state.branch, repoRoot: state.root, commonDir: state.commonDir };
 }
 
-export async function mrrTarget(project, cwd = process.cwd(), explicitBranch = null) {
+export async function mrrTarget(project, cwd = process.cwd(), explicitBranch = null, explicitHeadOid = null) {
   const state = await checkout(cwd);
   await assertProjectCheckout(project, state);
   const baseBranch = project.baseBranch || "main";
   const branch = explicitBranch || state.branch;
   if (branch === "HEAD") throw new Error("MRR requires a named feature branch (checkout is in detached HEAD state)");
   if (branch === baseBranch) throw new Error(`MRR runs on a feature branch, not ${baseBranch}`);
-  const head = explicitBranch ? await run("git", ["rev-parse", `refs/heads/${branch}`], state.root) : state.head;
+  let head = state.head;
+  if (explicitHeadOid) {
+    head = explicitHeadOid;
+  } else if (explicitBranch && explicitBranch !== state.branch) {
+    try { head = await run("git", ["rev-parse", `refs/heads/${branch}`], state.root); }
+    catch { head = await run("git", ["rev-parse", `refs/remotes/origin/${branch}`], state.root); }
+  }
   const base = `refs/remotes/origin/${baseBranch}`;
   const baseHead = await run("git", ["merge-base", base, head], state.root);
   if (baseHead === head) throw new Error(`MRR requires a non-empty branch diff from origin/${baseBranch}`);
   return { kind: "mrr", project: project.id, branch, head, baseHead, baseBranch, repoRoot: state.root, commonDir: state.commonDir };
+}
+
+export async function resolvePullRequestRef(project, selector, cwd = process.cwd(), { ghBin = "gh" } = {}) {
+  const args = ["pr", "view", String(selector), "--json", "number,headRefName,headRefOid,baseRefName"];
+  if (project.githubRepo) args.push("--repo", project.githubRepo);
+  const pr = JSON.parse(await run(ghBin, args, cwd));
+  if (!pr?.headRefName || !pr?.headRefOid) throw new Error(`Could not resolve head branch for PR ${selector}`);
+  return pr;
 }
 
 export async function diffInventory(target) {
@@ -111,13 +125,17 @@ export async function readMergeRules(repoRoot) {
   catch { return null; }
 }
 
-export async function detectRepoBrr(repoRoot, changedFiles = []) {
+// Only plans already present on baseHead may auto-populate as pre-existing BRR
+// context; candidate-authored plan files added/edited in the branch's own diff
+// are never promoted to dominate USER CONTRACT.
+export async function detectRepoBrr(repoRoot, baseHead, changedFiles = []) {
+  if (!baseHead) return null;
   const planFiles = changedFiles.filter((file) => /^docs\/plans\/.+\.md$/i.test(file));
   if (!planFiles.length) return null;
   const chosen = planFiles[planFiles.length - 1];
   try {
-    const content = (await readFile(path.join(repoRoot, chosen), "utf8")).trim();
-    return content ? { source: chosen, text: content } : null;
+    const content = (await run("git", ["show", `${baseHead}:${chosen}`], repoRoot)).trim();
+    return content ? { source: `${chosen} @ ${baseHead.slice(0, 12)}`, text: content } : null;
   } catch {
     return null;
   }

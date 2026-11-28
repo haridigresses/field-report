@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { gitCommonDir } from "./repository.mjs";
@@ -123,13 +123,19 @@ export function createStore(root = defaultStateRoot()) {
     return value;
   }
 
-  async function readJsonl(file) {
+  async function readJsonl(file, { strict = true } = {}) {
     try {
-      return (await readFile(file, "utf8"))
+      const text = await readFile(file, "utf8");
+      return text
         .split("\n")
         .filter(Boolean)
-        .flatMap((line) => {
-          try { return [JSON.parse(line)]; } catch { return []; }
+        .flatMap((line, index) => {
+          try {
+            return [JSON.parse(line)];
+          } catch (error) {
+            if (strict) throw new Error(`Corrupt JSONL record at ${file}:${index + 1}: ${error.message}`);
+            return [];
+          }
         });
     } catch (error) {
       if (error.code === "ENOENT") return [];
@@ -232,10 +238,17 @@ export function createStore(root = defaultStateRoot()) {
   }
 
   async function addBrief(projectId, branch, value) {
-    await project(projectId);
-    const brief = { ...value, id: value.id || randomUUID(), projectId: id(projectId, "Project ID"), branch: requiredString(branch, "Branch", 300), createdAt: new Date().toISOString() };
-    await locked(() => appendJsonl(branchFile("briefs", projectId, branch), brief));
-    return brief;
+    const pid = id(projectId, "Project ID");
+    const branchName = requiredString(branch, "Branch", 300);
+    await project(pid);
+    const brief = { ...value, id: value.id || randomUUID(), projectId: pid, branch: branchName, createdAt: new Date().toISOString() };
+    return locked(async () => {
+      const priorBriefs = await briefs(pid, branchName);
+      if (brief.kind === "mrr" && priorBriefs.some((item) => item.kind === "mrr" && item.role === brief.role && item.head === brief.head)) {
+        throw new Error(`Brief already issued for ${brief.role} on head ${String(brief.head).slice(0, 12)}; record that brief or commit a fix before minting a new one`);
+      }
+      return appendJsonl(branchFile("briefs", pid, branchName), brief);
+    });
   }
 
   async function addReview(projectId, branch, value, { beforeAppend } = {}) {
@@ -259,17 +272,23 @@ export function createStore(root = defaultStateRoot()) {
     });
   }
 
+  const FORBIDDEN_ACCEPT_ACTORS = new Set(["agent", "assistant", "claude", "codex", "cursor", "agy", "devin", "owner", "builder"]);
+
   async function addDisposition(projectId, branch, value, { validFindingIds = null } = {}) {
     const targetProject = await project(projectId);
     const branchName = requiredString(branch, "Branch", 300);
     const findingId = requiredString(value.findingId, "Finding ID", 20).toUpperCase();
+    const actor = requiredString(value.actor, "Acceptance actor (--actor)", 200);
+    if (FORBIDDEN_ACCEPT_ACTORS.has(actor.toLowerCase())) {
+      throw new Error(`Acceptance actor '${actor}' must name the human who accepted ${findingId}, not an agent`);
+    }
     const disposition = {
       id: randomUUID(),
       projectId: targetProject.id,
       branch: branchName,
       findingId,
       reason: requiredString(value.reason, "Acceptance reason", 4000),
-      actor: requiredString(value.actor || "user", "Actor", 200),
+      actor,
       createdAt: new Date().toISOString()
     };
     return locked(async () => {
@@ -279,6 +298,21 @@ export function createStore(root = defaultStateRoot()) {
       await appendJsonl(branchFile("dispositions", targetProject.id, branchName), disposition);
       return disposition;
     });
+  }
+
+  const PROMPT_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+
+  async function pruneOldPromptFiles(dir, keepFile) {
+    let entries;
+    try { entries = await readdir(dir); } catch { return; }
+    const cutoff = Date.now() - PROMPT_RETENTION_MS;
+    await Promise.all(entries.filter((name) => name.endsWith(".jsonl") && path.join(dir, name) !== keepFile).map(async (name) => {
+      const file = path.join(dir, name);
+      try {
+        const info = await stat(file);
+        if (info.mtimeMs < cutoff) await rm(file, { force: true });
+      } catch {}
+    }));
   }
 
   function sessionKey(sessionId) {
@@ -297,19 +331,24 @@ export function createStore(root = defaultStateRoot()) {
       head: optionalString(entry.head, "HEAD SHA", 60),
       prompt: requiredString(entry.prompt, "Prompt", 100_000)
     };
-    await appendJsonl(path.join(root, "prompts", pid, `${sessionKey(sid)}.jsonl`), record);
-    return record;
+    const promptDir = path.join(root, "prompts", pid);
+    const targetFile = path.join(promptDir, `${sessionKey(sid)}.jsonl`);
+    return locked(async () => {
+      await appendJsonl(targetFile, record);
+      await pruneOldPromptFiles(promptDir, targetFile);
+      return record;
+    });
   }
 
   async function prompts(projectId, sessionId = null) {
     const pid = id(projectId, "Project ID");
     if (sessionId) {
-      return readJsonl(path.join(root, "prompts", pid, `${sessionKey(sessionId)}.jsonl`));
+      return readJsonl(path.join(root, "prompts", pid, `${sessionKey(sessionId)}.jsonl`), { strict: false });
     }
     let files;
     try { files = (await readdir(path.join(root, "prompts", pid))).filter((f) => f.endsWith(".jsonl")).sort(); }
     catch (error) { if (error.code === "ENOENT") return []; throw error; }
-    const all = (await Promise.all(files.map((file) => readJsonl(path.join(root, "prompts", pid, file))))).flat();
+    const all = (await Promise.all(files.map((file) => readJsonl(path.join(root, "prompts", pid, file), { strict: false })))).flat();
     return all.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
   }
 
@@ -320,7 +359,7 @@ export function createStore(root = defaultStateRoot()) {
     catch (error) { if (error.code === "ENOENT") return []; throw error; }
     const summaries = [];
     for (const file of files) {
-      const items = await readJsonl(path.join(root, "prompts", pid, file));
+      const items = await readJsonl(path.join(root, "prompts", pid, file), { strict: false });
       if (!items.length) continue;
       summaries.push({
         sessionId: decodeBranchKey(file.slice(0, -".jsonl".length)),

@@ -68,7 +68,15 @@ test("store validates finding dispositions, session prompts, reports, and projec
   assert.match(await store.readReport("sample", "feat/x"), /# Report/);
 
   await assert.rejects(
-    store.addDisposition("sample", "feat/x", { findingId: "F9", reason: "ok" }, { validFindingIds: new Set(["F1"]) }),
+    store.addDisposition("sample", "feat/x", { findingId: "F1", reason: "ok" }, { validFindingIds: new Set(["F1"]) }),
+    /Acceptance actor \(--actor\) must be between/
+  );
+  await assert.rejects(
+    store.addDisposition("sample", "feat/x", { findingId: "F1", reason: "ok", actor: "claude" }, { validFindingIds: new Set(["F1"]) }),
+    /must name the human who accepted F1, not an agent/
+  );
+  await assert.rejects(
+    store.addDisposition("sample", "feat/x", { findingId: "F9", reason: "ok", actor: "hari" }, { validFindingIds: new Set(["F1"]) }),
     /Unknown MRR finding F9/
   );
   await store.addDisposition("sample", "feat/x", { findingId: "F1", reason: "ok", actor: "hari" }, { validFindingIds: new Set(["F1"]) });

@@ -41,10 +41,14 @@ export function reviewConfig(user, baseSha, headSha, { treeSha = null, working =
 
 const PROJECT_CONFIGS = [".devin/config.json", ".devin/config.local.json", ".devin/mcp.json", ".mcp.json"];
 
-export function projectConfigs(startDir) {
+// Stop walking upward at os.homedir() (exclusive) so a user's personal ~/.mcp.json
+// is not mistaken for repository-committed project config.
+export function projectConfigs(startDir, home = os.homedir()) {
   const found = [];
+  const stopAt = home ? path.resolve(home) : null;
   let dir = path.resolve(startDir);
   while (true) {
+    if (stopAt && dir === stopAt) break;
     for (const rel of PROJECT_CONFIGS) {
       const candidate = path.join(dir, rel);
       if (existsSync(candidate)) found.push(path.relative(startDir, candidate) || rel);

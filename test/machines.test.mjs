@@ -77,7 +77,7 @@ test("claude inner command enforces exact HEAD and clean worktree on MRR, and al
   await exec("git", ["-C", repo, "add", "file.txt"]);
   await exec("git", ["-C", repo, "commit", "-m", "init"]);
   const realHead = (await exec("git", ["-C", repo, "rev-parse", "HEAD"])).stdout.trim();
-  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const env = { ...process.env, ZDOTDIR: root, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
 
   await exec("sh", ["-c", claudeInvokeInner({ promptFile: prompt, cwd: repo, baseSha: realHead, headSha: realHead })], { env });
   assert.match(await readFile(log, "utf8"), /claude-opus-5-5/);

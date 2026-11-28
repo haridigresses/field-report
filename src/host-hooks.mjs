@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { quote } from "./hooks.mjs";
 import { capturePromptFromHook, readConfiguredProjects } from "./prompts.mjs";
-import { ancestorHeads, checkout, gitCommonDir, mrrTarget } from "./repository.mjs";
+import { ancestorHeads, checkout, gitCommonDir, mrrTarget, resolvePullRequestRef } from "./repository.mjs";
 import { describePlans, describeTodos, plansFor, todosFor } from "./store.mjs";
 import { evaluateMrrGate, openReasons } from "./policy.mjs";
 
@@ -16,27 +16,29 @@ function stripOwnerPrefix(headSpec) {
   return colon >= 0 ? text.slice(colon + 1) : text;
 }
 
-// Parse a gh argv array (excluding leading "gh") and classify whether it opens
-// a non-draft PR, opens a draft PR, or marks a draft PR ready for review.
-// Handles -R/--repo and -H/--head anywhere in argv (before or after `pr create|ready`).
+const PR_CREATE_VALUE_FLAGS = new Set(["-R", "--repo", "-h", "--hostname", "-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--body-file", "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project", "-r", "--reviewer", "-T", "--template", "-t", "--title"]);
+const API_VALUE_FLAGS = new Set(["-X", "--method", "-H", "--header", "-f", "--raw-field", "-F", "--field", "--input", "-q", "--jq", "-t", "--template", "--hostname"]);
+
+// Single-pass option-aware classifier for gh invocations (`gh pr create`,
+// `gh pr ready`, and `gh api` PR-create/ready mutations).
 export function classifyGhArgs(argv) {
   const args = Array.isArray(argv) ? argv.map(String) : [];
-  let explicitRepo = null;
-  let explicitHead = null;
-
-  for (let i = 0; i < args.length; i += 1) {
-    const token = args[i];
-    if (token === "--") break;
-    if ((token === "-R" || token === "--repo") && args[i + 1]) { explicitRepo = args[i + 1]; i += 1; continue; }
-    if (token.startsWith("--repo=")) { explicitRepo = token.slice("--repo=".length); continue; }
-    if ((token === "-H" || token === "--head") && args[i + 1]) { explicitHead = stripOwnerPrefix(args[i + 1]); i += 1; continue; }
-    if (token.startsWith("--head=")) { explicitHead = stripOwnerPrefix(token.slice("--head=".length)); continue; }
-  }
-
   let index = 0;
+  let explicitRepo = null;
+
   while (index < args.length) {
     const token = args[index];
-    if (token === "-R" || token === "--repo" || token === "-h" || token === "--hostname") {
+    if ((token === "-R" || token === "--repo") && args[index + 1] != null) {
+      explicitRepo = args[index + 1];
+      index += 2;
+      continue;
+    }
+    if (token.startsWith("--repo=")) {
+      explicitRepo = token.slice("--repo=".length);
+      index += 1;
+      continue;
+    }
+    if ((token === "-h" || token === "--hostname") && args[index + 1] != null) {
       index += 2;
       continue;
     }
@@ -50,29 +52,78 @@ export function classifyGhArgs(argv) {
   const command = args[index];
   const subcommand = args[index + 1];
   const rest = args.slice(index + 2);
-  if (command !== "pr" || !subcommand) return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead, selector: null };
-  if (rest.includes("--help") || rest.includes("-h")) return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead, selector: null };
+
+  if (command === "api") {
+    const apiArgs = args.slice(index + 1);
+    let endpoint = null;
+    let method = null;
+    const fields = [];
+    for (let i = 0; i < apiArgs.length; i += 1) {
+      const arg = apiArgs[i];
+      if (arg === "--") break;
+      if ((arg === "-X" || arg === "--method") && apiArgs[i + 1] != null) { method = apiArgs[i + 1].toUpperCase(); i += 1; continue; }
+      if (arg.startsWith("--method=")) { method = arg.slice("--method=".length).toUpperCase(); continue; }
+      if ((arg === "-f" || arg === "--raw-field" || arg === "-F" || arg === "--field") && apiArgs[i + 1] != null) { fields.push(apiArgs[i + 1]); i += 1; continue; }
+      if (API_VALUE_FLAGS.has(arg)) { i += 1; continue; }
+      if (!arg.startsWith("-") && !endpoint) endpoint = arg;
+    }
+    const joinedFields = fields.join("\n");
+    if (endpoint === "graphql" && /createPullRequest|markPullRequestReadyForReview/i.test(joinedFields) && !/isDraft\s*:\s*true/i.test(joinedFields)) {
+      return { action: "open-pr", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
+    }
+    const pullsMatch = String(endpoint || "").match(/^(?:\/)?repos\/([^/]+\/[^/]+)\/pulls(?:\/(\d+))?$/i);
+    if (pullsMatch) {
+      const repoSlug = pullsMatch[1] !== "{owner}/{repo}" ? pullsMatch[1] : explicitRepo;
+      const hasFields = fields.length > 0;
+      const effectiveMethod = method || (hasFields ? "POST" : "GET");
+      const isDraftTrue = fields.some((f) => /^draft=(?:true|1)$/i.test(f));
+      const isDraftFalse = fields.some((f) => /^draft=(?:false|0)$/i.test(f));
+      const headField = fields.find((f) => /^head=/i.test(f));
+      const explicitHead = headField ? stripOwnerPrefix(headField.slice("head=".length)) : null;
+      if (!pullsMatch[2] && effectiveMethod === "POST") {
+        return { action: isDraftTrue ? "draft-pr" : "open-pr", cleanedArgs: args, explicitRepo: repoSlug, explicitHead, selector: null };
+      }
+      if (pullsMatch[2] && (effectiveMethod === "PATCH" || effectiveMethod === "POST") && isDraftFalse) {
+        return { action: "ready-pr", cleanedArgs: args, explicitRepo: repoSlug, explicitHead: null, selector: pullsMatch[2] };
+      }
+    }
+    return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
+  }
+
+  if (command !== "pr" || !subcommand) return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
+  if (rest.includes("--help") || rest.includes("-h")) return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
 
   if (subcommand === "create") {
-    const valueFlags = new Set(["-R", "--repo", "-a", "--assignee", "-B", "--base", "-b", "--body", "-F", "--body-file", "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project", "-r", "--reviewer", "-T", "--template", "-t", "--title"]);
     let isDraft = false;
+    let explicitHead = null;
     for (let i = 0; i < rest.length; i += 1) {
       const arg = rest[i];
       if (arg === "--") break;
-      if (valueFlags.has(arg)) { i += 1; continue; }
-      if (arg === "--draft" || arg === "-d") { isDraft = true; break; }
-      if (/^-[A-Za-z]{2,}$/.test(arg) && !valueFlags.has(arg.slice(0, 2)) && arg.includes("d")) { isDraft = true; break; }
+      if ((arg === "-R" || arg === "--repo") && rest[i + 1] != null) { explicitRepo = rest[i + 1]; i += 1; continue; }
+      if (arg.startsWith("--repo=")) { explicitRepo = arg.slice("--repo=".length); continue; }
+      if ((arg === "-H" || arg === "--head") && rest[i + 1] != null) { explicitHead = stripOwnerPrefix(rest[i + 1]); i += 1; continue; }
+      if (arg.startsWith("--head=")) { explicitHead = stripOwnerPrefix(arg.slice("--head=".length)); continue; }
+      if (PR_CREATE_VALUE_FLAGS.has(arg)) { i += 1; continue; }
+      if (arg === "--draft" || arg === "-d") { isDraft = true; continue; }
+      if (/^-[A-Za-z]{2,}$/.test(arg) && !PR_CREATE_VALUE_FLAGS.has(arg.slice(0, 2)) && arg.includes("d")) { isDraft = true; continue; }
     }
     return { action: isDraft ? "draft-pr" : "open-pr", cleanedArgs: args, explicitRepo, explicitHead, selector: null };
   }
 
   if (subcommand === "ready") {
-    if (rest.includes("--undo")) return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead, selector: null };
-    const selector = rest.find((arg, idx) => !arg.startsWith("-") && (idx === 0 || (rest[idx - 1] !== "-R" && rest[idx - 1] !== "--repo"))) || null;
-    return { action: "ready-pr", cleanedArgs: args, explicitRepo, explicitHead, selector };
+    let selector = null;
+    for (let i = 0; i < rest.length; i += 1) {
+      const arg = rest[i];
+      if (arg === "--") break;
+      if (arg === "--undo") return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
+      if ((arg === "-R" || arg === "--repo") && rest[i + 1] != null) { explicitRepo = rest[i + 1]; i += 1; continue; }
+      if (arg.startsWith("--repo=")) { explicitRepo = arg.slice("--repo=".length); continue; }
+      if (!arg.startsWith("-") && !selector) selector = arg;
+    }
+    return { action: "ready-pr", cleanedArgs: args, explicitRepo, explicitHead: null, selector };
   }
 
-  return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead, selector: null };
+  return { action: "allow", cleanedArgs: args, explicitRepo, explicitHead: null, selector: null };
 }
 
 export function extractShellGhInvocations(commandText) {
@@ -117,7 +168,7 @@ function tokenizeShell(input) {
   return tokens;
 }
 
-export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicitRepo = null, explicitBranch = null }) {
+export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicitRepo = null, explicitBranch = null, selector = null, ghBin = "gh" }) {
   const projects = await readConfiguredProjects(store.root);
   if (!projects.length) return { managed: false };
 
@@ -139,11 +190,20 @@ export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicit
   let target;
   try {
     state = await checkout(targetCwd);
-    const branchToCheck = explicitBranch && !/^\d+$/.test(explicitBranch) ? explicitBranch : null;
-    if (explicitBranch && /^\d+$/.test(explicitBranch) && state.branch === (matched.baseBranch || "main")) {
-      return { managed: true, project: matched, ready: false, reasons: [`check out PR #${explicitBranch}'s branch before marking it ready so Field Report can verify its MRR`] };
+    let resolvedBranch = explicitBranch || null;
+    let resolvedHeadOid = null;
+
+    if (!resolvedBranch && selector) {
+      if (/^\d+$/.test(selector) || /^https?:\/\//i.test(selector)) {
+        const prInfo = await resolvePullRequestRef(matched, selector, targetCwd, { ghBin });
+        resolvedBranch = prInfo.headRefName;
+        resolvedHeadOid = prInfo.headRefOid;
+      } else {
+        resolvedBranch = stripOwnerPrefix(selector);
+      }
     }
-    target = await mrrTarget(matched, targetCwd, branchToCheck);
+
+    target = await mrrTarget(matched, targetCwd, resolvedBranch, resolvedHeadOid);
   } catch (error) {
     return { managed: true, project: matched, ready: false, reasons: [error.message] };
   }
@@ -154,14 +214,12 @@ export async function checkBranchOpenGate({ store, cwd = process.cwd(), explicit
   ]);
   const ancestors = await ancestorHeads(target.repoRoot, reviews.map((r) => r.head), target.head);
   const gate = evaluateMrrGate({ target, reviews, dispositions, ancestors });
-  const extra = explicitBranch && state.branch !== target.branch
-    ? []
-    : openReasons({ checkout: state, target });
+  const extra = state.branch === target.branch ? openReasons({ checkout: state, target }) : [];
   const reasons = [...gate.reasons, ...extra];
   return { managed: true, project: matched, branch: target.branch, target, gate, ready: reasons.length === 0, reasons };
 }
 
-export async function handleHostHook(event, rawStdin, { store, cwd = process.cwd(), env = process.env } = {}) {
+export async function handleHostHook(event, rawStdin, { store, cwd = process.cwd(), env = process.env, ghBin = "gh" } = {}) {
   let payload = {};
   try { payload = JSON.parse(String(rawStdin || "").trim() || "{}"); } catch { payload = {}; }
   const hookCwd = payload.cwd || (Array.isArray(payload.workspace_roots) ? payload.workspace_roots[0] : null) || cwd;
@@ -199,10 +257,12 @@ export async function handleHostHook(event, rawStdin, { store, cwd = process.cwd
 
   if (event === "pre-tool") {
     const toolName = String(payload.tool_name || payload.toolName || "");
-    const commandText = payload.tool_input?.command || payload.command || "";
+    const toolInput = payload.tool_input || payload.arguments || payload.input || {};
+    const commandText = toolInput.command || payload.command || "";
     let needsGate = false;
     let explicitRepo = null;
     let explicitBranch = null;
+    let selector = null;
 
     if (commandText) {
       for (const ghArgs of extractShellGhInvocations(commandText)) {
@@ -210,24 +270,28 @@ export async function handleHostHook(event, rawStdin, { store, cwd = process.cwd
         if (classified.action === "open-pr" || classified.action === "ready-pr") {
           needsGate = true;
           explicitRepo = classified.explicitRepo;
-          explicitBranch = classified.explicitHead || classified.selector;
+          explicitBranch = classified.explicitHead;
+          selector = classified.selector;
           break;
         }
       }
-    } else if (/(?:^|__)create_pull_request$/.test(toolName) && payload.tool_input?.draft !== true && payload.arguments?.draft !== true) {
+    } else if (/(?:create|open)_pull_request/i.test(toolName) && toolInput.draft !== true) {
       needsGate = true;
-      const owner = payload.tool_input?.owner || payload.arguments?.owner;
-      const repo = payload.tool_input?.repo || payload.arguments?.repo;
-      const headArg = payload.tool_input?.head || payload.arguments?.head;
-      if (owner && repo) explicitRepo = `${owner}/${repo}`;
-      if (headArg) explicitBranch = stripOwnerPrefix(headArg);
+      if (toolInput.owner && toolInput.repo) explicitRepo = `${toolInput.owner}/${toolInput.repo}`;
+      if (toolInput.head) explicitBranch = stripOwnerPrefix(toolInput.head);
+    } else if (/(?:ready_for_review|mark_pull_request_ready)/i.test(toolName) || (/update_pull_request/i.test(toolName) && toolInput.draft === false)) {
+      needsGate = true;
+      if (toolInput.owner && toolInput.repo) explicitRepo = `${toolInput.owner}/${toolInput.repo}`;
+      if (toolInput.pull_number || toolInput.pullNumber || toolInput.number) {
+        selector = String(toolInput.pull_number || toolInput.pullNumber || toolInput.number);
+      }
     }
 
     if (!needsGate) {
       return { exitCode: 0, stdout: isCursor ? `${JSON.stringify({ permission: "allow" })}\n` : "", stderr: "" };
     }
 
-    const check = await checkBranchOpenGate({ store, cwd: hookCwd, explicitRepo, explicitBranch });
+    const check = await checkBranchOpenGate({ store, cwd: hookCwd, explicitRepo, explicitBranch, selector, ghBin });
     if (!check.managed || check.ready) {
       return { exitCode: 0, stdout: isCursor ? `${JSON.stringify({ permission: "allow" })}\n` : "", stderr: "" };
     }
@@ -269,7 +333,7 @@ export async function installHostHooks({ frBin, home = os.homedir() }) {
   };
   setClaudeHook("SessionStart", "", "session-start");
   setClaudeHook("UserPromptSubmit", "", "prompt-submit");
-  setClaudeHook("PreToolUse", "Bash|mcp__.*create_pull_request", "pre-tool");
+  setClaudeHook("PreToolUse", "Bash|mcp__.*(?:pull_request|ready_for_review).*", "pre-tool");
   claude.hooks = hooks;
   await writeJsonAtomic(claudeSettingsPath, claude);
 
