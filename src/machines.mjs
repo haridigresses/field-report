@@ -3,7 +3,6 @@ import { quote } from "./hooks.mjs";
 import { launchEntry, modelsLaunchedBy } from "./seats.mjs";
 
 export const LOGIN_SHELL = "zsh";
-export const HOST_LAUNCHERS = ["codex", "claude"];
 const SHA = /^[0-9a-f]{40}$/i;
 
 export function doubleQuote(value) {
@@ -11,7 +10,8 @@ export function doubleQuote(value) {
 }
 
 export function loginShellCommand(inner, shell = LOGIN_SHELL) {
-  return `${shell} -ic ${quote(inner)}`;
+  const prefix = shell === "zsh" ? `${shell} +o banghist -ic` : `${shell} -ic`;
+  return `${prefix} ${quote(inner)}`;
 }
 
 function requireSha(value, label) {
@@ -26,8 +26,6 @@ function resolveMaybe(value) {
   return path.resolve(text);
 }
 
-// The CLI model id for a launcher: the requested model, or the first seated
-// model that launcher runs. The config file decides which launcher a model uses.
 export function launcherModel(launcher, model = null) {
   if (model) {
     const entry = launchEntry(model);
@@ -40,48 +38,97 @@ export function launcherModel(launcher, model = null) {
   return first.cliModel;
 }
 
-export function codexInvokeInner({ promptFile, cwd, kind = "review", lastMessageFile = null, model = null }) {
+function headCheck(headSha) {
+  return `test "$(git rev-parse HEAD)" = ${doubleQuote(headSha)} && test -z "$(git status --porcelain)" && `;
+}
+
+export function codexInvokeInner({ promptFile, cwd, kind = "review", headSha = null, requireClean = false, lastMessageFile = null, model = null, cliModel = null }) {
   if (!["review", "work"].includes(kind)) throw new Error("Codex invoke kind must be review or work");
-  const selected = launcherModel("codex", model);
+  const selected = cliModel || launcherModel("codex", model);
   const sandbox = kind === "work" ? "workspace-write" : "read-only";
   const repo = resolveMaybe(cwd);
   const prompt = resolveMaybe(promptFile);
   const lastMessage = resolveMaybe(lastMessageFile || `${prompt}.last.txt`);
-  return `cd ${doubleQuote(repo)} && codex exec -m ${selected} -s ${sandbox} --ignore-user-config --json --color never -o ${doubleQuote(lastMessage)} -C ${doubleQuote(repo)} - < ${doubleQuote(prompt)}`;
+  const guard = kind === "review" && requireClean && headSha ? headCheck(requireSha(headSha, "head SHA")) : "";
+  return `cd ${doubleQuote(repo)} && ${guard}command codex exec -m ${selected} -s ${sandbox} --ignore-user-config --json --color never -o ${doubleQuote(lastMessage)} -C ${doubleQuote(repo)} - < ${doubleQuote(prompt)}`;
 }
 
 export function codexInvokeCommand(options, shell = LOGIN_SHELL) {
   return loginShellCommand(codexInvokeInner(options), shell);
 }
 
-function claudeCli({ promptFile, cwd, baseSha, headSha, model = null }) {
-  const selected = launcherModel("claude", model);
-  const diff = `git diff --no-ext-diff --no-textconv ${baseSha} ${headSha} --`;
+export function claudeInvokeInner({ promptFile, cwd, baseSha, headSha, treeSha = null, requireClean = true, model = null, cliModel = null }) {
+  const selected = cliModel || launcherModel("claude", model);
+  const base = requireSha(baseSha, "base SHA");
+  const head = requireSha(headSha, "head SHA");
+  const diff = treeSha
+    ? `git diff --no-ext-diff --no-textconv ${base} ${requireSha(treeSha, "tree SHA")} --`
+    : requireClean
+      ? `git diff --no-ext-diff --no-textconv ${base} ${head} --`
+      : "git diff --no-ext-diff --no-textconv HEAD --";
   const repo = resolveMaybe(cwd);
   const prompt = resolveMaybe(promptFile);
-  const claude = `claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(${diff})" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model ${selected} "$(< ${doubleQuote(prompt)})"`;
-  const headCheck = SHA.test(headSha) ? `test "$(git rev-parse HEAD)" = ${doubleQuote(headSha)} && test -z "$(git status --porcelain)" && ` : "";
-  return `cd ${doubleQuote(repo)} && ${headCheck}${claude}`;
-}
-
-export function claudeInvokeInner({ promptFile, cwd, baseSha, headSha, model = null }) {
-  return claudeCli({
-    promptFile,
-    cwd,
-    model,
-    baseSha: requireSha(baseSha, "base SHA"),
-    headSha: requireSha(headSha, "head SHA")
-  });
+  const claude = `command claude --print --permission-mode dontAsk --allowedTools "Read,Grep,Glob,Bash(${diff})" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --output-format json --no-session-persistence --model ${selected} "$(< ${doubleQuote(prompt)})"`;
+  return `cd ${doubleQuote(repo)} && ${requireClean ? headCheck(head) : ""}${claude}`;
 }
 
 export function claudeInvokeCommand(options, shell = LOGIN_SHELL) {
   return loginShellCommand(claudeInvokeInner(options), shell);
 }
 
-// Cursor-hosted reviewers run through the MCP-isolating wrapper. The brief goes
-// on stdin: some hosts kill processes given an argument over about 1,000
-// characters.
-export function cursorReviewCommand({ promptFile = "<prompt>", model }) {
-  const selected = launcherModel("cursor", model);
+export function agyInvokeInner({ promptFile, cwd, baseSha, headSha, treeSha = null, requireClean = true, model = null, cliModel = null }) {
+  const selected = cliModel || launcherModel("agy", model);
+  const base = requireSha(baseSha, "base SHA");
+  const head = requireSha(headSha, "head SHA");
+  const diff = treeSha
+    ? `git diff --no-ext-diff --no-textconv ${base} ${requireSha(treeSha, "tree SHA")} --`
+    : requireClean
+      ? `git diff --no-ext-diff --no-textconv ${base} ${head} --`
+      : "git diff --no-ext-diff --no-textconv HEAD --";
+  const settings = JSON.stringify({
+    permissions: {
+      allow: [`command(${diff})`],
+      deny: ["write_file(*)", "edit_file(*)", "mcp(*)"]
+    }
+  });
+  const repo = resolveMaybe(cwd);
+  const prompt = resolveMaybe(promptFile);
+  return `cd ${doubleQuote(repo)} && ${requireClean ? headCheck(head) : ""}command agy --mode plan --sandbox --disable-slash-commands --output-format json --model ${selected} --settings ${quote(settings)} -p "$(< ${doubleQuote(prompt)})"`;
+}
+
+export function agyInvokeCommand(options, shell = LOGIN_SHELL) {
+  return loginShellCommand(agyInvokeInner(options), shell);
+}
+
+export function devinInvokeInner({ promptFile, cwd, baseSha, headSha, treeSha = null, requireClean = true, model = null, cliModel = null }) {
+  const selected = cliModel || launcherModel("devin", model);
+  const base = requireSha(baseSha, "base SHA");
+  const head = requireSha(headSha, "head SHA");
+  const modeArg = treeSha
+    ? ` --tree ${requireSha(treeSha, "tree SHA")}`
+    : !requireClean
+      ? " --working"
+      : "";
+  const repo = resolveMaybe(cwd);
+  const prompt = resolveMaybe(promptFile);
+  return `cd ${doubleQuote(repo)} && ${requireClean ? headCheck(head) : ""}fr-devin-review --base ${base} --head ${head}${modeArg} --model ${selected} --prompt-file ${doubleQuote(prompt)}`;
+}
+
+export function devinInvokeCommand(options, shell = LOGIN_SHELL) {
+  return loginShellCommand(devinInvokeInner(options), shell);
+}
+
+export function cursorReviewCommand({ promptFile = "<prompt>", model = null, cliModel = null }) {
+  const selected = cliModel || launcherModel("cursor", model);
   return `fr-cursor-review --model ${selected} --print --output-format stream-json --sandbox enabled --trust < ${promptFile.includes("<") ? promptFile : doubleQuote(promptFile)}`;
+}
+
+export function launchCommandFor(entry, { cwd, promptFile, lastMessageFile = null, baseSha, headSha, treeSha = null, requireClean = true }) {
+  const { launch, id: model, cliModel } = entry;
+  if (launch === "codex") return codexInvokeCommand({ promptFile, lastMessageFile, cwd, kind: "review", headSha, requireClean, model, cliModel });
+  if (launch === "claude") return claudeInvokeCommand({ promptFile, cwd, baseSha, headSha, treeSha, requireClean, model, cliModel });
+  if (launch === "agy") return agyInvokeCommand({ promptFile, cwd, baseSha, headSha, treeSha, requireClean, model, cliModel });
+  if (launch === "devin") return devinInvokeCommand({ promptFile, cwd, baseSha, headSha, treeSha, requireClean, model, cliModel });
+  if (launch === "cursor") return loginShellCommand(`cd ${doubleQuote(resolveMaybe(cwd))} && ${requireClean ? headCheck(requireSha(headSha, "head SHA")) : ""}${cursorReviewCommand({ promptFile, model, cliModel })}`);
+  throw new Error(`Unsupported CLI launcher: ${launch}`);
 }

@@ -4,30 +4,29 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Field Report knows no model names. The user's config file lists the models
-// valid for each MRR seat (the first is the default) and how each launches.
-// The shipped example seats three labs; that is a suggestion, not a rule. A
-// model may serve several seats.
+// Field Report hardcodes no model names. The user's config file lists the
+// models valid for each MRR seat (the first is the default; later entries are
+// start-failure fallbacks) and how each launches.
 
 export const REVIEW_ROLES = ["correctness", "design", "intent"];
-// What each seat checks; shown on the settings page.
+
 export const SEAT_PURPOSES = {
   correctness: "Bugs, security, data integrity, error paths, and whether the tests cover them.",
   design: "How it is built: whether it is needed, whether it is the simplest mechanism, and whether it respects boundaries.",
-  intent: "What it does: whether it matches the stated outcome, claim, and your decisions, and nothing more."
+  intent: "What it does: whether it matches your requests, BRR plan, and decisions, with no unrequested scope."
 };
-// Only for the error message after the rename; old keys are never accepted.
+
 const RENAMED_SEATS = { "deep-code-review": "correctness", "structural-challenge": "design", "fable-challenge": "intent" };
-// Each launcher runs reviewers without MCP servers.
-export const LAUNCHERS = ["codex", "claude", "cursor"];
+
+// Supported reviewer launchers. CLI launchers run isolated subprocesses; native
+// prints/records a brief for an isolated host subagent.
+export const LAUNCHERS = ["codex", "claude", "cursor", "agy", "devin", "native"];
+export const CLI_LAUNCHERS = LAUNCHERS.filter((launch) => launch !== "native");
+
 const NAME = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
-// A cursor- prefix and one effort or speed suffix name the same model.
 const EFFORT_SUFFIX = /-(?:thinking-(?:xhigh|high|medium|low|max)|xhigh|high|medium|low|fast|max)$/;
-// CLI model ids go into shell commands, so they stay one plain token.
 const CLI_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
 
-// FIELD_REPORT_CONFIG, else $XDG_CONFIG_HOME/field-report/config.json, else
-// ~/.config/field-report/config.json.
 export function configPath() {
   if (process.env.FIELD_REPORT_CONFIG) return process.env.FIELD_REPORT_CONFIG;
   return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "field-report", "config.json");
@@ -47,12 +46,9 @@ function onlyKeys(value, allowed, label) {
   if (extra) fail(`${label} has unknown key ${JSON.stringify(extra)}; allowed keys are ${allowed.join(", ")}`);
 }
 
-// Syntax only, independent of the config, so recorded reviews keep their
-// identity after the config changes.
 export function normalizeId(model) {
   let text = String(model || "").trim().toLowerCase();
   if (text.startsWith("cursor-")) text = text.slice("cursor-".length);
-  // One effort suffix, optionally followed by -fast.
   if (text.endsWith("-fast") && EFFORT_SUFFIX.test(text.slice(0, -5))) text = text.slice(0, -5);
   text = text.replace(EFFORT_SUFFIX, "");
   return NAME.test(text) ? text : null;
@@ -87,7 +83,6 @@ export function parseSeatConfig(raw) {
     const models = seat.models.map((entry, index) => parseModel(entry, `seats.${role}.models[${index}]`));
     const ids = models.map((model) => model.id);
     if (new Set(ids).size !== ids.length) fail(`seats.${role} lists a model twice`);
-    // One model launches one way, whichever seat it serves.
     for (const model of models) {
       const seen = launches.get(model.id);
       if (seen && (seen.launch !== model.launch || seen.cliModel !== model.cliModel)) fail(`${model.id} launches differently in two seats; give it one launch and cliModel`);
@@ -98,7 +93,6 @@ export function parseSeatConfig(raw) {
   return { seats };
 }
 
-// Tests can inject a parsed config; the CLI reads the file once per process.
 export function useSeatConfig(raw) { active = raw == null ? null : { source: "injected", config: parseSeatConfig(raw) }; return active?.config; }
 
 export function seatConfig() {
@@ -119,11 +113,10 @@ export function seatConfig() {
 export function configSource() { seatConfig(); return active.source; }
 
 export function seatFor(role) {
-  if (!REVIEW_ROLES.includes(role)) throw new Error("Unknown review role");
+  if (!REVIEW_ROLES.includes(role)) throw new Error(`Unknown review role: ${role}`);
   return seatConfig().seats[role];
 }
 
-// How to launch a model: its config entry from any seat, or null.
 export function launchEntry(model) {
   const id = normalizeId(model);
   return REVIEW_ROLES.flatMap((role) => seatConfig().seats[role].models).find((entry) => entry.id === id) || null;
@@ -133,9 +126,6 @@ export function modelsLaunchedBy(launch) {
   return REVIEW_ROLES.flatMap((role) => seatFor(role).models).filter((entry) => entry.launch === launch);
 }
 
-
-// For the settings page: the file as written (or the shipped example when
-// there is none yet), plus any parse error, without throwing.
 export async function readRawConfig(file = configPath()) {
   let text;
   try { text = await readFile(file, "utf8"); }
@@ -150,11 +140,9 @@ export async function readRawConfig(file = configPath()) {
   catch (error) { return { path: file, exists: true, raw, error: error.message }; }
 }
 
-// Validate with the same parser the CLI uses, then replace the file atomically.
 export async function saveSeatConfig(raw, file = configPath()) {
   const config = parseSeatConfig(raw);
   await mkdir(path.dirname(file), { recursive: true });
-  // Write through a symlink (a dotfiles repo, say) instead of replacing it.
   let target = file;
   try { target = await realpath(file); } catch (error) { if (error.code !== "ENOENT") throw error; }
   const temporary = `${target}.${process.pid}.next`;

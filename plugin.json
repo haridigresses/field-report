@@ -1,0 +1,7 @@
+{
+  "name": "field-report",
+  "displayName": "Field Report",
+  "description": "Commit-time CRR gate, branch-keyed three-seat pre-PR MRR gate (correctness, design, intent), and calm PR review-thread checks.",
+  "version": "0.3.0",
+  "repository": "https://github.com/haridigresses/field-report"
+}

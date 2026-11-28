@@ -1,4 +1,4 @@
 interface:
   display_name: "Field Report"
-  short_description: "Maintain durable workstream state with fr"
-  default_prompt: "Use Field Report to track or reconcile this workstream."
+  short_description: "Run independent pre-PR MRR and pre-commit CRR gates with fr"
+  default_prompt: "Use Field Report (fr status, fr crr, fr mrr) on this branch."

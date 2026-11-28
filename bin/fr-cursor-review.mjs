@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 // Launch cursor-agent with HOME pointed at a temp dir that contains an empty
 // user-level ~/.cursor/mcp.json. That removes ambient user MCP servers; it does
@@ -59,7 +60,7 @@ export async function runWithEmptyUserMcp(command, args, { home = os.homedir(), 
   });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   runWithEmptyUserMcp("cursor-agent", process.argv.slice(2)).then((code) => { process.exitCode = code; }).catch((error) => {
     console.error(`fr-cursor-review: ${error.message}`);
     process.exitCode = 1;
